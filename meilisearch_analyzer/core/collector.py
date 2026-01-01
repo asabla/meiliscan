@@ -1,6 +1,9 @@
 """Data collector that orchestrates collection from various sources."""
 
+from pathlib import Path
+
 from meilisearch_analyzer.collectors.base import BaseCollector
+from meilisearch_analyzer.collectors.dump_parser import DumpParser
 from meilisearch_analyzer.collectors.live_instance import LiveInstanceCollector
 from meilisearch_analyzer.models.index import IndexData
 
@@ -37,6 +40,24 @@ class DataCollector:
             Configured DataCollector
         """
         collector = LiveInstanceCollector(url=url, api_key=api_key, timeout=timeout)
+        return cls(collector)
+
+    @classmethod
+    def from_dump(
+        cls,
+        dump_path: str | Path,
+        max_sample_docs: int = 100,
+    ) -> "DataCollector":
+        """Create a collector for a MeiliSearch dump file.
+
+        Args:
+            dump_path: Path to the .dump file
+            max_sample_docs: Maximum sample documents to load per index
+
+        Returns:
+            Configured DataCollector
+        """
+        collector = DumpParser(dump_path=dump_path, max_sample_docs=max_sample_docs)
         return cls(collector)
 
     async def collect(self) -> bool:

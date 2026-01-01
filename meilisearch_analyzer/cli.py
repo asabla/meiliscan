@@ -15,6 +15,7 @@ from meilisearch_analyzer.core.collector import DataCollector
 from meilisearch_analyzer.core.reporter import Reporter
 from meilisearch_analyzer.core.scorer import HealthScorer
 from meilisearch_analyzer.exporters.json_exporter import JsonExporter
+from meilisearch_analyzer.exporters.markdown_exporter import MarkdownExporter
 from meilisearch_analyzer.models.finding import FindingSeverity
 
 app = typer.Typer(
@@ -103,14 +104,55 @@ def analyze(
         console.print("[red]Error:[/red] Cannot specify both --url and --dump.")
         raise typer.Exit(1)
 
-    if dump:
-        console.print("[yellow]Dump analysis is not yet implemented.[/yellow]")
+    if format_type not in ("json", "markdown"):
+        console.print(f"[red]Error:[/red] Unknown format '{format_type}'. Use 'json' or 'markdown'.")
         raise typer.Exit(1)
 
-    # Run the async analysis
-    # url is guaranteed to be str here due to the check above
-    assert url is not None
-    asyncio.run(_analyze_instance(url, api_key, output, format_type))
+    if dump:
+        asyncio.run(_analyze_dump(dump, output, format_type))
+    else:
+        assert url is not None
+        asyncio.run(_analyze_instance(url, api_key, output, format_type))
+
+
+async def _analyze_dump(
+    dump_path: Path,
+    output: Path | None,
+    format_type: str,
+) -> None:
+    """Analyze a MeiliSearch dump file."""
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        task = progress.add_task("Loading dump file...", total=None)
+        collector = DataCollector.from_dump(dump_path)
+
+        if not await collector.collect():
+            console.print(f"[red]Error:[/red] Failed to parse dump file at {dump_path}")
+            await collector.close()
+            raise typer.Exit(1)
+
+        progress.update(task, description=f"Loaded. Found {len(collector.indexes)} indexes.")
+
+        # Generate report
+        progress.update(task, description="Analyzing indexes...")
+        reporter = Reporter(collector)
+        report = reporter.generate_report(source_url=None)
+        report.source.type = "dump"
+        report.source.dump_path = str(dump_path)
+
+        await collector.close()
+
+    # Display summary
+    _display_summary(report.summary, report.source.meilisearch_version)
+
+    # Display findings
+    _display_findings(report)
+
+    # Export report
+    _export_report(report, output, format_type)
 
 
 async def _analyze_instance(
@@ -150,14 +192,22 @@ async def _analyze_instance(
     _display_findings(report)
 
     # Export report
+    _export_report(report, output, format_type)
+
+
+def _export_report(report, output: Path | None, format_type: str) -> None:
+    """Export the report in the specified format."""
     if format_type == "json":
         exporter = JsonExporter(pretty=True)
-        json_output = exporter.export(report, output)
+    else:
+        exporter = MarkdownExporter()
 
-        if output:
-            console.print(f"\n[green]Report saved to:[/green] {output}")
-        else:
-            console.print("\n[dim]Use --output to save the full report to a file.[/dim]")
+    exporter.export(report, output)
+
+    if output:
+        console.print(f"\n[green]Report saved to:[/green] {output}")
+    else:
+        console.print("\n[dim]Use --output to save the full report to a file.[/dim]")
 
 
 def _display_summary(summary, version: str | None) -> None:
