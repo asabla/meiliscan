@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+
+{% block title %}Tasks - Meiliscan{% endblock %}
+
+{% block content %}
+<div class="flex items-center justify-between mb-2">
+    <h1 style="font-size: 1.75rem;">Tasks Queue</h1>
+    {% if is_live %}
+    <div class="flex items-center gap-1">
+        <span id="poll-status" class="badge badge-green">Live</span>
+        <button id="toggle-polling" class="btn btn-secondary btn-sm" onclick="togglePolling()">
+            Pause
+        </button>
+    </div>
+    {% else %}
+    <span class="badge badge-gray">From Dump</span>
+    {% endif %}
+</div>
+
+{% if error %}
+<div class="alert alert-error mb-2">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% endif %}
+
+<!-- Tasks Summary -->
+{% if summary %}
+<div class="grid grid-5 mb-2">
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value">{{ summary.total }}</div>
+            <div class="stat-label">Total</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value text-green">{{ summary.succeeded }}</div>
+            <div class="stat-label">Succeeded</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value text-red">{{ summary.failed }}</div>
+            <div class="stat-label">Failed</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value text-blue">{{ summary.processing + summary.enqueued }}</div>
+            <div class="stat-label">Active</div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-value">{{ "%.1f"|format(summary.success_rate) }}%</div>
+            <div class="stat-label">Success Rate</div>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<!-- Filters -->
+<div class="card mb-2">
+    <div class="flex items-center gap-2 flex-wrap">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="status-filter" style="display: inline; margin-right: 0.5rem;">Status</label>
+            <select id="status-filter" onchange="applyFilters()" style="width: auto;">
+                <option value="">All</option>
+                <option value="succeeded" {% if current_status == 'succeeded' %}selected{% endif %}>Succeeded</option>
+                <option value="failed" {% if current_status == 'failed' %}selected{% endif %}>Failed</option>
+                <option value="processing" {% if current_status == 'processing' %}selected{% endif %}>Processing</option>
+                <option value="enqueued" {% if current_status == 'enqueued' %}selected{% endif %}>Enqueued</option>
+                <option value="canceled" {% if current_status == 'canceled' %}selected{% endif %}>Canceled</option>
+            </select>
+        </div>
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="type-filter" style="display: inline; margin-right: 0.5rem;">Type</label>
+            <select id="type-filter" onchange="applyFilters()" style="width: auto;">
+                <option value="">All</option>
+                <option value="documentAdditionOrUpdate" {% if current_type == 'documentAdditionOrUpdate' %}selected{% endif %}>Document Add/Update</option>
+                <option value="documentDeletion" {% if current_type == 'documentDeletion' %}selected{% endif %}>Document Delete</option>
+                <option value="settingsUpdate" {% if current_type == 'settingsUpdate' %}selected{% endif %}>Settings Update</option>
+                <option value="indexCreation" {% if current_type == 'indexCreation' %}selected{% endif %}>Index Creation</option>
+                <option value="indexDeletion" {% if current_type == 'indexDeletion' %}selected{% endif %}>Index Deletion</option>
+                <option value="indexSwap" {% if current_type == 'indexSwap' %}selected{% endif %}>Index Swap</option>
+                <option value="dumpCreation" {% if current_type == 'dumpCreation' %}selected{% endif %}>Dump Creation</option>
+            </select>
+        </div>
+        
+        {% if indexes %}
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="index-filter" style="display: inline; margin-right: 0.5rem;">Index</label>
+            <select id="index-filter" onchange="applyFilters()" style="width: auto;">
+                <option value="">All</option>
+                {% for idx in indexes %}
+                <option value="{{ idx }}" {% if current_index == idx %}selected{% endif %}>{{ idx }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+        
+        <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+    </div>
+</div>
+
+<!-- Tasks List -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Recent Tasks</h2>
+        <span id="refresh-indicator" class="text-muted" style="font-size: 0.75rem;"></span>
+    </div>
+    
+    <div id="tasks-list"
+         hx-get="/tasks/list?status={{ current_status or '' }}&task_type={{ current_type or '' }}&index={{ current_index or '' }}"
+         hx-trigger="load{% if is_live %}, every 5s{% endif %}"
+         hx-swap="innerHTML">
+        <!-- Tasks will be loaded here -->
+        <div class="text-center text-muted" style="padding: 2rem;">
+            Loading tasks...
+        </div>
+    </div>
+</div>
+
+<script>
+let pollingEnabled = {{ 'true' if is_live else 'false' }};
+
+function togglePolling() {
+    pollingEnabled = !pollingEnabled;
+    const btn = document.getElementById('toggle-polling');
+    const status = document.getElementById('poll-status');
+    const tasksList = document.getElementById('tasks-list');
+    
+    if (pollingEnabled) {
+        btn.textContent = 'Pause';
+        status.textContent = 'Live';
+        status.className = 'badge badge-green';
+        // Re-enable polling
+        htmx.trigger(tasksList, 'htmx:load');
+    } else {
+        btn.textContent = 'Resume';
+        status.textContent = 'Paused';
+        status.className = 'badge badge-yellow';
+    }
+}
+
+function applyFilters() {
+    const status = document.getElementById('status-filter').value;
+    const taskType = document.getElementById('type-filter').value;
+    const index = document.getElementById('index-filter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (status) params.set('status', status);
+    if (taskType) params.set('task_type', taskType);
+    if (index) params.set('index', index);
+    
+    // Update URL
+    const newUrl = '/tasks' + (params.toString() ? '?' + params.toString() : '');
+    window.history.pushState({}, '', newUrl);
+    
+    // Update HTMX endpoint
+    const tasksList = document.getElementById('tasks-list');
+    const htmxUrl = '/tasks/list' + (params.toString() ? '?' + params.toString() : '');
+    tasksList.setAttribute('hx-get', htmxUrl);
+    
+    // Trigger refresh
+    htmx.trigger(tasksList, 'htmx:load');
+}
+
+function clearFilters() {
+    document.getElementById('status-filter').value = '';
+    document.getElementById('type-filter').value = '';
+    const indexFilter = document.getElementById('index-filter');
+    if (indexFilter) indexFilter.value = '';
+    applyFilters();
+}
+
+// Update timestamp on each refresh
+document.body.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target.id === 'tasks-list') {
+        const indicator = document.getElementById('refresh-indicator');
+        if (indicator) {
+            indicator.textContent = 'Updated ' + new Date().toLocaleTimeString();
+        }
+    }
+});
+
+// Stop polling when paused
+document.body.addEventListener('htmx:beforeRequest', function(evt) {
+    if (evt.detail.target.id === 'tasks-list' && !pollingEnabled) {
+        // Only block polling requests, not manual refreshes
+        if (evt.detail.triggerSpec && evt.detail.triggerSpec.trigger === 'every') {
+            evt.preventDefault();
+        }
+    }
+});
+</script>
+{% endblock %}

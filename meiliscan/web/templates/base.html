@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Meiliscan{% endblock %}</title>
-    <link rel="stylesheet" href="/static/css/style.css?v=2">
+    <link rel="stylesheet" href="/static/css/style.css?v=5">
     <script src="/static/js/htmx.min.js"></script>
 </head>
 <body>
@@ -16,6 +16,7 @@
             <ul class="nav-links">
                 <li><a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Dashboard</a></li>
                 <li><a href="/findings" {% if request.url.path == "/findings" %}class="active"{% endif %}>Findings</a></li>
+                <li><a href="/tasks" {% if request.url.path.startswith("/tasks") %}class="active"{% endif %}>Tasks</a></li>
                 {% if is_live_instance() %}
                 <li><a href="/search" {% if request.url.path.startswith("/search") %}class="active"{% endif %}>Search</a></li>
                 {% endif %}

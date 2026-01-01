@@ -27,6 +27,18 @@ def register_routes(app: FastAPI) -> None:
         state: AppState = request.app.state.analyzer_state
         templates = request.app.state.templates
 
+        from meiliscan.models.task import Task, TasksSummary
+
+        # Get tasks summary if we have a collector
+        tasks_summary: TasksSummary | None = None
+        if state.collector:
+            try:
+                raw_tasks = await state.collector.get_tasks(limit=100)
+                tasks = [Task(**t) for t in raw_tasks]
+                tasks_summary = TasksSummary.from_tasks(tasks)
+            except Exception:
+                pass
+
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -34,6 +46,7 @@ def register_routes(app: FastAPI) -> None:
                 "report": state.report,
                 "source_url": state.meili_url,
                 "source_dump": state.dump_path,
+                "tasks_summary": tasks_summary,
             },
         )
 
@@ -648,3 +661,298 @@ def register_routes(app: FastAPI) -> None:
                 "search_params": search_params,
             },
         )
+
+    # ==================== Tasks Routes ====================
+
+    @app.get("/tasks", response_class=HTMLResponse)
+    async def tasks_page(
+        request: Request,
+        status: str | None = None,
+        task_type: str | None = None,
+        index: str | None = None,
+    ):
+        """Render the tasks page.
+
+        Works with both live instances (poll for updates) and dumps (static view).
+        """
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        from meiliscan.models.task import Task, TasksSummary
+
+        tasks: list[Task] = []
+        summary: TasksSummary | None = None
+        indexes: list[str] = []
+        is_live = state.meili_url is not None
+        error = None
+
+        # Get tasks from collector if available
+        if state.collector:
+            try:
+                raw_tasks = await state.collector.get_tasks(limit=100)
+                tasks = [Task(**t) for t in raw_tasks]
+                summary = TasksSummary.from_tasks(tasks)
+
+                # Get index list for filter dropdown
+                if state.report:
+                    indexes = list(state.report.indexes.keys())
+
+                # Apply filters
+                if status:
+                    tasks = [t for t in tasks if t.status.value == status]
+                if task_type:
+                    tasks = [t for t in tasks if t.task_type == task_type]
+                if index:
+                    tasks = [t for t in tasks if t.index_uid == index]
+
+            except Exception as e:
+                error = str(e)
+
+        return templates.TemplateResponse(
+            "tasks.html",
+            {
+                "request": request,
+                "tasks": tasks,
+                "summary": summary,
+                "indexes": indexes,
+                "is_live": is_live,
+                "error": error,
+                "current_status": status,
+                "current_type": task_type,
+                "current_index": index,
+            },
+        )
+
+    @app.get("/tasks/list", response_class=HTMLResponse)
+    async def tasks_list_partial(
+        request: Request,
+        status: str | None = None,
+        task_type: str | None = None,
+        index: str | None = None,
+        from_uid: int | None = None,
+    ):
+        """Render tasks list partial (HTMX) for polling updates."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+        from meiliscan.models.task import Task, TasksSummary
+
+        tasks: list[Task] = []
+        summary: TasksSummary | None = None
+        error = None
+        next_uid: int | None = None
+
+        if state.meili_url:
+            # Live instance - fetch fresh data
+            collector = LiveInstanceCollector(
+                url=state.meili_url,
+                api_key=state.meili_api_key,
+            )
+            try:
+                if await collector.connect():
+                    # Build filter lists
+                    statuses = [status] if status else None
+                    types = [task_type] if task_type else None
+                    index_uids = [index] if index else None
+
+                    response = await collector.get_tasks_paginated(
+                        limit=20,
+                        from_uid=from_uid,
+                        statuses=statuses,
+                        types=types,
+                        index_uids=index_uids,
+                    )
+                    tasks = response.results
+                    next_uid = response.next_uid
+
+                    # Get summary from all tasks (unfiltered)
+                    summary = await collector.get_tasks_summary()
+            except Exception as e:
+                error = str(e)
+            finally:
+                await collector.close()
+        elif state.collector:
+            # Dump - use cached data
+            try:
+                raw_tasks = await state.collector.get_tasks(limit=100)
+                all_tasks = [Task(**t) for t in raw_tasks]
+                summary = TasksSummary.from_tasks(all_tasks)
+
+                # Apply filters
+                tasks = all_tasks
+                if status:
+                    tasks = [t for t in tasks if t.status.value == status]
+                if task_type:
+                    tasks = [t for t in tasks if t.task_type == task_type]
+                if index:
+                    tasks = [t for t in tasks if t.index_uid == index]
+
+                # Simple pagination for dump
+                if from_uid is not None:
+                    tasks = [t for t in tasks if t.uid < from_uid]
+                tasks = tasks[:20]
+                if tasks:
+                    next_uid = tasks[-1].uid - 1 if tasks[-1].uid > 0 else None
+
+            except Exception as e:
+                error = str(e)
+
+        return templates.TemplateResponse(
+            "components/tasks_list.html",
+            {
+                "request": request,
+                "tasks": tasks,
+                "summary": summary,
+                "error": error,
+                "next_uid": next_uid,
+                "current_status": status,
+                "current_type": task_type,
+                "current_index": index,
+                "is_live": state.meili_url is not None,
+            },
+        )
+
+    @app.get("/api/tasks")
+    async def api_tasks(
+        request: Request,
+        limit: int = 20,
+        from_uid: int | None = None,
+        status: str | None = None,
+        task_type: str | None = None,
+        index_uid: str | None = None,
+    ) -> dict:
+        """Get tasks as JSON API.
+
+        Args:
+            limit: Maximum number of tasks to return
+            from_uid: Start from this task UID (for pagination)
+            status: Filter by status
+            task_type: Filter by task type
+            index_uid: Filter by index UID
+
+        Returns:
+            Tasks data with pagination info
+        """
+        state: AppState = request.app.state.analyzer_state
+
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+        from meiliscan.models.task import Task
+
+        if state.meili_url:
+            collector = LiveInstanceCollector(
+                url=state.meili_url,
+                api_key=state.meili_api_key,
+            )
+            try:
+                if not await collector.connect():
+                    return {"error": "Failed to connect to MeiliSearch instance"}
+
+                statuses = [status] if status else None
+                types = [task_type] if task_type else None
+                index_uids = [index_uid] if index_uid else None
+
+                response = await collector.get_tasks_paginated(
+                    limit=limit,
+                    from_uid=from_uid,
+                    statuses=statuses,
+                    types=types,
+                    index_uids=index_uids,
+                )
+
+                return {
+                    "results": [t.model_dump(by_alias=True) for t in response.results],
+                    "total": response.total,
+                    "limit": response.limit,
+                    "from": response.from_uid,
+                    "next": response.next_uid,
+                }
+            except Exception as e:
+                return {"error": str(e)}
+            finally:
+                await collector.close()
+
+        elif state.collector:
+            # From dump
+            try:
+                raw_tasks = await state.collector.get_tasks(limit=1000)
+                all_tasks = [Task(**t) for t in raw_tasks]
+
+                # Apply filters
+                tasks = all_tasks
+                if status:
+                    tasks = [t for t in tasks if t.status.value == status]
+                if task_type:
+                    tasks = [t for t in tasks if t.task_type == task_type]
+                if index_uid:
+                    tasks = [t for t in tasks if t.index_uid == index_uid]
+
+                # Pagination
+                if from_uid is not None:
+                    tasks = [t for t in tasks if t.uid < from_uid]
+                tasks = tasks[:limit]
+
+                return {
+                    "results": [t.model_dump(by_alias=True) for t in tasks],
+                    "total": len(all_tasks),
+                    "limit": limit,
+                    "from": from_uid,
+                    "next": tasks[-1].uid - 1 if tasks else None,
+                }
+            except Exception as e:
+                return {"error": str(e)}
+
+        return {"error": "No data source available"}
+
+    @app.get("/api/tasks/summary")
+    async def api_tasks_summary(request: Request) -> dict:
+        """Get tasks summary statistics."""
+        state: AppState = request.app.state.analyzer_state
+
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+        from meiliscan.models.task import Task, TasksSummary
+
+        if state.meili_url:
+            collector = LiveInstanceCollector(
+                url=state.meili_url,
+                api_key=state.meili_api_key,
+            )
+            try:
+                if not await collector.connect():
+                    return {"error": "Failed to connect to MeiliSearch instance"}
+
+                summary = await collector.get_tasks_summary()
+                return {
+                    "total": summary.total,
+                    "succeeded": summary.succeeded,
+                    "failed": summary.failed,
+                    "processing": summary.processing,
+                    "enqueued": summary.enqueued,
+                    "canceled": summary.canceled,
+                    "success_rate": summary.success_rate,
+                    "has_active": summary.has_active,
+                }
+            except Exception as e:
+                return {"error": str(e)}
+            finally:
+                await collector.close()
+
+        elif state.collector:
+            try:
+                raw_tasks = await state.collector.get_tasks(limit=1000)
+                tasks = [Task(**t) for t in raw_tasks]
+                summary = TasksSummary.from_tasks(tasks)
+                return {
+                    "total": summary.total,
+                    "succeeded": summary.succeeded,
+                    "failed": summary.failed,
+                    "processing": summary.processing,
+                    "enqueued": summary.enqueued,
+                    "canceled": summary.canceled,
+                    "success_rate": summary.success_rate,
+                    "has_active": summary.has_active,
+                }
+            except Exception as e:
+                return {"error": str(e)}
+
+        return {"error": "No data source available"}

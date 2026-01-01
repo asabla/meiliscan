@@ -12,6 +12,14 @@ from meiliscan.models.comparison import (
 from meiliscan.models.finding import Finding, FindingCategory, FindingSeverity
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 from meiliscan.models.report import AnalysisReport, AnalysisSummary, SourceInfo
+from meiliscan.models.task import (
+    Task,
+    TaskError,
+    TasksResponse,
+    TasksSummary,
+    TaskStatus,
+    TaskType,
+)
 
 __all__ = [
     # Finding models
@@ -34,4 +42,11 @@ __all__ = [
     "IndexChange",
     "MetricChange",
     "TrendDirection",
+    # Task models
+    "Task",
+    "TaskError",
+    "TasksResponse",
+    "TasksSummary",
+    "TaskStatus",
+    "TaskType",
 ]

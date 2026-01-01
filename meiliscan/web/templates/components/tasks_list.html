@@ -1,0 +1,118 @@
+{% if error %}
+<div class="alert alert-error">
+    <strong>Error:</strong> {{ error }}
+</div>
+{% elif tasks %}
+<div class="tasks-table-wrapper">
+    <table class="tasks-table">
+        <colgroup>
+            <col style="width: 60px;">
+            <col style="width: 110px;">
+            <col style="width: 250px;">
+            <col style="width: 90px;">
+            <col style="width: auto;">
+            <col style="width: 100px;">
+            <col style="width: 170px;">
+        </colgroup>
+        <thead>
+            <tr>
+                <th>UID</th>
+                <th>Status</th>
+                <th>Type</th>
+                <th>Index</th>
+                <th>Details</th>
+                <th>Duration</th>
+                <th>Enqueued At</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for task in tasks %}
+            <tr class="task-row task-{{ task.status.value }}">
+                <td class="task-uid">{{ task.uid }}</td>
+                <td>
+                    <span class="task-status task-status-{{ task.status.value }}">
+                        {% if task.status.value == 'succeeded' %}
+                        <span class="status-icon">&#10003;</span>
+                        {% elif task.status.value == 'failed' %}
+                        <span class="status-icon">&#10007;</span>
+                        {% elif task.status.value == 'processing' %}
+                        <span class="status-icon spinning">&#8635;</span>
+                        {% elif task.status.value == 'enqueued' %}
+                        <span class="status-icon">&#8987;</span>
+                        {% elif task.status.value == 'canceled' %}
+                        <span class="status-icon">&#8856;</span>
+                        {% endif %}
+                        {{ task.status.value }}
+                    </span>
+                </td>
+                <td>
+                    <code class="task-type">{{ task.task_type }}</code>
+                </td>
+                <td>
+                    {% if task.index_uid %}
+                    <a href="/index/{{ task.index_uid }}">{{ task.index_uid }}</a>
+                    {% else %}
+                    <span class="text-muted">-</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <div class="task-details-inner">
+                    {% if task.details %}
+                        {% if task.details.get('receivedDocuments') is not none %}
+                        <span class="badge badge-blue">{{ task.details.receivedDocuments }} docs</span>
+                        {% endif %}
+                        {% if task.details.get('deletedDocuments') is not none %}
+                        <span class="badge badge-yellow">{{ task.details.deletedDocuments }} deleted</span>
+                        {% endif %}
+                        {% if task.details.get('indexedDocuments') is not none and task.details.get('receivedDocuments') != task.details.get('indexedDocuments') %}
+                        <span class="badge badge-green">{{ task.details.indexedDocuments }} indexed</span>
+                        {% endif %}
+                        {% if task.details.get('primaryKey') %}
+                        <span class="badge badge-gray">pk: {{ task.details.primaryKey }}</span>
+                        {% endif %}
+                    {% endif %}
+                    {% if task.error %}
+                    <span class="badge badge-red" title="{{ task.error.message }}">{{ task.error.code or 'error' }}</span>
+                    {% endif %}
+                    </div>
+                </td>
+                <td>
+                    <span class="task-duration">{{ task.format_duration() }}</span>
+                </td>
+                <td>
+                    <span class="task-time" title="{{ task.enqueued_at.isoformat() }}">
+                        {{ task.enqueued_at.strftime('%Y-%m-%d %H:%M:%S') }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+{% if next_uid is not none %}
+<div class="pagination mt-2">
+    <div class="flex items-center justify-center">
+        <button class="btn btn-secondary btn-sm"
+                hx-get="/tasks/list?from_uid={{ next_uid }}&status={{ current_status or '' }}&task_type={{ current_type or '' }}&index={{ current_index or '' }}"
+                hx-target="#tasks-list"
+                hx-swap="innerHTML">
+            Load More
+        </button>
+    </div>
+</div>
+{% endif %}
+
+{% else %}
+<div class="empty-state" style="padding: 2rem;">
+    <div class="empty-state-icon">&#128203;</div>
+    <h3>No Tasks Found</h3>
+    <p class="text-muted">
+        {% if current_status or current_type or current_index %}
+        No tasks match the current filters.
+        {% else %}
+        No tasks have been recorded yet.
+        {% endif %}
+    </p>
+</div>
+{% endif %}

@@ -422,6 +422,232 @@ async def _summary_instance(url: str, api_key: str | None) -> None:
     console.print("\n[dim]Run 'analyze' for full report[/dim]")
 
 
+@app.command()
+def tasks(
+    url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--url",
+            "-u",
+            help="MeiliSearch instance URL",
+        ),
+    ] = None,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-k",
+            help="MeiliSearch API key",
+            envvar="MEILI_MASTER_KEY",
+        ),
+    ] = None,
+    dump: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--dump",
+            "-d",
+            help="Path to MeiliSearch dump file",
+        ),
+    ] = None,
+    limit: Annotated[
+        int,
+        typer.Option(
+            "--limit",
+            "-l",
+            help="Maximum number of tasks to display",
+        ),
+    ] = 20,
+    status: Annotated[
+        Optional[str],
+        typer.Option(
+            "--status",
+            "-s",
+            help="Filter by status (succeeded, failed, processing, enqueued, canceled)",
+        ),
+    ] = None,
+    task_type: Annotated[
+        Optional[str],
+        typer.Option(
+            "--type",
+            "-t",
+            help="Filter by task type (documentAdditionOrUpdate, settingsUpdate, etc.)",
+        ),
+    ] = None,
+    index_uid: Annotated[
+        Optional[str],
+        typer.Option(
+            "--index",
+            "-i",
+            help="Filter by index UID",
+        ),
+    ] = None,
+    watch: Annotated[
+        bool,
+        typer.Option(
+            "--watch",
+            "-w",
+            help="Watch mode: poll for updates every 2 seconds",
+        ),
+    ] = False,
+) -> None:
+    """Display the MeiliSearch tasks queue."""
+    if not url and not dump:
+        console.print("[red]Error:[/red] Either --url or --dump must be provided.")
+        raise typer.Exit(1)
+
+    if url and dump:
+        console.print("[red]Error:[/red] Cannot specify both --url and --dump.")
+        raise typer.Exit(1)
+
+    if watch and dump:
+        console.print("[red]Error:[/red] Watch mode only works with live instances.")
+        raise typer.Exit(1)
+
+    asyncio.run(
+        _display_tasks(url, api_key, dump, limit, status, task_type, index_uid, watch)
+    )
+
+
+async def _display_tasks(
+    url: str | None,
+    api_key: str | None,
+    dump_path: Path | None,
+    limit: int,
+    status_filter: str | None,
+    type_filter: str | None,
+    index_filter: str | None,
+    watch: bool,
+) -> None:
+    """Display tasks from MeiliSearch instance or dump."""
+    from meiliscan.models.task import Task, TasksSummary, TaskStatus
+
+    # Create collector
+    if dump_path:
+        collector = DataCollector.from_dump(dump_path)
+    else:
+        assert url is not None
+        collector = DataCollector.from_url(url, api_key)
+
+    if not await collector.collect():
+        source = dump_path or url
+        console.print(f"[red]Error:[/red] Failed to connect to {source}")
+        await collector.close()
+        raise typer.Exit(1)
+
+    status_colors = {
+        TaskStatus.SUCCEEDED: "green",
+        TaskStatus.FAILED: "red",
+        TaskStatus.PROCESSING: "blue",
+        TaskStatus.ENQUEUED: "yellow",
+        TaskStatus.CANCELED: "dim",
+    }
+
+    try:
+        while True:
+            # Fetch tasks
+            raw_tasks = await collector.get_tasks(limit=1000)
+            all_tasks = [Task(**t) for t in raw_tasks]
+
+            # Apply filters
+            filtered_tasks = all_tasks
+            if status_filter:
+                filtered_tasks = [
+                    t for t in filtered_tasks if t.status.value == status_filter
+                ]
+            if type_filter:
+                filtered_tasks = [
+                    t for t in filtered_tasks if t.task_type == type_filter
+                ]
+            if index_filter:
+                filtered_tasks = [
+                    t for t in filtered_tasks if t.index_uid == index_filter
+                ]
+
+            # Limit
+            display_tasks = filtered_tasks[:limit]
+
+            # Get summary from all tasks (unfiltered)
+            summary = TasksSummary.from_tasks(all_tasks)
+
+            # Clear screen in watch mode
+            if watch:
+                console.clear()
+
+            # Display summary
+            summary_text = f"""
+[bold]Total:[/bold] {summary.total}    [green]Succeeded:[/green] {summary.succeeded}    [red]Failed:[/red] {summary.failed}    [blue]Processing:[/blue] {summary.processing}    [yellow]Enqueued:[/yellow] {summary.enqueued}
+
+[bold]Success Rate:[/bold] {summary.success_rate:.1f}%
+"""
+
+            console.print(
+                Panel(
+                    summary_text.strip(),
+                    title="Tasks Summary",
+                    border_style="blue",
+                )
+            )
+
+            # Display tasks table
+            if display_tasks:
+                table = Table(show_header=True, header_style="bold")
+                table.add_column("UID", style="cyan", width=8)
+                table.add_column("Status", width=12)
+                table.add_column("Type", width=24)
+                table.add_column("Index", width=15)
+                table.add_column("Details", width=20)
+                table.add_column("Duration", width=10)
+                table.add_column("Enqueued At", width=20)
+
+                for task in display_tasks:
+                    color = status_colors.get(task.status, "white")
+
+                    # Build details string
+                    details = []
+                    if task.details.get("receivedDocuments"):
+                        details.append(f"{task.details['receivedDocuments']} docs")
+                    if task.details.get("deletedDocuments"):
+                        details.append(f"{task.details['deletedDocuments']} deleted")
+                    if task.error:
+                        details.append(
+                            f"error: {task.error.code or task.error.message[:20]}"
+                        )
+                    details_str = ", ".join(details) if details else "-"
+
+                    table.add_row(
+                        str(task.uid),
+                        f"[{color}]{task.status.value}[/{color}]",
+                        task.task_type,
+                        task.index_uid or "-",
+                        details_str,
+                        task.format_duration(),
+                        task.enqueued_at.strftime("%Y-%m-%d %H:%M:%S"),
+                    )
+
+                console.print(table)
+            else:
+                console.print("\n[dim]No tasks found matching the filters.[/dim]")
+
+            # Show active tasks info
+            if summary.has_active:
+                console.print(
+                    f"\n[blue]Active tasks:[/blue] {summary.processing} processing, {summary.enqueued} enqueued"
+                )
+
+            if watch:
+                console.print(
+                    f"\n[dim]Watching for updates (Ctrl+C to stop)... Last updated: {asyncio.get_event_loop().time():.0f}[/dim]"
+                )
+                await asyncio.sleep(2)
+            else:
+                break
+
+    except KeyboardInterrupt:
+        console.print("\n[dim]Stopped watching.[/dim]")
+    finally:
+        await collector.close()
+
+
 @app.command(name="fix-script")
 def fix_script(
     input_file: Annotated[

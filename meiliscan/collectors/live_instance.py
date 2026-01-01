@@ -6,6 +6,7 @@ import httpx
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
+from meiliscan.models.task import Task, TasksResponse, TasksSummary
 
 
 class LiveInstanceCollector(BaseCollector):
@@ -156,6 +157,76 @@ class LiveInstanceCollector(BaseCollector):
         if isinstance(data, dict) and "results" in data:
             return data["results"]
         return data if isinstance(data, list) else []
+
+    async def get_tasks_paginated(
+        self,
+        limit: int = 20,
+        from_uid: int | None = None,
+        statuses: list[str] | None = None,
+        types: list[str] | None = None,
+        index_uids: list[str] | None = None,
+    ) -> TasksResponse:
+        """Get tasks with pagination and filtering.
+
+        Args:
+            limit: Maximum number of tasks to retrieve per page
+            from_uid: Start from this task UID (for pagination)
+            statuses: Filter by task status (succeeded, failed, etc.)
+            types: Filter by task type (documentAdditionOrUpdate, etc.)
+            index_uids: Filter by index UID
+
+        Returns:
+            TasksResponse with tasks and pagination info
+        """
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        params: dict[str, Any] = {"limit": limit}
+        if from_uid is not None:
+            params["from"] = from_uid
+        if statuses:
+            params["statuses"] = ",".join(statuses)
+        if types:
+            params["types"] = ",".join(types)
+        if index_uids:
+            params["indexUids"] = ",".join(index_uids)
+
+        response = await self._client.get("/tasks", params=params)
+        response.raise_for_status()
+        data = response.json()
+
+        return TasksResponse(**data)
+
+    async def get_task(self, task_uid: int) -> Task | None:
+        """Get a single task by UID.
+
+        Args:
+            task_uid: The task UID to retrieve
+
+        Returns:
+            Task object or None if not found
+        """
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        try:
+            response = await self._client.get(f"/tasks/{task_uid}")
+            response.raise_for_status()
+            return Task(**response.json())
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
+                return None
+            raise
+
+    async def get_tasks_summary(self) -> TasksSummary:
+        """Get summary statistics for all tasks.
+
+        Returns:
+            TasksSummary with counts by status
+        """
+        # Fetch enough tasks to get good statistics
+        tasks_response = await self.get_tasks_paginated(limit=1000)
+        return TasksSummary.from_tasks(tasks_response.results)
 
     async def search(
         self,
