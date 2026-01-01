@@ -1,4 +1,4 @@
-# MeiliSearch Analyzer
+# Meiliscan
 
 A comprehensive tool for analyzing MeiliSearch instances and dump files to identify optimization opportunities, potential pitfalls, and provide actionable recommendations.
 
@@ -26,21 +26,21 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 ### From source (recommended for now)
 
 ```bash
-git clone https://github.com/yourusername/meilisearch-analyzer.git
-cd meilisearch-analyzer
+git clone https://github.com/yourusername/meiliscan.git
+cd meiliscan
 make install-dev  # or: uv sync --all-extras
 ```
 
 ### Using pip (when published)
 
 ```bash
-pip install meilisearch-analyzer
+pip install meiliscan
 ```
 
 ### Using uvx (when published)
 
 ```bash
-uvx meilisearch-analyzer --help
+uvx meiliscan --help
 ```
 
 ## Quick Start
@@ -49,30 +49,30 @@ uvx meilisearch-analyzer --help
 
 ```bash
 # Basic analysis
-meilisearch-analyzer analyze --url http://localhost:7700
+meiliscan analyze --url http://localhost:7700
 
 # With API key
-meilisearch-analyzer analyze --url http://localhost:7700 --api-key your-master-key
+meiliscan analyze --url http://localhost:7700 --api-key your-master-key
 
 # Save results to file
-meilisearch-analyzer analyze --url http://localhost:7700 --output analysis.json
+meiliscan analyze --url http://localhost:7700 --output analysis.json
 ```
 
 ### Analyze a Dump File
 
 ```bash
 # Analyze a dump archive
-meilisearch-analyzer analyze --dump ./path/to/dump.dump
+meiliscan analyze --dump ./path/to/dump.dump
 
 # Export as markdown
-meilisearch-analyzer analyze --dump ./dump.dump --format markdown --output report.md
+meiliscan analyze --dump ./dump.dump --format markdown --output report.md
 ```
 
 ### Web Dashboard
 
 ```bash
 # Start the web dashboard
-meilisearch-analyzer serve --url http://localhost:7700 --port 8080
+meiliscan serve --url http://localhost:7700 --port 8080
 
 # Then open http://localhost:8080 in your browser
 ```
@@ -80,7 +80,7 @@ meilisearch-analyzer serve --url http://localhost:7700 --port 8080
 ### Quick Health Summary
 
 ```bash
-meilisearch-analyzer summary --url http://localhost:7700
+meiliscan summary --url http://localhost:7700
 ```
 
 ## Example Output
@@ -88,7 +88,7 @@ meilisearch-analyzer summary --url http://localhost:7700
 ### CLI Summary
 
 ```
-$ meilisearch-analyzer summary --url http://localhost:7700
+$ meiliscan summary --url http://localhost:7700
 
 ╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
 │ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
@@ -108,7 +108,7 @@ Run 'analyze' for full report
 ### CLI Analysis
 
 ```
-$ meilisearch-analyzer analyze --url http://localhost:7700
+$ meiliscan analyze --url http://localhost:7700
 
 ╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
 │ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
@@ -196,7 +196,7 @@ Use --output to save the full report to a file.
 Analyze a MeiliSearch instance or dump file.
 
 ```bash
-meilisearch-analyzer analyze [OPTIONS]
+meiliscan analyze [OPTIONS]
 ```
 
 Options:
@@ -213,7 +213,7 @@ Options:
 Compare two analysis reports to track changes over time.
 
 ```bash
-meilisearch-analyzer compare OLD_REPORT NEW_REPORT [OPTIONS]
+meiliscan compare OLD_REPORT NEW_REPORT [OPTIONS]
 ```
 
 Options:
@@ -225,7 +225,7 @@ Options:
 Generate a shell script to apply recommended fixes.
 
 ```bash
-meilisearch-analyzer fix-script --input REPORT_JSON --output SCRIPT_PATH
+meiliscan fix-script --input REPORT_JSON --output SCRIPT_PATH
 ```
 
 Options:
@@ -237,7 +237,7 @@ Options:
 Start the web dashboard.
 
 ```bash
-meilisearch-analyzer serve [OPTIONS]
+meiliscan serve [OPTIONS]
 ```
 
 Options:
@@ -251,7 +251,7 @@ Options:
 Display a quick health summary.
 
 ```bash
-meilisearch-analyzer summary [OPTIONS]
+meiliscan summary [OPTIONS]
 ```
 
 Options:
@@ -265,7 +265,7 @@ Options:
 Structured JSON output for programmatic processing.
 
 ```bash
-meilisearch-analyzer analyze --url ... --format json --output report.json
+meiliscan analyze --url ... --format json --output report.json
 ```
 
 ### Markdown
@@ -273,7 +273,7 @@ meilisearch-analyzer analyze --url ... --format json --output report.json
 Human-readable report with tables and formatted findings.
 
 ```bash
-meilisearch-analyzer analyze --url ... --format markdown --output report.md
+meiliscan analyze --url ... --format markdown --output report.md
 ```
 
 ### SARIF
@@ -281,7 +281,7 @@ meilisearch-analyzer analyze --url ... --format markdown --output report.md
 Static Analysis Results Interchange Format for GitHub Code Scanning and IDE integration.
 
 ```bash
-meilisearch-analyzer analyze --url ... --format sarif --output results.sarif
+meiliscan analyze --url ... --format sarif --output results.sarif
 ```
 
 ### Agent
@@ -289,7 +289,7 @@ meilisearch-analyzer analyze --url ... --format sarif --output results.sarif
 Optimized output for AI coding agents (Claude, GPT, etc.) with prioritized issues and fix commands.
 
 ```bash
-meilisearch-analyzer analyze --url ... --format agent --output agent-context.md
+meiliscan analyze --url ... --format agent --output agent-context.md
 ```
 
 ## CI/CD Integration
@@ -298,10 +298,10 @@ Use the `--ci` flag to enable CI mode with appropriate exit codes:
 
 ```bash
 # Exit code 2 on critical findings, 0 otherwise
-meilisearch-analyzer analyze --url http://localhost:7700 --ci
+meiliscan analyze --url http://localhost:7700 --ci
 
 # Exit code 1 on warnings, 2 on critical findings
-meilisearch-analyzer analyze --url http://localhost:7700 --ci --fail-on-warnings
+meiliscan analyze --url http://localhost:7700 --ci --fail-on-warnings
 ```
 
 ### GitHub Actions Example
@@ -309,7 +309,7 @@ meilisearch-analyzer analyze --url http://localhost:7700 --ci --fail-on-warnings
 ```yaml
 - name: Analyze MeiliSearch
   run: |
-    meilisearch-analyzer analyze \
+    meiliscan analyze \
       --url ${{ secrets.MEILISEARCH_URL }} \
       --api-key ${{ secrets.MEILISEARCH_API_KEY }} \
       --format sarif \
@@ -335,7 +335,7 @@ The web dashboard provides an interactive interface for exploring analysis resul
 Start the dashboard:
 
 ```bash
-meilisearch-analyzer serve --url http://localhost:7700 --port 8080
+meiliscan serve --url http://localhost:7700 --port 8080
 ```
 
 ### Findings Explorer
@@ -355,8 +355,8 @@ Drill down into individual indexes to see settings, statistics, and findings:
 ### Setup
 
 ```bash
-git clone https://github.com/yourusername/meilisearch-analyzer.git
-cd meilisearch-analyzer
+git clone https://github.com/yourusername/meiliscan.git
+cd meiliscan
 make install-dev  # or: uv sync --all-extras
 ```
 
@@ -413,7 +413,7 @@ uv run pytest -k "test_large"
 ### Project Structure
 
 ```
-meilisearch_analyzer/
+meiliscan/
 ├── analyzers/       # Analysis logic (schema, document, performance, best_practices)
 ├── collectors/      # Data collection (live_instance.py, dump_parser.py)
 ├── core/            # Orchestration (collector.py, reporter.py, scorer.py)

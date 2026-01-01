@@ -6,14 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from meilisearch_analyzer.exporters.agent_exporter import AgentExporter
-from meilisearch_analyzer.models.finding import (
+from meiliscan.exporters.agent_exporter import AgentExporter
+from meiliscan.models.finding import (
     Finding,
     FindingCategory,
     FindingFix,
     FindingSeverity,
 )
-from meilisearch_analyzer.models.report import (
+from meiliscan.models.report import (
     AnalysisReport,
     AnalysisSummary,
     IndexAnalysis,
@@ -123,7 +123,9 @@ class TestAgentExporter:
         result = exporter.export(basic_report)
         assert "1.7.0" in result
 
-    def test_export_with_critical_findings(self, exporter, basic_report, finding_with_fix):
+    def test_export_with_critical_findings(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test export with critical findings."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -183,7 +185,9 @@ class TestAgentExporter:
         result = exporter.export(basic_report)
         assert "## Informational Notes" in result
 
-    def test_export_finding_includes_index(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_index(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes index information."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -193,7 +197,9 @@ class TestAgentExporter:
         result = exporter.export(basic_report)
         assert "**Index:** `products`" in result
 
-    def test_export_finding_includes_problem(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_problem(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes problem description."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -203,7 +209,9 @@ class TestAgentExporter:
         result = exporter.export(basic_report)
         assert "**Problem:** All fields are searchable by default." in result
 
-    def test_export_finding_includes_impact(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_impact(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes impact."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -213,7 +221,9 @@ class TestAgentExporter:
         result = exporter.export(basic_report)
         assert "**Impact:** Poor search performance" in result
 
-    def test_export_finding_includes_current_value(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_current_value(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes current value."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -224,7 +234,9 @@ class TestAgentExporter:
         assert "**Current Configuration:**" in result
         assert '"*"' in result  # Value is formatted with indentation
 
-    def test_export_finding_includes_recommended(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_recommended(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes recommended value."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -236,7 +248,9 @@ class TestAgentExporter:
         assert '"title"' in result
         assert '"description"' in result
 
-    def test_export_finding_includes_fix_command(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_fix_command(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes fix command."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -248,7 +262,9 @@ class TestAgentExporter:
         assert "curl -X PATCH" in result
         assert "/indexes/products/settings" in result
 
-    def test_export_finding_includes_references(self, exporter, basic_report, finding_with_fix):
+    def test_export_finding_includes_references(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that finding includes references."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -259,7 +275,9 @@ class TestAgentExporter:
         assert "**References:**" in result
         assert "https://docs.meilisearch.com/" in result
 
-    def test_export_includes_quick_fix_script(self, exporter, basic_report, finding_with_fix):
+    def test_export_includes_quick_fix_script(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that export includes quick fix script."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -454,7 +472,9 @@ class TestAgentExporter:
         result = exporter.export(report)
         assert "4.0GB database" in result
 
-    def test_export_global_and_index_findings(self, exporter, basic_report, finding_with_fix):
+    def test_export_global_and_index_findings(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that both global and index findings are included."""
         basic_report.global_findings = [
             Finding(

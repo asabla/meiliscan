@@ -2,9 +2,14 @@
 
 import pytest
 
-from meilisearch_analyzer.analyzers.schema_analyzer import SchemaAnalyzer
-from meilisearch_analyzer.models.finding import FindingCategory, FindingSeverity
-from meilisearch_analyzer.models.index import IndexData, IndexSettings, IndexStats, PaginationSettings
+from meiliscan.analyzers.schema_analyzer import SchemaAnalyzer
+from meiliscan.models.finding import FindingCategory, FindingSeverity
+from meiliscan.models.index import (
+    IndexData,
+    IndexSettings,
+    IndexStats,
+    PaginationSettings,
+)
 
 
 class TestSchemaAnalyzer:
@@ -41,10 +46,10 @@ class TestSchemaAnalyzer:
     def test_wildcard_searchable_attributes(self, analyzer, basic_index):
         """Test detection of wildcard searchable attributes (S001)."""
         findings = analyzer.analyze(basic_index)
-        
+
         s001_findings = [f for f in findings if f.id == "MEILI-S001"]
         assert len(s001_findings) == 1
-        
+
         finding = s001_findings[0]
         assert finding.severity == FindingSeverity.CRITICAL
         assert finding.category == FindingCategory.SCHEMA
@@ -63,7 +68,7 @@ class TestSchemaAnalyzer:
                 fieldDistribution={"id": 100, "title": 100, "description": 100},
             ),
         )
-        
+
         findings = analyzer.analyze(index)
         s001_findings = [f for f in findings if f.id == "MEILI-S001"]
         assert len(s001_findings) == 0
@@ -77,10 +82,15 @@ class TestSchemaAnalyzer:
             ),
             stats=IndexStats(
                 numberOfDocuments=100,
-                fieldDistribution={"id": 100, "title": 100, "user_id": 100, "description": 100},
+                fieldDistribution={
+                    "id": 100,
+                    "title": 100,
+                    "user_id": 100,
+                    "description": 100,
+                },
             ),
         )
-        
+
         findings = analyzer.analyze(index)
         s002_findings = [f for f in findings if f.id == "MEILI-S002"]
         assert len(s002_findings) == 1
@@ -89,7 +99,7 @@ class TestSchemaAnalyzer:
     def test_empty_filterable_attributes(self, analyzer, basic_index):
         """Test detection of empty filterable attributes (S004)."""
         findings = analyzer.analyze(basic_index)
-        
+
         s004_findings = [f for f in findings if f.id == "MEILI-S004"]
         assert len(s004_findings) == 1
         assert s004_findings[0].severity == FindingSeverity.INFO
@@ -97,7 +107,7 @@ class TestSchemaAnalyzer:
     def test_no_stop_words(self, analyzer, basic_index):
         """Test detection of missing stop words (S006)."""
         findings = analyzer.analyze(basic_index)
-        
+
         s006_findings = [f for f in findings if f.id == "MEILI-S006"]
         assert len(s006_findings) == 1
         assert s006_findings[0].severity == FindingSeverity.SUGGESTION
@@ -105,7 +115,7 @@ class TestSchemaAnalyzer:
     def test_default_ranking_rules(self, analyzer, basic_index):
         """Test detection of default ranking rules (S007)."""
         findings = analyzer.analyze(basic_index)
-        
+
         s007_findings = [f for f in findings if f.id == "MEILI-S007"]
         assert len(s007_findings) == 1
         assert s007_findings[0].severity == FindingSeverity.INFO
@@ -121,7 +131,7 @@ class TestSchemaAnalyzer:
                 fieldDistribution={"id": 2000, "title": 2000},
             ),
         )
-        
+
         findings = analyzer.analyze(index)
         s008_findings = [f for f in findings if f.id == "MEILI-S008"]
         assert len(s008_findings) == 1
@@ -137,7 +147,7 @@ class TestSchemaAnalyzer:
             ),
             stats=IndexStats(numberOfDocuments=100),
         )
-        
+
         findings = analyzer.analyze(index)
         s009_findings = [f for f in findings if f.id == "MEILI-S009"]
         assert len(s009_findings) == 1
@@ -154,7 +164,7 @@ class TestSchemaAnalyzer:
             ),
             stats=IndexStats(numberOfDocuments=100),
         )
-        
+
         findings = analyzer.analyze(index)
         s010_findings = [f for f in findings if f.id == "MEILI-S010"]
         assert len(s010_findings) == 1
@@ -171,7 +181,14 @@ class TestSchemaAnalyzer:
                 sortableAttributes=["price", "created_at"],
                 stopWords=["the", "a", "an", "is", "are"],
                 distinctAttribute="id",
-                rankingRules=["words", "typo", "proximity", "attribute", "sort:price:desc", "exactness"],
+                rankingRules=[
+                    "words",
+                    "typo",
+                    "proximity",
+                    "attribute",
+                    "sort:price:desc",
+                    "exactness",
+                ],
             ),
             stats=IndexStats(
                 numberOfDocuments=5000,
@@ -187,9 +204,9 @@ class TestSchemaAnalyzer:
                 },
             ),
         )
-        
+
         findings = analyzer.analyze(index)
-        
+
         # Should not have S001 (wildcard), S004 (empty filterable), S006 (stop words), S008 (distinct)
         finding_ids = {f.id for f in findings}
         assert "MEILI-S001" not in finding_ids
@@ -200,7 +217,7 @@ class TestSchemaAnalyzer:
     def test_finding_has_fix(self, analyzer, basic_index):
         """Test that critical findings have fix suggestions."""
         findings = analyzer.analyze(basic_index)
-        
+
         s001 = next((f for f in findings if f.id == "MEILI-S001"), None)
         assert s001 is not None
         assert s001.fix is not None
@@ -227,10 +244,10 @@ class TestSchemaAnalyzer:
                 {"price": 20.50, "quantity": 10},
             ],
         )
-        
+
         assert analyzer._is_likely_numeric_only("price", index) is True
         assert analyzer._is_likely_numeric_only("quantity", index) is True
-        
+
         # Test pattern-based detection
         empty_index = IndexData(uid="test")
         assert analyzer._is_likely_numeric_only("price", empty_index) is True

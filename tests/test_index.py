@@ -2,14 +2,11 @@
 
 from datetime import datetime
 
-import pytest
 
-from meilisearch_analyzer.models.index import (
-    FacetingSettings,
+from meiliscan.models.index import (
     IndexData,
     IndexSettings,
     IndexStats,
-    PaginationSettings,
     TypoToleranceSettings,
 )
 
@@ -46,7 +43,12 @@ class TestIndexSettings:
         assert settings.filterable_attributes == []
         assert settings.sortable_attributes == []
         assert settings.ranking_rules == [
-            "words", "typo", "proximity", "attribute", "sort", "exactness"
+            "words",
+            "typo",
+            "proximity",
+            "attribute",
+            "sort",
+            "exactness",
         ]
         assert settings.stop_words == []
         assert settings.synonyms == {}
@@ -74,13 +76,13 @@ class TestIndexSettings:
             "distinctAttribute": "id",
             "typoTolerance": {
                 "enabled": True,
-                "minWordSizeForTypos": {"oneTypo": 4, "twoTypos": 8}
+                "minWordSizeForTypos": {"oneTypo": 4, "twoTypos": 8},
             },
             "faceting": {"maxValuesPerFacet": 200},
             "pagination": {"maxTotalHits": 5000},
             "proximityPrecision": "byAttribute",
         }
-        
+
         settings = IndexSettings(**api_response)
         assert settings.searchable_attributes == ["title", "body"]
         assert settings.filterable_attributes == ["category", "price"]
@@ -109,7 +111,7 @@ class TestIndexStats:
                 "description": 980,
             },
         }
-        
+
         stats = IndexStats(**api_response)
         assert stats.number_of_documents == 1000
         assert stats.is_indexing is False
@@ -139,14 +141,14 @@ class TestIndexData:
             numberOfDocuments=500,
             fieldDistribution={"id": 500, "title": 500, "category": 450},
         )
-        
+
         index = IndexData(
             uid="products",
             primaryKey="id",
             settings=settings,
             stats=stats,
         )
-        
+
         assert index.document_count == 500
         assert index.field_count == 3
 
@@ -174,9 +176,7 @@ class TestIndexData:
         """Test field_count property."""
         index = IndexData(
             uid="test",
-            stats=IndexStats(
-                fieldDistribution={"a": 10, "b": 10, "c": 10}
-            ),
+            stats=IndexStats(fieldDistribution={"a": 10, "b": 10, "c": 10}),
         )
         assert index.field_count == 3
 

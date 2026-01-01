@@ -2,9 +2,8 @@
 
 from datetime import datetime
 
-import pytest
 
-from meilisearch_analyzer.models.finding import (
+from meiliscan.models.finding import (
     Finding,
     FindingCategory,
     FindingFix,

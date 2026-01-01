@@ -1,4 +1,4 @@
-# MeiliSearch Analyzer Tool - Technical Specification
+# Meiliscan Tool - Technical Specification
 
 ## Implementation Status
 
@@ -20,7 +20,7 @@
 
 ## Executive Summary
 
-This document outlines the design for **MeiliSearch Analyzer** - a comprehensive
+This document outlines the design for **Meiliscan** - a comprehensive
 tool for analyzing MeiliSearch instances and dumps to identify optimization
 opportunities, potential pitfalls, and provide actionable recommendations. The
 tool supports both live instance connections and offline dump analysis, with
@@ -33,7 +33,7 @@ results exportable in formats suitable for coding agents.
 ### Primary Language: **Python**
 
 **Rationale:**
-- **Easy distribution**: Runs via `uvx meilisearch-analyzer` (using uv/uvx) or Docker
+- **Easy distribution**: Runs via `uvx meiliscan` (using uv/uvx) or Docker
 - **Rich ecosystem**: Excellent libraries for HTTP APIs, data analysis, and web frameworks
 - **MeiliSearch SDK**: Official `meilisearch` Python SDK available
 - **Data analysis**: pandas, numpy for statistical analysis
@@ -43,7 +43,7 @@ results exportable in formats suitable for coding agents.
 
 ```toml
 [project]
-name = "meilisearch-analyzer"
+name = "meiliscan"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
@@ -61,7 +61,7 @@ dependencies = [
 ]
 
 [project.scripts]
-meilisearch-analyzer = "meilisearch_analyzer.cli:app"
+meiliscan = "meiliscan.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -72,19 +72,19 @@ build-backend = "hatchling.build"
 
 1. **uvx (Recommended)**
    ```bash
-   uvx meilisearch-analyzer --url http://localhost:7700 --api-key xxx
-   uvx meilisearch-analyzer --dump ./dump-20240101.dump
+   uvx meiliscan --url http://localhost:7700 --api-key xxx
+   uvx meiliscan --dump ./dump-20240101.dump
    ```
 
 2. **Docker**
    ```bash
-   docker run -p 8080:8080 meilisearch-analyzer \
+   docker run -p 8080:8080 meiliscan \
      --url http://host.docker.internal:7700
    ```
 
 3. **pip/pipx**
    ```bash
-   pipx install meilisearch-analyzer
+   pipx install meiliscan
    ```
 
 ---
@@ -214,7 +214,7 @@ The primary export format is structured JSON, designed for consumption by coding
 
 ```json
 {
-  "$schema": "https://meilisearch-analyzer.dev/schema/v1.json",
+  "$schema": "https://meiliscan.dev/schema/v1.json",
   "version": "1.0.0",
   "generated_at": "2025-01-15T10:30:00Z",
   "source": {
@@ -329,24 +329,24 @@ The primary export format is structured JSON, designed for consumption by coding
 
 #### A. JSON (Primary - for coding agents)
 ```bash
-meilisearch-analyzer analyze --output analysis.json
+meiliscan analyze --output analysis.json
 ```
 
 #### B. Markdown Report
 ```bash
-meilisearch-analyzer analyze --format markdown --output report.md
+meiliscan analyze --format markdown --output report.md
 ```
 
 #### C. SARIF (Static Analysis Results Interchange Format)
 For integration with code review tools:
 ```bash
-meilisearch-analyzer analyze --format sarif --output results.sarif
+meiliscan analyze --format sarif --output results.sarif
 ```
 
 #### D. Claude/AI Agent Format
 Structured prompt-ready format:
 ```bash
-meilisearch-analyzer analyze --format agent --output agent-context.md
+meiliscan analyze --format agent --output agent-context.md
 ```
 
 Example agent format output:
@@ -386,7 +386,7 @@ curl -X PATCH 'http://localhost:7700/indexes/products/settings' \
 > The `static/` directory was not created; CSS is embedded in templates.
 
 ```
-meilisearch_analyzer/
+meiliscan/
 ├── __init__.py
 ├── cli.py                      # Typer CLI application
 ├── core/
@@ -436,32 +436,32 @@ meilisearch_analyzer/
 
 ```bash
 # Analyze live instance
-meilisearch-analyzer analyze \
+meiliscan analyze \
   --url http://localhost:7700 \
   --api-key "your-master-key" \
   --output analysis.json
 
 # Analyze dump file
-meilisearch-analyzer analyze \
+meiliscan analyze \
   --dump ./dumps/20250115-dump.dump \
   --output analysis.json
 
 # Start web dashboard
-meilisearch-analyzer serve \
+meiliscan serve \
   --url http://localhost:7700 \
   --port 8080
 
 # Upload dump to web interface
-meilisearch-analyzer serve \
+meiliscan serve \
   --upload-enabled \
   --port 8080
 
 # Quick summary (stdout)
-meilisearch-analyzer summary \
+meiliscan summary \
   --url http://localhost:7700
 
 # Generate fix script
-meilisearch-analyzer fix-script \
+meiliscan fix-script \
   --input analysis.json \
   --output apply-fixes.sh
 ```
@@ -593,7 +593,7 @@ The web UI provides an interactive exploration experience:
 ### Example 1: Quick Health Check
 
 ```bash
-$ uvx meilisearch-analyzer summary --url http://localhost:7700
+$ uvx meiliscan summary --url http://localhost:7700
 
 ╭─────────────────────────────────────────────────────────────────╮
 │                    MeiliSearch Health Summary                   │
@@ -615,7 +615,7 @@ $ uvx meilisearch-analyzer summary --url http://localhost:7700
 ### Example 2: Full Analysis with Export
 
 ```bash
-$ uvx meilisearch-analyzer analyze \
+$ uvx meiliscan analyze \
     --url http://localhost:7700 \
     --api-key "your-key" \
     --output analysis.json \
@@ -641,11 +641,11 @@ Report saved to: analysis.json
 ### Example 3: Web Dashboard
 
 ```bash
-$ uvx meilisearch-analyzer serve \
+$ uvx meiliscan serve \
     --url http://localhost:7700 \
     --port 8080
 
-Starting MeiliSearch Analyzer Dashboard...
+Starting Meiliscan Dashboard...
 Dashboard available at: http://localhost:8080
 
 Press Ctrl+C to stop

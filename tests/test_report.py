@@ -3,9 +3,9 @@
 import pytest
 from datetime import datetime
 
-from meilisearch_analyzer.models.finding import Finding, FindingCategory, FindingSeverity
-from meilisearch_analyzer.models.index import IndexData, IndexSettings, IndexStats
-from meilisearch_analyzer.models.report import (
+from meiliscan.models.finding import Finding, FindingCategory, FindingSeverity
+from meiliscan.models.index import IndexData, IndexSettings, IndexStats
+from meiliscan.models.report import (
     ActionPlan,
     AnalysisReport,
     AnalysisSummary,
@@ -98,9 +98,9 @@ class TestAnalysisReport:
                 fieldDistribution={"id": 1000, "title": 1000},
             ),
         )
-        
+
         sample_report.add_index(index)
-        
+
         assert "products" in sample_report.indexes
         assert sample_report.indexes["products"].metadata["document_count"] == 1000
         assert sample_report.indexes["products"].metadata["primary_key"] == "id"
@@ -110,7 +110,7 @@ class TestAnalysisReport:
         # First add the index
         index = IndexData(uid="products")
         sample_report.add_index(index)
-        
+
         # Then add a finding for that index
         finding = Finding(
             id="MEILI-S001",
@@ -121,9 +121,9 @@ class TestAnalysisReport:
             impact="Test impact",
             index_uid="products",
         )
-        
+
         sample_report.add_finding(finding)
-        
+
         assert len(sample_report.indexes["products"].findings) == 1
         assert sample_report.indexes["products"].findings[0].id == "MEILI-S001"
 
@@ -137,9 +137,9 @@ class TestAnalysisReport:
             description="Test description",
             impact="Test impact",
         )
-        
+
         sample_report.add_finding(finding)
-        
+
         assert len(sample_report.global_findings) == 1
         assert sample_report.global_findings[0].id == "MEILI-G001"
 
@@ -152,7 +152,7 @@ class TestAnalysisReport:
                 stats=IndexStats(numberOfDocuments=500),
             )
             sample_report.add_index(index)
-        
+
         # Add findings
         findings = [
             Finding(
@@ -182,12 +182,12 @@ class TestAnalysisReport:
                 impact="Test",
             ),
         ]
-        
+
         for finding in findings:
             sample_report.add_finding(finding)
-        
+
         sample_report.calculate_summary()
-        
+
         assert sample_report.summary.total_indexes == 2
         assert sample_report.summary.total_documents == 1000
         assert sample_report.summary.critical_issues == 1
@@ -198,28 +198,32 @@ class TestAnalysisReport:
         """Test getting all findings."""
         index = IndexData(uid="test")
         sample_report.add_index(index)
-        
+
         # Add index finding
-        sample_report.add_finding(Finding(
-            id="F1",
-            category=FindingCategory.SCHEMA,
-            severity=FindingSeverity.WARNING,
-            title="Index finding",
-            description="Test",
-            impact="Test",
-            index_uid="test",
-        ))
-        
+        sample_report.add_finding(
+            Finding(
+                id="F1",
+                category=FindingCategory.SCHEMA,
+                severity=FindingSeverity.WARNING,
+                title="Index finding",
+                description="Test",
+                impact="Test",
+                index_uid="test",
+            )
+        )
+
         # Add global finding
-        sample_report.add_finding(Finding(
-            id="F2",
-            category=FindingCategory.PERFORMANCE,
-            severity=FindingSeverity.INFO,
-            title="Global finding",
-            description="Test",
-            impact="Test",
-        ))
-        
+        sample_report.add_finding(
+            Finding(
+                id="F2",
+                category=FindingCategory.PERFORMANCE,
+                severity=FindingSeverity.INFO,
+                title="Global finding",
+                description="Test",
+                impact="Test",
+            )
+        )
+
         all_findings = sample_report.get_all_findings()
         assert len(all_findings) == 2
         assert {f.id for f in all_findings} == {"F1", "F2"}
@@ -228,40 +232,44 @@ class TestAnalysisReport:
         """Test getting a finding by its ID."""
         index = IndexData(uid="test")
         sample_report.add_index(index)
-        
+
         # Add index finding
-        sample_report.add_finding(Finding(
-            id="MEILI-S001",
-            category=FindingCategory.SCHEMA,
-            severity=FindingSeverity.CRITICAL,
-            title="Wildcard searchableAttributes",
-            description="Test description",
-            impact="Test impact",
-            index_uid="test",
-            references=["https://www.meilisearch.com/docs/test"],
-        ))
-        
+        sample_report.add_finding(
+            Finding(
+                id="MEILI-S001",
+                category=FindingCategory.SCHEMA,
+                severity=FindingSeverity.CRITICAL,
+                title="Wildcard searchableAttributes",
+                description="Test description",
+                impact="Test impact",
+                index_uid="test",
+                references=["https://www.meilisearch.com/docs/test"],
+            )
+        )
+
         # Add global finding
-        sample_report.add_finding(Finding(
-            id="MEILI-P001",
-            category=FindingCategory.PERFORMANCE,
-            severity=FindingSeverity.WARNING,
-            title="Global performance issue",
-            description="Test description",
-            impact="Test impact",
-        ))
-        
+        sample_report.add_finding(
+            Finding(
+                id="MEILI-P001",
+                category=FindingCategory.PERFORMANCE,
+                severity=FindingSeverity.WARNING,
+                title="Global performance issue",
+                description="Test description",
+                impact="Test impact",
+            )
+        )
+
         # Test finding index finding
         finding = sample_report.get_finding_by_id("MEILI-S001")
         assert finding is not None
         assert finding.title == "Wildcard searchableAttributes"
         assert finding.index_uid == "test"
-        
+
         # Test finding global finding
         finding = sample_report.get_finding_by_id("MEILI-P001")
         assert finding is not None
         assert finding.title == "Global performance issue"
-        
+
         # Test finding non-existent ID
         finding = sample_report.get_finding_by_id("MEILI-X999")
         assert finding is None
@@ -269,7 +277,7 @@ class TestAnalysisReport:
     def test_to_dict(self, sample_report):
         """Test converting report to dictionary."""
         data = sample_report.to_dict()
-        
+
         assert "source" in data
         assert "summary" in data
         assert "indexes" in data
@@ -329,13 +337,13 @@ class TestIndexAnalysisSampleDocuments:
                 url="http://localhost:7700",
             ),
         )
-        
+
         sample_docs = [
             {"id": "prod_1", "title": "Product 1", "price": 19.99},
             {"id": "prod_2", "title": "Product 2", "price": 29.99},
             {"id": "prod_3", "title": "Product 3", "price": 39.99},
         ]
-        
+
         index = IndexData(
             uid="products",
             primaryKey="id",
@@ -343,9 +351,9 @@ class TestIndexAnalysisSampleDocuments:
             stats=IndexStats(numberOfDocuments=1000),
             sample_documents=sample_docs,
         )
-        
+
         report.add_index(index)
-        
+
         assert "products" in report.indexes
         assert len(report.indexes["products"].sample_documents) == 3
         assert report.indexes["products"].sample_documents[0]["id"] == "prod_1"
@@ -356,15 +364,15 @@ class TestIndexAnalysisSampleDocuments:
         report = AnalysisReport(
             source=SourceInfo(type="instance", url="http://localhost:7700"),
         )
-        
+
         index = IndexData(
             uid="test",
             sample_documents=[{"id": "1", "name": "Test"}],
         )
         report.add_index(index)
-        
+
         data = report.to_dict()
-        
+
         assert "sample_documents" in data["indexes"]["test"]
         assert len(data["indexes"]["test"]["sample_documents"]) == 1
         assert data["indexes"]["test"]["sample_documents"][0]["name"] == "Test"
@@ -373,15 +381,15 @@ class TestIndexAnalysisSampleDocuments:
         """Test pagination of sample documents."""
         sample_docs = [{"id": str(i), "value": i} for i in range(20)]
         analysis = IndexAnalysis(sample_documents=sample_docs)
-        
+
         # Simulate pagination
         page_size = 5
         page = 2
         start = (page - 1) * page_size
         end = start + page_size
-        
+
         paginated = analysis.sample_documents[start:end]
-        
+
         assert len(paginated) == 5
         assert paginated[0]["id"] == "5"  # Second page starts at index 5
         assert paginated[4]["id"] == "9"

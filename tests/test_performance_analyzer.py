@@ -2,9 +2,9 @@
 
 import pytest
 
-from meilisearch_analyzer.analyzers.performance_analyzer import PerformanceAnalyzer
-from meilisearch_analyzer.models.finding import FindingCategory, FindingSeverity
-from meilisearch_analyzer.models.index import IndexData, IndexSettings, IndexStats
+from meiliscan.analyzers.performance_analyzer import PerformanceAnalyzer
+from meiliscan.models.finding import FindingCategory, FindingSeverity
+from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 
 
 class TestPerformanceAnalyzer:
@@ -66,7 +66,8 @@ class TestPerformanceAnalyzer:
         """Test detection of high task failure rate (P001)."""
         # Create tasks with >10% failure rate
         tasks = [
-            {"status": "succeeded", "type": "documentAdditionOrUpdate"} for _ in range(80)
+            {"status": "succeeded", "type": "documentAdditionOrUpdate"}
+            for _ in range(80)
         ] + [
             {"status": "failed", "type": "documentAdditionOrUpdate"} for _ in range(20)
         ]
@@ -80,10 +81,9 @@ class TestPerformanceAnalyzer:
     def test_no_p001_with_low_failure_rate(self, analyzer):
         """Test no P001 finding with low failure rate."""
         tasks = [
-            {"status": "succeeded", "type": "documentAdditionOrUpdate"} for _ in range(95)
-        ] + [
-            {"status": "failed", "type": "documentAdditionOrUpdate"} for _ in range(5)
-        ]
+            {"status": "succeeded", "type": "documentAdditionOrUpdate"}
+            for _ in range(95)
+        ] + [{"status": "failed", "type": "documentAdditionOrUpdate"} for _ in range(5)]
 
         findings = analyzer.analyze_global([], {}, tasks)
         p001_findings = [f for f in findings if f.id == "MEILI-P001"]
@@ -92,7 +92,8 @@ class TestPerformanceAnalyzer:
     def test_no_p001_with_few_tasks(self, analyzer):
         """Test no P001 finding with <10 tasks."""
         tasks = [
-            {"status": "succeeded", "type": "documentAdditionOrUpdate"} for _ in range(5)
+            {"status": "succeeded", "type": "documentAdditionOrUpdate"}
+            for _ in range(5)
         ]
 
         findings = analyzer.analyze_global([], {}, tasks)
@@ -156,10 +157,7 @@ class TestPerformanceAnalyzer:
 
     def test_no_p002_without_indexing_tasks(self, analyzer):
         """Test no P002 finding without indexing tasks."""
-        tasks = [
-            {"status": "succeeded", "type": "settingsUpdate"}
-            for _ in range(10)
-        ]
+        tasks = [{"status": "succeeded", "type": "settingsUpdate"} for _ in range(10)]
 
         findings = analyzer.analyze_global([], {}, tasks)
         p002_findings = [f for f in findings if f.id == "MEILI-P002"]
@@ -286,7 +284,8 @@ class TestPerformanceAnalyzer:
         tasks = [
             {"status": "failed", "type": "documentAdditionOrUpdate"} for _ in range(30)
         ] + [
-            {"status": "succeeded", "type": "documentAdditionOrUpdate"} for _ in range(70)
+            {"status": "succeeded", "type": "documentAdditionOrUpdate"}
+            for _ in range(70)
         ]  # P001
 
         findings = analyzer.analyze_global(indexes, global_stats, tasks)

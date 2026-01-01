@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+
 """Generate mock MeiliSearch dump files or seed a live instance with test data.
 
 This script creates realistic test data with intentional issues that the
-MeiliSearch Analyzer can detect, making it useful for development and testing.
+Meiliscan can detect, making it useful for development and testing.
 
 Usage:
     # Create a mock dump file
@@ -44,7 +45,16 @@ PRODUCT_NAMES = [
 PRODUCT_CATEGORIES = ["Electronics", "Office", "Gaming", "Audio", "Accessories"]
 PRODUCT_BRANDS = ["TechPro", "HomeMax", "GamerX", "SoundWave", "OfficePlus"]
 
-USER_FIRST_NAMES = ["Alice", "Bob", "Charlie", "Diana", "Eve", "Frank", "Grace", "Henry"]
+USER_FIRST_NAMES = [
+    "Alice",
+    "Bob",
+    "Charlie",
+    "Diana",
+    "Eve",
+    "Frank",
+    "Grace",
+    "Henry",
+]
 USER_LAST_NAMES = ["Smith", "Johnson", "Williams", "Brown", "Jones", "Garcia", "Miller"]
 
 ARTICLE_TITLES = [
@@ -74,7 +84,7 @@ def generate_products(count: int = 500) -> list[dict]:
     for i in range(count):
         product = {
             "id": i + 1,
-            "product_id": f"PROD-{i+1:05d}",  # ID field that shouldn't be searchable
+            "product_id": f"PROD-{i + 1:05d}",  # ID field that shouldn't be searchable
             "sku": f"SKU{random.randint(10000, 99999)}",
             "name": random.choice(PRODUCT_NAMES),
             "description": f"High-quality {random.choice(PRODUCT_NAMES).lower()} for everyday use.",
@@ -84,7 +94,9 @@ def generate_products(count: int = 500) -> list[dict]:
             "stock": random.randint(0, 1000),
             "rating": round(random.uniform(1.0, 5.0), 1),
             "reviews_count": random.randint(0, 500),
-            "created_at": (datetime.now() - timedelta(days=random.randint(1, 365))).isoformat(),
+            "created_at": (
+                datetime.now() - timedelta(days=random.randint(1, 365))
+            ).isoformat(),
         }
 
         # Add some inconsistencies (D002 - inconsistent schema)
@@ -123,13 +135,15 @@ def generate_users(count: int = 200) -> list[dict]:
     for i in range(count):
         user = {
             "id": i + 1,
-            "user_id": f"USR-{i+1:06d}",
-            "email": f"user{i+1}@example.com",
+            "user_id": f"USR-{i + 1:06d}",
+            "email": f"user{i + 1}@example.com",
             "first_name": random.choice(USER_FIRST_NAMES),
             "last_name": random.choice(USER_LAST_NAMES),
             "age": random.randint(18, 80),
             "country": random.choice(["US", "UK", "DE", "FR", "JP", "AU"]),
-            "signup_date": (datetime.now() - timedelta(days=random.randint(1, 1000))).isoformat(),
+            "signup_date": (
+                datetime.now() - timedelta(days=random.randint(1, 1000))
+            ).isoformat(),
             "is_active": random.choice([True, False]),
             "orders_count": random.randint(0, 100),
         }
@@ -149,11 +163,13 @@ def generate_articles(count: int = 100) -> list[dict]:
 
         article = {
             "id": i + 1,
-            "article_id": f"ART-{i+1:04d}",
+            "article_id": f"ART-{i + 1:04d}",
             "title": random.choice(ARTICLE_TITLES),
             "content": content,
             "author": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
-            "published_at": (datetime.now() - timedelta(days=random.randint(1, 500))).isoformat(),
+            "published_at": (
+                datetime.now() - timedelta(days=random.randint(1, 500))
+            ).isoformat(),
             "views": random.randint(0, 10000),
             "likes": random.randint(0, 500),
         }
@@ -173,12 +189,19 @@ def generate_orders(count: int = 1000) -> list[dict]:
     for i in range(count):
         order = {
             "id": i + 1,
-            "order_id": f"ORD-{i+1:08d}",
+            "order_id": f"ORD-{i + 1:08d}",
             "user_id": f"USR-{random.randint(1, 200):06d}",
-            "product_ids": [f"PROD-{random.randint(1, 500):05d}" for _ in range(random.randint(1, 5))],
+            "product_ids": [
+                f"PROD-{random.randint(1, 500):05d}"
+                for _ in range(random.randint(1, 5))
+            ],
             "total": round(random.uniform(10.0, 2000.0), 2),
-            "status": random.choice(["pending", "processing", "shipped", "delivered", "cancelled"]),
-            "created_at": (datetime.now() - timedelta(days=random.randint(1, 365))).isoformat(),
+            "status": random.choice(
+                ["pending", "processing", "shipped", "delivered", "cancelled"]
+            ),
+            "created_at": (
+                datetime.now() - timedelta(days=random.randint(1, 365))
+            ).isoformat(),
         }
         orders.append(order)
 
@@ -197,7 +220,14 @@ INDEX_CONFIGS = {
             "sortableAttributes": ["price", "rating", "created_at"],
             "displayedAttributes": ["*"],
             # S007: Default ranking rules (Info)
-            "rankingRules": ["words", "typo", "proximity", "attribute", "sort", "exactness"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
             # S006: No stop words (Suggestion)
             "stopWords": [],
             "synonyms": {},
@@ -211,13 +241,26 @@ INDEX_CONFIGS = {
         "primaryKey": "id",
         "settings": {
             # S002: ID fields in searchableAttributes (Warning)
-            "searchableAttributes": ["user_id", "email", "first_name", "last_name", "country"],
+            "searchableAttributes": [
+                "user_id",
+                "email",
+                "first_name",
+                "last_name",
+                "country",
+            ],
             # S003: Numeric fields in searchableAttributes (Suggestion)
             # age is numeric but searchable
             "filterableAttributes": ["country", "is_active", "age"],
             "sortableAttributes": ["signup_date", "orders_count"],
             "displayedAttributes": ["*"],
-            "rankingRules": ["words", "typo", "proximity", "attribute", "sort", "exactness"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
             "stopWords": [],
             "synonyms": {},
             "distinctAttribute": None,
@@ -232,7 +275,14 @@ INDEX_CONFIGS = {
             "filterableAttributes": ["author"],
             "sortableAttributes": ["published_at", "views", "likes"],
             "displayedAttributes": ["*"],
-            "rankingRules": ["words", "typo", "proximity", "attribute", "sort", "exactness"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
             # Some stop words configured
             "stopWords": ["the", "a", "an"],
             "synonyms": {"article": ["post", "blog"]},
@@ -251,7 +301,14 @@ INDEX_CONFIGS = {
             "filterableAttributes": ["status", "user_id", "created_at"],
             "sortableAttributes": ["total", "created_at"],
             "displayedAttributes": ["id", "order_id", "total", "status", "created_at"],
-            "rankingRules": ["words", "typo", "proximity", "attribute", "sort", "exactness"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
             "stopWords": [],
             "synonyms": {},
             "distinctAttribute": None,
@@ -264,7 +321,7 @@ INDEX_CONFIGS = {
 }
 
 
-def create_dump_file(output_path: str) -> None:
+def create_dump_file(output_path: str | Path) -> None:
     """Create a mock MeiliSearch dump file."""
     output_path = Path(output_path)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -297,41 +354,61 @@ def create_dump_file(output_path: str) -> None:
 
         for index_uid in INDEX_CONFIGS:
             # Document addition task (earlier)
-            tasks.append({
-                "uid": task_id,
-                "indexUid": index_uid,
-                "status": "succeeded",
-                "type": "documentAdditionOrUpdate",
-                "enqueuedAt": (base_time + timedelta(minutes=task_id)).isoformat(),
-                "startedAt": (base_time + timedelta(minutes=task_id, seconds=1)).isoformat(),
-                "finishedAt": (base_time + timedelta(minutes=task_id, seconds=5)).isoformat(),
-            })
+            tasks.append(
+                {
+                    "uid": task_id,
+                    "indexUid": index_uid,
+                    "status": "succeeded",
+                    "type": "documentAdditionOrUpdate",
+                    "enqueuedAt": (base_time + timedelta(minutes=task_id)).isoformat(),
+                    "startedAt": (
+                        base_time + timedelta(minutes=task_id, seconds=1)
+                    ).isoformat(),
+                    "finishedAt": (
+                        base_time + timedelta(minutes=task_id, seconds=5)
+                    ).isoformat(),
+                }
+            )
             task_id += 1
 
             # Settings update task (later) - triggers B001
-            tasks.append({
-                "uid": task_id,
-                "indexUid": index_uid,
-                "status": "succeeded",
-                "type": "settingsUpdate",
-                "enqueuedAt": (base_time + timedelta(minutes=task_id + 10)).isoformat(),
-                "startedAt": (base_time + timedelta(minutes=task_id + 10, seconds=1)).isoformat(),
-                "finishedAt": (base_time + timedelta(minutes=task_id + 10, seconds=2)).isoformat(),
-            })
+            tasks.append(
+                {
+                    "uid": task_id,
+                    "indexUid": index_uid,
+                    "status": "succeeded",
+                    "type": "settingsUpdate",
+                    "enqueuedAt": (
+                        base_time + timedelta(minutes=task_id + 10)
+                    ).isoformat(),
+                    "startedAt": (
+                        base_time + timedelta(minutes=task_id + 10, seconds=1)
+                    ).isoformat(),
+                    "finishedAt": (
+                        base_time + timedelta(minutes=task_id + 10, seconds=2)
+                    ).isoformat(),
+                }
+            )
             task_id += 1
 
         # Add some failed tasks (for P001 detection)
         for i in range(5):
-            tasks.append({
-                "uid": task_id,
-                "indexUid": "products",
-                "status": "failed",
-                "type": "documentAdditionOrUpdate",
-                "error": {"message": "Simulated error", "code": "internal"},
-                "enqueuedAt": (base_time + timedelta(minutes=task_id)).isoformat(),
-                "startedAt": (base_time + timedelta(minutes=task_id, seconds=1)).isoformat(),
-                "finishedAt": (base_time + timedelta(minutes=task_id, seconds=2)).isoformat(),
-            })
+            tasks.append(
+                {
+                    "uid": task_id,
+                    "indexUid": "products",
+                    "status": "failed",
+                    "type": "documentAdditionOrUpdate",
+                    "error": {"message": "Simulated error", "code": "internal"},
+                    "enqueuedAt": (base_time + timedelta(minutes=task_id)).isoformat(),
+                    "startedAt": (
+                        base_time + timedelta(minutes=task_id, seconds=1)
+                    ).isoformat(),
+                    "finishedAt": (
+                        base_time + timedelta(minutes=task_id, seconds=2)
+                    ).isoformat(),
+                }
+            )
             task_id += 1
 
         (tasks_dir / "queue.json").write_text(json.dumps(tasks, indent=2))
@@ -351,10 +428,14 @@ def create_dump_file(output_path: str) -> None:
                 "createdAt": (datetime.now() - timedelta(days=30)).isoformat(),
                 "updatedAt": datetime.now().isoformat(),
             }
-            (index_dir / "metadata.json").write_text(json.dumps(index_metadata, indent=2))
+            (index_dir / "metadata.json").write_text(
+                json.dumps(index_metadata, indent=2)
+            )
 
             # Settings
-            (index_dir / "settings.json").write_text(json.dumps(config["settings"], indent=2))
+            (index_dir / "settings.json").write_text(
+                json.dumps(config["settings"], indent=2)
+            )
 
             # Documents (JSONL format)
             docs = config["documents"](config["doc_count"])
@@ -369,7 +450,7 @@ def create_dump_file(output_path: str) -> None:
             tar.add(dump_dir, arcname=dump_name)
 
     print(f"\nDump file created: {output_path}")
-    print(f"  Total size: {output_path.stat().st_size / 1024:.1f} KB")
+    print(f"  Total size: {Path(output_path).stat().st_size / 1024:.1f} KB")
 
 
 def seed_instance(url: str, api_key: str | None = None) -> None:
@@ -411,10 +492,13 @@ def seed_instance(url: str, api_key: str | None = None) -> None:
         print(f"\n  Processing '{index_uid}'...")
 
         # Create/update index
-        response = client.post("/indexes", json={
-            "uid": index_uid,
-            "primaryKey": config["primaryKey"],
-        })
+        response = client.post(
+            "/indexes",
+            json={
+                "uid": index_uid,
+                "primaryKey": config["primaryKey"],
+            },
+        )
 
         if response.status_code not in [200, 201, 202]:
             # Index might already exist, try to get it
@@ -446,16 +530,17 @@ def seed_instance(url: str, api_key: str | None = None) -> None:
         print(f"    Adding {len(docs)} documents...")
         _wait_for_task(client, response)
 
-        print(f"    Done!")
+        print("    Done!")
 
     print("\nSeeding complete!")
-    print(f"\nYou can now analyze with:")
-    print(f"  meilisearch-analyzer analyze --url {url}")
-    print(f"  meilisearch-analyzer serve --url {url}")
+    print("\nYou can now analyze with:")
+    print(f"  meiliscan analyze --url {url}")
+    print(f"  meiliscan serve --url {url}")
 
 
-def _wait_for_task(client: "httpx.Client", response: "httpx.Response") -> None:
+def _wait_for_task(client, response) -> None:
     """Wait for a MeiliSearch task to complete."""
+
     import time
 
     if response.status_code not in [200, 201, 202]:
@@ -475,7 +560,9 @@ def _wait_for_task(client: "httpx.Client", response: "httpx.Response") -> None:
         status = task.get("status")
         if status in ["succeeded", "failed", "canceled"]:
             if status == "failed":
-                print(f"    Task failed: {task.get('error', {}).get('message', 'Unknown error')}")
+                print(
+                    f"    Task failed: {task.get('error', {}).get('message', 'Unknown error')}"
+                )
             break
 
         time.sleep(0.5)
@@ -529,7 +616,8 @@ def main():
     # Dump command
     dump_parser = subparsers.add_parser("dump", help="Create a mock dump file")
     dump_parser.add_argument(
-        "--output", "-o",
+        "--output",
+        "-o",
         default="test-dump.dump",
         help="Output file path (default: test-dump.dump)",
     )
@@ -537,24 +625,30 @@ def main():
     # Seed command
     seed_parser = subparsers.add_parser("seed", help="Seed a live MeiliSearch instance")
     seed_parser.add_argument(
-        "--url", "-u",
+        "--url",
+        "-u",
         required=True,
         help="MeiliSearch instance URL",
     )
     seed_parser.add_argument(
-        "--api-key", "-k",
+        "--api-key",
+        "-k",
         help="MeiliSearch API key",
     )
 
     # Clean command
-    clean_parser = subparsers.add_parser("clean", help="Delete all indexes from instance")
+    clean_parser = subparsers.add_parser(
+        "clean", help="Delete all indexes from instance"
+    )
     clean_parser.add_argument(
-        "--url", "-u",
+        "--url",
+        "-u",
         required=True,
         help="MeiliSearch instance URL",
     )
     clean_parser.add_argument(
-        "--api-key", "-k",
+        "--api-key",
+        "-k",
         help="MeiliSearch API key",
     )
 

@@ -1,5 +1,5 @@
 [project]
-name = "meilisearch-analyzer"
+name = "meiliscan"
 version = "0.1.0"
 description = "A comprehensive tool for analyzing MeiliSearch instances and dumps to identify optimization opportunities"
 readme = "README.md"
@@ -31,11 +31,11 @@ dev = [
     "respx>=0.21.0",
 ]
 all = [
-    "meilisearch-analyzer[web,analysis,dev]",
+    "meiliscan[web,analysis,dev]",
 ]
 
 [project.scripts]
-meilisearch-analyzer = "meilisearch_analyzer.cli:app"
+meiliscan = "meiliscan.cli:app"
 
 [build-system]
 requires = ["hatchling"]
@@ -47,7 +47,7 @@ testpaths = ["tests"]
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
-source = ["meilisearch_analyzer"]
+source = ["meiliscan"]
 branch = true
 
 [tool.coverage.report]
@@ -55,4 +55,9 @@ exclude_lines = [
     "pragma: no cover",
     "if TYPE_CHECKING:",
     "raise NotImplementedError",
+]
+
+[dependency-groups]
+dev = [
+    "ruff>=0.14.10",
 ]

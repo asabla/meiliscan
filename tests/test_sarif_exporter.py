@@ -7,20 +7,20 @@ from pathlib import Path
 
 import pytest
 
-from meilisearch_analyzer.exporters.sarif_exporter import (
+from meiliscan.exporters.sarif_exporter import (
     SARIF_SCHEMA,
     SARIF_VERSION,
     TOOL_NAME,
     TOOL_VERSION,
     SarifExporter,
 )
-from meilisearch_analyzer.models.finding import (
+from meiliscan.models.finding import (
     Finding,
     FindingCategory,
     FindingFix,
     FindingSeverity,
 )
-from meilisearch_analyzer.models.report import (
+from meiliscan.models.report import (
     AnalysisReport,
     AnalysisSummary,
     IndexAnalysis,
@@ -230,7 +230,9 @@ class TestSarifExporter:
 
         assert result_entry["level"] == "none"
 
-    def test_export_includes_logical_location(self, exporter, basic_report, finding_with_fix):
+    def test_export_includes_logical_location(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that findings include logical locations."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -243,7 +245,10 @@ class TestSarifExporter:
 
         assert "logicalLocations" in location
         assert location["logicalLocations"][0]["name"] == "products"
-        assert "indexes/products/settings" in location["logicalLocations"][0]["fullyQualifiedName"]
+        assert (
+            "indexes/products/settings"
+            in location["logicalLocations"][0]["fullyQualifiedName"]
+        )
 
     def test_export_global_finding_location(self, exporter, basic_report):
         """Test global findings have correct location."""
@@ -263,7 +268,9 @@ class TestSarifExporter:
         location = parsed["runs"][0]["results"][0]["locations"][0]
 
         assert location["logicalLocations"][0]["name"] == "global"
-        assert "instance/global" in location["logicalLocations"][0]["fullyQualifiedName"]
+        assert (
+            "instance/global" in location["logicalLocations"][0]["fullyQualifiedName"]
+        )
 
     def test_export_includes_fix(self, exporter, basic_report, finding_with_fix):
         """Test that fixes are included when enabled."""
@@ -278,7 +285,10 @@ class TestSarifExporter:
 
         assert "fixes" in result_entry
         assert len(result_entry["fixes"]) == 1
-        assert "PATCH /indexes/products/settings" in result_entry["fixes"][0]["description"]["text"]
+        assert (
+            "PATCH /indexes/products/settings"
+            in result_entry["fixes"][0]["description"]["text"]
+        )
 
     def test_export_without_fixes(self, exporter, basic_report, finding_with_fix):
         """Test export without fixes when disabled."""
@@ -294,7 +304,9 @@ class TestSarifExporter:
 
         assert "fixes" not in result_entry
 
-    def test_export_includes_current_value(self, exporter, basic_report, finding_with_fix):
+    def test_export_includes_current_value(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that current values are included in properties."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -308,7 +320,9 @@ class TestSarifExporter:
         assert "currentValue" in properties
         assert properties["currentValue"] == ["*"]
 
-    def test_export_includes_recommended_value(self, exporter, basic_report, finding_with_fix):
+    def test_export_includes_recommended_value(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that recommended values are included in properties."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},
@@ -400,11 +414,16 @@ class TestSarifExporter:
 
     def test_export_pascal_case_conversion(self, exporter):
         """Test PascalCase conversion for rule names."""
-        assert exporter._to_pascal_case("wildcard searchable attributes") == "WildcardSearchableAttributes"
+        assert (
+            exporter._to_pascal_case("wildcard searchable attributes")
+            == "WildcardSearchableAttributes"
+        )
         assert exporter._to_pascal_case("id-fields-in-search") == "IdFieldsInSearch"
         assert exporter._to_pascal_case("test_case_here") == "TestCaseHere"
 
-    def test_export_message_contains_description(self, exporter, basic_report, finding_with_fix):
+    def test_export_message_contains_description(
+        self, exporter, basic_report, finding_with_fix
+    ):
         """Test that result message contains finding description."""
         basic_report.indexes["products"] = IndexAnalysis(
             metadata={"primary_key": "id", "document_count": 1000},

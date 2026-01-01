@@ -1,0 +1,391 @@
+{% extends "base.html" %}
+
+{% block title %}Compare Reports - Meiliscan{% endblock %}
+
+{% block content %}
+<div class="card mb-2">
+    <div class="card-header">
+        <h2 class="card-title">Compare Analysis Reports</h2>
+    </div>
+    
+    <p class="text-secondary mb-2">
+        Upload two JSON analysis reports to compare them and see how your MeiliSearch configuration has changed over time.
+    </p>
+    
+    {% if error %}
+    <div class="alert" style="background-color: rgba(239, 68, 68, 0.1); border: 1px solid var(--red); color: var(--red); margin-bottom: 1rem;">
+        {{ error }}
+    </div>
+    {% endif %}
+    
+    <form action="/compare" method="post" enctype="multipart/form-data">
+        <div class="grid grid-2">
+            <div class="form-group">
+                <label for="old_report">Baseline Report (older)</label>
+                <input type="file" name="old_report_file" id="old_report" accept=".json" required
+                    style="width: 100%; padding: 0.75rem;">
+                <small class="text-muted">The older report to use as baseline</small>
+            </div>
+            <div class="form-group">
+                <label for="new_report">Current Report (newer)</label>
+                <input type="file" name="new_report_file" id="new_report" accept=".json" required
+                    style="width: 100%; padding: 0.75rem;">
+                <small class="text-muted">The newer report to compare against baseline</small>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Compare Reports</button>
+    </form>
+</div>
+
+{% if comparison %}
+<!-- Overall Trend Banner -->
+<div class="card mb-2" style="border-left: 4px solid {% if comparison.summary.overall_trend.value == 'up' %}var(--green){% elif comparison.summary.overall_trend.value == 'down' %}var(--red){% else %}var(--blue){% endif %};">
+    <div class="flex items-center justify-between">
+        <div>
+            <h2 style="font-size: 1.5rem; margin-bottom: 0.5rem;">
+                {% if comparison.summary.overall_trend.value == 'up' %}
+                    Improving
+                {% elif comparison.summary.overall_trend.value == 'down' %}
+                    Degrading
+                {% else %}
+                    Stable
+                {% endif %}
+            </h2>
+            <p class="text-secondary">
+                Comparing reports from {{ comparison.summary.time_between }} apart
+            </p>
+        </div>
+        <div style="font-size: 4rem;">
+            {% if comparison.summary.overall_trend.value == 'up' %}
+                <span class="text-green">&#8593;</span>
+            {% elif comparison.summary.overall_trend.value == 'down' %}
+                <span class="text-red">&#8595;</span>
+            {% else %}
+                <span class="text-blue">&#8596;</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Health Score Comparison -->
+<div class="card mb-2">
+    <div class="card-header">
+        <h3 class="card-title">Health Score</h3>
+    </div>
+    <div class="grid grid-3">
+        <div class="stat">
+            <div class="stat-label">Before</div>
+            <div class="stat-value">{{ comparison.summary.health_score.old_value }}</div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">Change</div>
+            <div class="stat-value {% if comparison.summary.health_score.change > 0 %}text-green{% elif comparison.summary.health_score.change < 0 %}text-red{% else %}text-secondary{% endif %}">
+                {% if comparison.summary.health_score.change > 0 %}+{% endif %}{{ comparison.summary.health_score.change }}
+                {% if comparison.summary.health_score.change_percent is not none %}
+                    <small>({{ "%.1f"|format(comparison.summary.health_score.change_percent) }}%)</small>
+                {% endif %}
+            </div>
+        </div>
+        <div class="stat">
+            <div class="stat-label">After</div>
+            <div class="stat-value">{{ comparison.summary.health_score.new_value }}</div>
+        </div>
+    </div>
+    <div class="health-bar mt-2">
+        <div class="health-bar-fill {% if comparison.summary.health_score.new_value >= 80 %}good{% elif comparison.summary.health_score.new_value >= 50 %}warning{% else %}critical{% endif %}" 
+             style="width: {{ comparison.summary.health_score.new_value }}%"></div>
+    </div>
+</div>
+
+<!-- Metrics Overview -->
+<div class="grid grid-4 mb-2">
+    <div class="card">
+        <div class="stat">
+            <div class="stat-label">Total Indexes</div>
+            <div class="stat-value">
+                {{ comparison.summary.total_indexes.new_value }}
+                {% if comparison.summary.total_indexes.change != 0 %}
+                    <small class="{% if comparison.summary.total_indexes.change > 0 %}text-green{% else %}text-red{% endif %}">
+                        ({% if comparison.summary.total_indexes.change > 0 %}+{% endif %}{{ comparison.summary.total_indexes.change|int }})
+                    </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-label">Total Documents</div>
+            <div class="stat-value">
+                {{ comparison.summary.total_documents.new_value|format_number }}
+                {% if comparison.summary.total_documents.change != 0 %}
+                    <small class="{% if comparison.summary.total_documents.change > 0 %}text-green{% else %}text-red{% endif %}">
+                        ({% if comparison.summary.total_documents.change > 0 %}+{% endif %}{{ comparison.summary.total_documents.change|int|format_number }})
+                    </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-label">Critical Issues</div>
+            <div class="stat-value">
+                {{ comparison.summary.critical_issues.new_value|int }}
+                {% if comparison.summary.critical_issues.change != 0 %}
+                    <small class="{% if comparison.summary.critical_issues.change < 0 %}text-green{% else %}text-red{% endif %}">
+                        ({% if comparison.summary.critical_issues.change > 0 %}+{% endif %}{{ comparison.summary.critical_issues.change|int }})
+                    </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    <div class="card">
+        <div class="stat">
+            <div class="stat-label">Warnings</div>
+            <div class="stat-value">
+                {{ comparison.summary.warnings.new_value|int }}
+                {% if comparison.summary.warnings.change != 0 %}
+                    <small class="{% if comparison.summary.warnings.change < 0 %}text-green{% else %}text-red{% endif %}">
+                        ({% if comparison.summary.warnings.change > 0 %}+{% endif %}{{ comparison.summary.warnings.change|int }})
+                    </small>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Trend Areas -->
+<div class="grid grid-2 mb-2">
+    <!-- Improvements -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title text-green">Improvements</h3>
+        </div>
+        {% if comparison.summary.improvement_areas %}
+            <ul style="list-style: none; padding: 0;">
+                {% for area in comparison.summary.improvement_areas %}
+                <li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                    <span class="text-green" style="margin-right: 0.5rem;">&#10003;</span> {{ area }}
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No significant improvements detected</p>
+        {% endif %}
+    </div>
+    
+    <!-- Degradations -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title text-red">Degradations</h3>
+        </div>
+        {% if comparison.summary.degradation_areas %}
+            <ul style="list-style: none; padding: 0;">
+                {% for area in comparison.summary.degradation_areas %}
+                <li style="padding: 0.5rem 0; border-bottom: 1px solid var(--border);">
+                    <span class="text-red" style="margin-right: 0.5rem;">&#10007;</span> {{ area }}
+                </li>
+                {% endfor %}
+            </ul>
+        {% else %}
+            <p class="text-muted">No degradations detected</p>
+        {% endif %}
+    </div>
+</div>
+
+<!-- Index Changes -->
+{% if comparison.summary.indexes_added or comparison.summary.indexes_removed or comparison.summary.indexes_changed %}
+<div class="card mb-2">
+    <div class="card-header">
+        <h3 class="card-title">Index Changes</h3>
+    </div>
+    
+    {% if comparison.summary.indexes_added %}
+    <div class="mb-2">
+        <h4 class="text-green mb-1">New Indexes</h4>
+        <div class="flex flex-wrap gap-1">
+            {% for uid in comparison.summary.indexes_added %}
+            <span class="badge badge-green">+ {{ uid }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if comparison.summary.indexes_removed %}
+    <div class="mb-2">
+        <h4 class="text-red mb-1">Removed Indexes</h4>
+        <div class="flex flex-wrap gap-1">
+            {% for uid in comparison.summary.indexes_removed %}
+            <span class="badge badge-red">- {{ uid }}</span>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+    
+    {% if comparison.summary.indexes_changed %}
+    <div class="mb-2">
+        <h4 class="text-yellow mb-1">Changed Indexes</h4>
+        <table>
+            <thead>
+                <tr>
+                    <th>Index</th>
+                    <th>Status</th>
+                    <th>Documents</th>
+                    <th>Findings</th>
+                    <th>New Issues</th>
+                    <th>Resolved</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for uid in comparison.summary.indexes_changed %}
+                {% set idx = comparison.index_changes[uid] %}
+                <tr>
+                    <td><code>{{ uid }}</code></td>
+                    <td>
+                        {% if idx.change_type.value == 'improved' %}
+                            <span class="badge badge-green">Improved</span>
+                        {% elif idx.change_type.value == 'degraded' %}
+                            <span class="badge badge-red">Degraded</span>
+                        {% else %}
+                            <span class="badge badge-gray">Changed</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if idx.document_count %}
+                            {{ idx.document_count.new_value|int|format_number }}
+                            {% if idx.document_count.change != 0 %}
+                                <small class="{% if idx.document_count.change > 0 %}text-green{% else %}text-red{% endif %}">
+                                    ({% if idx.document_count.change > 0 %}+{% endif %}{{ idx.document_count.change|int|format_number }})
+                                </small>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if idx.finding_count %}
+                            {{ idx.finding_count.new_value|int }}
+                            {% if idx.finding_count.change != 0 %}
+                                <small class="{% if idx.finding_count.change < 0 %}text-green{% else %}text-red{% endif %}">
+                                    ({% if idx.finding_count.change > 0 %}+{% endif %}{{ idx.finding_count.change|int }})
+                                </small>
+                            {% endif %}
+                        {% else %}
+                            -
+                        {% endif %}
+                    </td>
+                    <td class="text-red">{{ idx.new_findings|length }}</td>
+                    <td class="text-green">{{ idx.resolved_findings|length }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- Finding Changes -->
+{% set new_findings = comparison.finding_changes|selectattr('change_type.value', 'equalto', 'added')|list %}
+{% set resolved_findings = comparison.finding_changes|selectattr('change_type.value', 'equalto', 'removed')|list %}
+
+{% if new_findings or resolved_findings %}
+<div class="grid grid-2 mb-2">
+    <!-- New Findings -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">New Findings ({{ new_findings|length }})</h3>
+        </div>
+        {% if new_findings %}
+            {% for fc in new_findings %}
+            <div class="finding finding-{{ fc.finding.severity.value|lower }}">
+                <div class="finding-header">
+                    <span class="finding-title">
+                        {{ fc.finding.severity.value|severity_icon }} {{ fc.finding.title }}
+                    </span>
+                    <span class="finding-id">{{ fc.finding.id }}</span>
+                </div>
+                <p class="finding-description">{{ fc.finding.description[:150] }}{% if fc.finding.description|length > 150 %}...{% endif %}</p>
+                {% if fc.finding.index_uid %}
+                <small class="text-muted">Index: {{ fc.finding.index_uid }}</small>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No new findings</p>
+        {% endif %}
+    </div>
+    
+    <!-- Resolved Findings -->
+    <div class="card">
+        <div class="card-header">
+            <h3 class="card-title">Resolved Findings ({{ resolved_findings|length }})</h3>
+        </div>
+        {% if resolved_findings %}
+            {% for fc in resolved_findings %}
+            <div class="finding" style="opacity: 0.7; border-color: var(--green);">
+                <div class="finding-header">
+                    <span class="finding-title">
+                        <span class="text-green" style="margin-right: 0.25rem;">&#10003;</span> {{ fc.finding.title }}
+                    </span>
+                    <span class="finding-id">{{ fc.finding.id }}</span>
+                </div>
+                <p class="finding-description">{{ fc.finding.description[:150] }}{% if fc.finding.description|length > 150 %}...{% endif %}</p>
+                {% if fc.finding.index_uid %}
+                <small class="text-muted">Index: {{ fc.finding.index_uid }}</small>
+                {% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+            <p class="text-muted">No findings were resolved</p>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Recommendations -->
+{% if comparison.recommendations %}
+<div class="card mb-2">
+    <div class="card-header">
+        <h3 class="card-title">Recommendations</h3>
+    </div>
+    <ul style="list-style: none; padding: 0;">
+        {% for rec in comparison.recommendations %}
+        <li style="padding: 0.75rem; border-bottom: 1px solid var(--border); display: flex; align-items: flex-start; gap: 0.75rem;">
+            <span class="text-blue" style="font-size: 1.25rem;">&#9679;</span>
+            <span>{{ rec }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %}
+
+<!-- Report Metadata -->
+<div class="card">
+    <div class="card-header">
+        <h3 class="card-title">Report Details</h3>
+    </div>
+    <div class="grid grid-2">
+        <div>
+            <h4 class="mb-1">Baseline Report</h4>
+            <table>
+                <tr><td class="text-secondary">Date</td><td>{{ comparison.summary.old_report_date }}</td></tr>
+                <tr><td class="text-secondary">Source Type</td><td>{{ comparison.old_source.get('type', 'unknown') }}</td></tr>
+                {% if comparison.old_source.get('url') %}
+                <tr><td class="text-secondary">URL</td><td>{{ comparison.old_source.url }}</td></tr>
+                {% endif %}
+            </table>
+        </div>
+        <div>
+            <h4 class="mb-1">Current Report</h4>
+            <table>
+                <tr><td class="text-secondary">Date</td><td>{{ comparison.summary.new_report_date }}</td></tr>
+                <tr><td class="text-secondary">Source Type</td><td>{{ comparison.new_source.get('type', 'unknown') }}</td></tr>
+                {% if comparison.new_source.get('url') %}
+                <tr><td class="text-secondary">URL</td><td>{{ comparison.new_source.url }}</td></tr>
+                {% endif %}
+            </table>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
