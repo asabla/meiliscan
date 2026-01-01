@@ -1,6 +1,7 @@
 """Main analyzer that coordinates analysis across multiple analyzers."""
 
 from meilisearch_analyzer.analyzers.base import BaseAnalyzer
+from meilisearch_analyzer.analyzers.best_practices import BestPracticesAnalyzer
 from meilisearch_analyzer.analyzers.document_analyzer import DocumentAnalyzer
 from meilisearch_analyzer.analyzers.performance_analyzer import PerformanceAnalyzer
 from meilisearch_analyzer.analyzers.schema_analyzer import SchemaAnalyzer
@@ -23,12 +24,14 @@ class Analyzer:
                 SchemaAnalyzer(),
                 DocumentAnalyzer(),
                 PerformanceAnalyzer(),
+                BestPracticesAnalyzer(),
             ]
         else:
             self._analyzers = analyzers
 
-        # Performance analyzer for global checks
+        # Analyzers for global checks
         self._performance_analyzer = PerformanceAnalyzer()
+        self._best_practices_analyzer = BestPracticesAnalyzer()
 
     def analyze_index(self, index: IndexData) -> list[Finding]:
         """Analyze a single index with all configured analyzers.
@@ -72,6 +75,7 @@ class Analyzer:
         indexes: list[IndexData],
         global_stats: dict,
         tasks: list[dict] | None = None,
+        instance_version: str | None = None,
     ) -> list[Finding]:
         """Run global analysis across all indexes.
 
@@ -79,11 +83,24 @@ class Analyzer:
             indexes: All indexes
             global_stats: Global instance stats
             tasks: Optional task history
+            instance_version: Optional MeiliSearch version string
 
         Returns:
             List of global findings
         """
-        return self._performance_analyzer.analyze_global(indexes, global_stats, tasks)
+        findings: list[Finding] = []
+
+        # Performance global checks
+        findings.extend(self._performance_analyzer.analyze_global(indexes, global_stats, tasks))
+
+        # Best practices global checks
+        findings.extend(
+            self._best_practices_analyzer.analyze_global(
+                indexes, global_stats, tasks, instance_version
+            )
+        )
+
+        return findings
 
     def add_analyzer(self, analyzer: BaseAnalyzer) -> None:
         """Add an analyzer to the analysis pipeline.

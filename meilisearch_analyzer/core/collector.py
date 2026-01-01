@@ -21,6 +21,7 @@ class DataCollector:
         self._indexes: list[IndexData] = []
         self._global_stats: dict = {}
         self._version: str | None = None
+        self._tasks: list[dict] = []
 
     @classmethod
     def from_url(
@@ -73,6 +74,12 @@ class DataCollector:
         self._global_stats = await self._collector.get_stats()
         self._indexes = await self._collector.get_indexes()
 
+        # Get tasks if available
+        try:
+            self._tasks = await self._collector.get_tasks()
+        except Exception:
+            self._tasks = []
+
         return True
 
     @property
@@ -89,6 +96,11 @@ class DataCollector:
     def global_stats(self) -> dict:
         """Get global statistics."""
         return self._global_stats
+
+    @property
+    def tasks(self) -> list[dict]:
+        """Get task history."""
+        return self._tasks
 
     async def close(self) -> None:
         """Close the underlying collector."""
