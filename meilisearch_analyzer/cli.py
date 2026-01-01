@@ -532,6 +532,237 @@ def fix_script(
 
 
 @app.command()
+def compare(
+    old_report: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the older/baseline analysis JSON file",
+        ),
+    ],
+    new_report: Annotated[
+        Path,
+        typer.Argument(
+            help="Path to the newer/current analysis JSON file",
+        ),
+    ],
+    output: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output file path for comparison report",
+        ),
+    ] = None,
+    format_type: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format (json, markdown)",
+        ),
+    ] = "markdown",
+) -> None:
+    """Compare two analysis reports to detect trends and changes over time."""
+    import orjson
+
+    from meilisearch_analyzer.analyzers.historical import HistoricalAnalyzer
+    from meilisearch_analyzer.models.comparison import TrendDirection
+    from meilisearch_analyzer.models.report import AnalysisReport
+
+    # Validate input files
+    if not old_report.exists():
+        console.print(f"[red]Error:[/red] Old report file not found: {old_report}")
+        raise typer.Exit(1)
+
+    if not new_report.exists():
+        console.print(f"[red]Error:[/red] New report file not found: {new_report}")
+        raise typer.Exit(1)
+
+    # Load reports
+    try:
+        old_data = orjson.loads(old_report.read_bytes())
+        old = AnalysisReport.from_dict(old_data)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to parse old report: {e}")
+        raise typer.Exit(1)
+
+    try:
+        new_data = orjson.loads(new_report.read_bytes())
+        new = AnalysisReport.from_dict(new_data)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to parse new report: {e}")
+        raise typer.Exit(1)
+
+    # Run comparison
+    analyzer = HistoricalAnalyzer()
+    comparison = analyzer.compare(old, new)
+
+    # Display summary
+    _display_comparison_summary(comparison)
+
+    # Export
+    if format_type == "json":
+        content = orjson.dumps(
+            comparison.to_dict(),
+            option=orjson.OPT_INDENT_2,
+        ).decode("utf-8")
+    else:
+        content = _format_comparison_markdown(comparison)
+
+    if output:
+        output.write_text(content)
+        console.print(f"\n[green]Comparison report saved to:[/green] {output}")
+    else:
+        if format_type == "json":
+            console.print(content)
+
+
+def _display_comparison_summary(comparison) -> None:
+    """Display comparison summary in the terminal."""
+    from meilisearch_analyzer.models.comparison import TrendDirection
+
+    summary = comparison.summary
+
+    # Trend indicator
+    trend_indicators = {
+        TrendDirection.UP: "[green]↑ Improving[/green]",
+        TrendDirection.DOWN: "[red]↓ Degrading[/red]",
+        TrendDirection.STABLE: "[dim]→ Stable[/dim]",
+    }
+    trend_text = trend_indicators.get(summary.overall_trend, "[dim]→ Stable[/dim]")
+
+    # Health score change
+    hs = summary.health_score
+    if hs.change > 0:
+        hs_change = f"[green]+{hs.change}[/green]"
+    elif hs.change < 0:
+        hs_change = f"[red]{hs.change}[/red]"
+    else:
+        hs_change = "[dim]0[/dim]"
+
+    summary_text = f"""
+[bold]Time Period:[/bold] {summary.time_between}
+[bold]Overall Trend:[/bold] {trend_text}
+
+[bold]Health Score:[/bold] {hs.old_value} → {hs.new_value} ({hs_change})
+
+[bold]Issues:[/bold]
+  Critical: {summary.critical_issues.old_value} → {summary.critical_issues.new_value}
+  Warnings: {summary.warnings.old_value} → {summary.warnings.new_value}
+  Suggestions: {summary.suggestions.old_value} → {summary.suggestions.new_value}
+
+[bold]Indexes:[/bold] {summary.total_indexes.old_value} → {summary.total_indexes.new_value}
+  Added: {len(summary.indexes_added) or 'none'}
+  Removed: {len(summary.indexes_removed) or 'none'}
+  Changed: {len(summary.indexes_changed) or 'none'}
+"""
+
+    console.print(Panel(summary_text.strip(), title="Comparison Summary", border_style="blue"))
+
+    # Show improvements
+    if summary.improvement_areas:
+        console.print("\n[green bold]Improvements:[/green bold]")
+        for area in summary.improvement_areas:
+            console.print(f"  [green]✓[/green] {area}")
+
+    # Show degradations
+    if summary.degradation_areas:
+        console.print("\n[red bold]Degradations:[/red bold]")
+        for area in summary.degradation_areas:
+            console.print(f"  [red]✗[/red] {area}")
+
+    # Show recommendations
+    if comparison.recommendations:
+        console.print("\n[bold]Recommendations:[/bold]")
+        for rec in comparison.recommendations:
+            console.print(f"  • {rec}")
+
+
+def _format_comparison_markdown(comparison) -> str:
+    """Format comparison as markdown."""
+    from meilisearch_analyzer.models.comparison import ChangeType, TrendDirection
+
+    lines = [
+        "# MeiliSearch Analysis Comparison Report",
+        "",
+        f"**Generated:** {comparison.generated_at.isoformat()}",
+        "",
+        "## Summary",
+        "",
+        f"- **Time Between Reports:** {comparison.summary.time_between}",
+        f"- **Overall Trend:** {comparison.summary.overall_trend.value.title()}",
+        "",
+        "### Health Score",
+        "",
+        f"| Metric | Before | After | Change |",
+        f"|--------|--------|-------|--------|",
+    ]
+
+    # Add metrics
+    for metric_name, metric in [
+        ("Health Score", comparison.summary.health_score),
+        ("Critical Issues", comparison.summary.critical_issues),
+        ("Warnings", comparison.summary.warnings),
+        ("Suggestions", comparison.summary.suggestions),
+        ("Total Indexes", comparison.summary.total_indexes),
+        ("Total Documents", comparison.summary.total_documents),
+    ]:
+        change_str = f"+{metric.change}" if metric.change > 0 else str(metric.change)
+        lines.append(f"| {metric_name} | {metric.old_value} | {metric.new_value} | {change_str} |")
+
+    lines.extend(["", "## Index Changes", ""])
+
+    if comparison.summary.indexes_added:
+        lines.append(f"**Added:** {', '.join(comparison.summary.indexes_added)}")
+    if comparison.summary.indexes_removed:
+        lines.append(f"**Removed:** {', '.join(comparison.summary.indexes_removed)}")
+    if comparison.summary.indexes_changed:
+        lines.append(f"**Changed:** {', '.join(comparison.summary.indexes_changed)}")
+
+    if not (comparison.summary.indexes_added or comparison.summary.indexes_removed or comparison.summary.indexes_changed):
+        lines.append("No index changes detected.")
+
+    # Finding changes
+    new_findings = [fc for fc in comparison.finding_changes if fc.change_type == ChangeType.ADDED]
+    resolved_findings = [fc for fc in comparison.finding_changes if fc.change_type == ChangeType.REMOVED]
+
+    if new_findings or resolved_findings:
+        lines.extend(["", "## Finding Changes", ""])
+
+        if new_findings:
+            lines.append("### New Issues")
+            lines.append("")
+            for fc in new_findings:
+                lines.append(f"- **{fc.finding.id}** ({fc.finding.severity.value}): {fc.finding.title}")
+                if fc.finding.index_uid:
+                    lines.append(f"  - Index: {fc.finding.index_uid}")
+
+        if resolved_findings:
+            lines.extend(["", "### Resolved Issues", ""])
+            for fc in resolved_findings:
+                lines.append(f"- **{fc.finding.id}** ({fc.finding.severity.value}): {fc.finding.title}")
+
+    # Recommendations
+    if comparison.recommendations:
+        lines.extend(["", "## Recommendations", ""])
+        for rec in comparison.recommendations:
+            lines.append(f"- {rec}")
+
+    # Improvements and degradations
+    if comparison.summary.improvement_areas:
+        lines.extend(["", "## Improvements", ""])
+        for area in comparison.summary.improvement_areas:
+            lines.append(f"- {area}")
+
+    if comparison.summary.degradation_areas:
+        lines.extend(["", "## Degradations", ""])
+        for area in comparison.summary.degradation_areas:
+            lines.append(f"- {area}")
+
+    return "\n".join(lines)
+
+
+@app.command()
 def serve(
     url: Annotated[
         Optional[str],

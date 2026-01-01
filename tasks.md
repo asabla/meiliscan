@@ -1,15 +1,16 @@
 # MeiliSearch Analyzer - Implementation Progress
 
-## Current Status: All Phases Complete
+## Current Status: All Phases Complete + Historical Analysis
 
-All phases from the implementation plan are complete, including the Best Practices
-Analyzer. The tool is fully functional with:
+All phases from the implementation plan are complete, including Historical Analysis.
+The tool is fully functional with:
 - Live instance analysis via API
 - Dump file parsing (.dump archives)
 - Web dashboard (FastAPI + Jinja2)
 - Multiple export formats (JSON, Markdown, SARIF, Agent)
 - CI/CD integration mode
 - Fix script generation
+- Historical analysis (comparing reports over time)
 - All 28 finding types implemented (S001-S010, D001-D008, P001-P006, B001-B004)
 
 ### Phase 1 Tasks - Core Analysis (MVP) - COMPLETE
@@ -69,10 +70,11 @@ Analyzer. The tool is fully functional with:
 
 ## Future Enhancements
 
-- [ ] Historical analysis (comparing dumps over time)
+- [x] Historical analysis (comparing dumps over time)
 - [ ] Static assets directory (`static/style.css`, `htmx.min.js`) - CSS is inline in templates
 - [ ] Document sampling endpoint for web dashboard
 - [ ] Additional CI/CD integration tests
+- [ ] Web dashboard comparison view
 
 ---
 
@@ -126,7 +128,7 @@ Analyzer. The tool is fully functional with:
 
 ## Test Summary
 
-Total tests: 219
+Total tests: 249
 - Finding models: 9 tests
 - Index models: 12 tests
 - Report models: 15 tests
@@ -138,6 +140,7 @@ Total tests: 219
 - SARIF Exporter: 27 tests
 - Agent Exporter: 34 tests
 - Best Practices Analyzer: 22 tests
+- Historical Analyzer: 30 tests
 
 ---
 
@@ -160,6 +163,10 @@ meilisearch-analyzer analyze --url http://localhost:7700 --format agent --output
 meilisearch-analyzer analyze --url http://localhost:7700 --ci
 meilisearch-analyzer analyze --url http://localhost:7700 --ci --fail-on-warnings
 
+# Compare two analysis reports (historical analysis)
+meilisearch-analyzer compare old-report.json new-report.json --output comparison.md
+meilisearch-analyzer compare old-report.json new-report.json --format json --output comparison.json
+
 # Generate fix script from analysis
 meilisearch-analyzer fix-script --input report.json --output apply-fixes.sh
 
@@ -171,6 +178,17 @@ meilisearch-analyzer summary --url http://localhost:7700
 ```
 
 ## Changelog
+
+### 2026-01-01 (Historical Analysis)
+- Historical analysis feature implementation:
+  - Compare two analysis reports to detect trends and changes
+  - MetricChange model for tracking numeric changes
+  - FindingChange model for tracking new/resolved findings
+  - IndexChange model for per-index comparison
+  - ComparisonReport with summary, recommendations
+  - CLI `compare` command with markdown/json output
+  - 30 new tests for Historical Analyzer
+  - Total: 249 passing tests
 
 ### 2026-01-01 (Best Practices Analyzer)
 - Best Practices Analyzer implementation:
