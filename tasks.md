@@ -73,7 +73,7 @@ The tool is fully functional with:
 - [x] Historical analysis (comparing dumps over time)
 - [x] Web dashboard comparison view
 - [x] Document sampling endpoint for web dashboard
-- [ ] Static assets directory (`static/style.css`, `htmx.min.js`) - CSS is inline in templates
+- [x] Static assets directory (`static/css/style.css`, `static/js/htmx.min.js`)
 - [ ] Additional CI/CD integration tests
 
 ---
