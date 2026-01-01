@@ -71,10 +71,10 @@ The tool is fully functional with:
 ## Future Enhancements
 
 - [x] Historical analysis (comparing dumps over time)
+- [x] Web dashboard comparison view
+- [x] Document sampling endpoint for web dashboard
 - [ ] Static assets directory (`static/style.css`, `htmx.min.js`) - CSS is inline in templates
-- [ ] Document sampling endpoint for web dashboard
 - [ ] Additional CI/CD integration tests
-- [ ] Web dashboard comparison view
 
 ---
 
@@ -128,10 +128,10 @@ The tool is fully functional with:
 
 ## Test Summary
 
-Total tests: 249
+Total tests: 254
 - Finding models: 9 tests
 - Index models: 12 tests
-- Report models: 15 tests
+- Report models: 18 tests
 - Schema Analyzer: 13 tests
 - Document Analyzer: 25 tests
 - Performance Analyzer: 23 tests

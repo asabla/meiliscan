@@ -256,3 +256,90 @@ class TestActionPlan:
         )
         assert len(plan.priority_order) == 2
         assert "index_size_reduction" in plan.estimated_impact
+
+
+class TestIndexAnalysisSampleDocuments:
+    """Tests for sample documents in IndexAnalysis."""
+
+    def test_index_analysis_with_sample_documents(self):
+        """Test IndexAnalysis includes sample_documents field."""
+        sample_docs = [
+            {"id": "1", "title": "First document"},
+            {"id": "2", "title": "Second document"},
+        ]
+        analysis = IndexAnalysis(
+            metadata={"primary_key": "id"},
+            sample_documents=sample_docs,
+        )
+        assert len(analysis.sample_documents) == 2
+        assert analysis.sample_documents[0]["id"] == "1"
+
+    def test_index_analysis_default_empty_samples(self):
+        """Test IndexAnalysis has empty sample_documents by default."""
+        analysis = IndexAnalysis()
+        assert analysis.sample_documents == []
+
+    def test_add_index_with_sample_documents(self):
+        """Test adding an index with sample documents to report."""
+        report = AnalysisReport(
+            source=SourceInfo(
+                type="instance",
+                url="http://localhost:7700",
+            ),
+        )
+        
+        sample_docs = [
+            {"id": "prod_1", "title": "Product 1", "price": 19.99},
+            {"id": "prod_2", "title": "Product 2", "price": 29.99},
+            {"id": "prod_3", "title": "Product 3", "price": 39.99},
+        ]
+        
+        index = IndexData(
+            uid="products",
+            primaryKey="id",
+            settings=IndexSettings(),
+            stats=IndexStats(numberOfDocuments=1000),
+            sample_documents=sample_docs,
+        )
+        
+        report.add_index(index)
+        
+        assert "products" in report.indexes
+        assert len(report.indexes["products"].sample_documents) == 3
+        assert report.indexes["products"].sample_documents[0]["id"] == "prod_1"
+        assert report.indexes["products"].sample_documents[1]["price"] == 29.99
+
+    def test_sample_documents_in_to_dict(self):
+        """Test sample documents are included in to_dict output."""
+        report = AnalysisReport(
+            source=SourceInfo(type="instance", url="http://localhost:7700"),
+        )
+        
+        index = IndexData(
+            uid="test",
+            sample_documents=[{"id": "1", "name": "Test"}],
+        )
+        report.add_index(index)
+        
+        data = report.to_dict()
+        
+        assert "sample_documents" in data["indexes"]["test"]
+        assert len(data["indexes"]["test"]["sample_documents"]) == 1
+        assert data["indexes"]["test"]["sample_documents"][0]["name"] == "Test"
+
+    def test_sample_documents_pagination(self):
+        """Test pagination of sample documents."""
+        sample_docs = [{"id": str(i), "value": i} for i in range(20)]
+        analysis = IndexAnalysis(sample_documents=sample_docs)
+        
+        # Simulate pagination
+        page_size = 5
+        page = 2
+        start = (page - 1) * page_size
+        end = start + page_size
+        
+        paginated = analysis.sample_documents[start:end]
+        
+        assert len(paginated) == 5
+        assert paginated[0]["id"] == "5"  # Second page starts at index 5
+        assert paginated[4]["id"] == "9"
