@@ -1,0 +1,53 @@
+{% if finding %}
+<div class="finding finding-{{ finding.severity.value|lower }}">
+    <div class="finding-header">
+        <div class="finding-title">
+            {{ finding.severity.value|severity_icon }} {{ finding.title }}
+        </div>
+        <div class="flex gap-1 items-center">
+            <span class="badge badge-{{ finding.severity.value|severity_color }}">{{ finding.severity.value }}</span>
+            <span class="finding-id">{{ finding.id }}</span>
+        </div>
+    </div>
+    <div class="finding-description">{{ finding.description }}</div>
+
+    {% if finding.index_uid %}
+    <div class="mt-1">
+        <strong class="text-secondary">Index:</strong>
+        <a href="/index/{{ finding.index_uid }}">{{ finding.index_uid }}</a>
+    </div>
+    {% endif %}
+
+    {% if finding.impact %}
+    <div class="mt-1">
+        <strong class="text-secondary">Impact:</strong> {{ finding.impact }}
+    </div>
+    {% endif %}
+
+    {% if finding.current_value is not none %}
+    <div class="mt-1">
+        <strong class="text-secondary">Current Value:</strong>
+        <pre><code>{{ finding.current_value }}</code></pre>
+    </div>
+    {% endif %}
+
+    {% if finding.recommended_value is not none %}
+    <div class="mt-1">
+        <strong class="text-secondary">Recommended:</strong>
+        <pre><code>{{ finding.recommended_value }}</code></pre>
+    </div>
+    {% endif %}
+
+    {% if finding.fix %}
+    <div class="mt-1">
+        <strong class="text-secondary">Fix:</strong>
+        <pre><code>curl -X PATCH '&lt;your-meilisearch-url&gt;{{ finding.fix.endpoint.split(' ')[1] }}' \
+  -H 'Content-Type: application/json' \
+  -H 'Authorization: Bearer &lt;your-api-key&gt;' \
+  --data-binary '{{ finding.fix.payload }}'</code></pre>
+    </div>
+    {% endif %}
+</div>
+{% else %}
+<p class="text-muted">Finding not found.</p>
+{% endif %}
