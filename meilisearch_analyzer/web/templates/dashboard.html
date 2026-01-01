@@ -51,12 +51,12 @@
                 <button type="button" class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown(this)">
                     📥 Export ▾
                 </button>
-                <div class="dropdown-menu">
-                    <a href="/api/export?format=json" class="dropdown-item">JSON (.json)</a>
-                    <a href="/api/export?format=markdown" class="dropdown-item">Markdown (.md)</a>
-                    <a href="/api/export?format=sarif" class="dropdown-item">SARIF (.sarif)</a>
-                    <a href="/api/export?format=agent" class="dropdown-item">Agent (.md)</a>
-                </div>
+                <ul class="dropdown-menu">
+                    <li><a href="/api/export?format=json" class="dropdown-item">JSON (.json)</a></li>
+                    <li><a href="/api/export?format=markdown" class="dropdown-item">Markdown (.md)</a></li>
+                    <li><a href="/api/export?format=sarif" class="dropdown-item">SARIF (.sarif)</a></li>
+                    <li><a href="/api/export?format=agent" class="dropdown-item">Agent (.md)</a></li>
+                </ul>
             </div>
             <form action="/refresh" method="post" style="margin: 0;">
                 <button type="submit" class="btn btn-secondary">🔄 Refresh</button>
