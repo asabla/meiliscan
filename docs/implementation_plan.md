@@ -13,8 +13,8 @@
 > - Fix script generation
 > - Historical analysis (comparing reports over time)
 > - All 28 finding types (S001-S010, D001-D008, P001-P006, B001-B004)
->
-> **Remaining Future Work:** Static assets (optional code organization)
+> - Static assets directory (CSS/JS separated from templates)
+> - Test data seeding (mock dumps and live instance seeding)
 
 ---
 
@@ -584,7 +584,7 @@ The web UI provides an interactive exploration experience:
 4. ✅ B004: Old version detection
 
 ### Future Work
-- Static assets directory (CSS/HTMX separate files) - optional code organization
+- All planned features have been implemented
 
 ---
 
