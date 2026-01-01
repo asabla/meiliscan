@@ -28,6 +28,17 @@ class BaseCollector(ABC):
         """Get global statistics."""
         pass
 
+    async def get_tasks(self, limit: int = 1000) -> list[dict]:
+        """Get task history.
+
+        Args:
+            limit: Maximum number of tasks to retrieve
+
+        Returns:
+            List of task dictionaries. Empty by default.
+        """
+        return []
+
     @abstractmethod
     async def close(self) -> None:
         """Close the connection."""

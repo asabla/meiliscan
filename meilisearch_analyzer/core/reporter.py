@@ -62,6 +62,16 @@ class Reporter:
             for finding in findings:
                 report.add_finding(finding)
 
+        # Run global analysis
+        global_findings = self._analyzer.analyze_global(
+            indexes=self._collector.indexes,
+            global_stats=self._collector.global_stats,
+            tasks=self._collector.tasks,
+            instance_version=self._collector.version,
+        )
+        for finding in global_findings:
+            report.add_finding(finding)
+
         # Calculate summary and score
         report.calculate_summary()
         self._scorer.score_report(report)

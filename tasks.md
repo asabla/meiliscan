@@ -1,6 +1,16 @@
 # MeiliSearch Analyzer - Implementation Progress
 
-## Current Status: Phase 4 Complete
+## Current Status: All Phases Complete
+
+All phases from the implementation plan are complete, including the Best Practices
+Analyzer. The tool is fully functional with:
+- Live instance analysis via API
+- Dump file parsing (.dump archives)
+- Web dashboard (FastAPI + Jinja2)
+- Multiple export formats (JSON, Markdown, SARIF, Agent)
+- CI/CD integration mode
+- Fix script generation
+- All 28 finding types implemented (S001-S010, D001-D008, P001-P006, B001-B004)
 
 ### Phase 1 Tasks - Core Analysis (MVP) - COMPLETE
 
@@ -46,14 +56,77 @@
 - [x] CI/CD integration mode (`--ci` and `--fail-on-warnings` flags)
 - [x] Tests for SARIF Exporter (27 tests)
 - [x] Tests for Agent Exporter (34 tests)
-- [ ] Historical analysis (comparing dumps) - Future
-- [ ] Additional CI/CD integration tests - Future
+
+### Best Practices Analyzer - COMPLETE
+
+- [x] B001: Settings after documents (check task order in history)
+- [x] B002: Duplicate searchable/filterable (same fields in both)
+- [x] B003: Missing embedders config (no AI/vector setup)
+- [x] B004: Old MeiliSearch version (version < current stable)
+- [x] Tests for Best Practices Analyzer (22 tests)
+
+---
+
+## Future Enhancements
+
+- [ ] Historical analysis (comparing dumps over time)
+- [ ] Static assets directory (`static/style.css`, `htmx.min.js`) - CSS is inline in templates
+- [ ] Document sampling endpoint for web dashboard
+- [ ] Additional CI/CD integration tests
+
+---
+
+## Implemented Finding Catalog
+
+### Schema Findings (S001-S010) - COMPLETE
+| ID | Title | Severity |
+|----|-------|----------|
+| S001 | Wildcard searchableAttributes | Critical |
+| S002 | ID fields in searchableAttributes | Warning |
+| S003 | Numeric fields in searchableAttributes | Suggestion |
+| S004 | Empty filterableAttributes | Info |
+| S005 | Unused filterableAttributes | Warning |
+| S006 | Missing stop words | Suggestion |
+| S007 | Default ranking rules | Info |
+| S008 | No distinct attribute | Suggestion |
+| S009 | Low pagination limit | Warning |
+| S010 | High pagination limit | Suggestion |
+
+### Document Findings (D001-D008) - COMPLETE
+| ID | Title | Severity |
+|----|-------|----------|
+| D001 | Large documents | Warning |
+| D002 | Inconsistent schema | Warning |
+| D003 | Deep nesting | Warning |
+| D004 | Large arrays | Warning |
+| D005 | HTML in text fields | Suggestion |
+| D006 | Empty field values | Info |
+| D007 | Mixed types in field | Warning |
+| D008 | Very long text | Suggestion |
+
+### Performance Findings (P001-P006) - COMPLETE
+| ID | Title | Severity |
+|----|-------|----------|
+| P001 | High task failure rate | Critical |
+| P002 | Slow indexing | Warning |
+| P003 | Database fragmentation | Suggestion |
+| P004 | Too many indexes | Suggestion |
+| P005 | Imbalanced indexes | Info |
+| P006 | Too many fields | Warning |
+
+### Best Practices Findings (B001-B004) - COMPLETE
+| ID | Title | Severity |
+|----|-------|----------|
+| B001 | Settings after documents | Warning |
+| B002 | Duplicate searchable/filterable | Suggestion |
+| B003 | Missing embedders config | Info |
+| B004 | Old MeiliSearch version | Suggestion/Warning |
 
 ---
 
 ## Test Summary
 
-Total tests: 197
+Total tests: 219
 - Finding models: 9 tests
 - Index models: 12 tests
 - Report models: 15 tests
@@ -64,6 +137,9 @@ Total tests: 197
 - Dump Parser: 19 tests
 - SARIF Exporter: 27 tests
 - Agent Exporter: 34 tests
+- Best Practices Analyzer: 22 tests
+
+---
 
 ## CLI Commands
 
@@ -95,6 +171,17 @@ meilisearch-analyzer summary --url http://localhost:7700
 ```
 
 ## Changelog
+
+### 2026-01-01 (Best Practices Analyzer)
+- Best Practices Analyzer implementation:
+  - B001: Detects settings updated after documents were added
+  - B002: Detects fields in both searchable and filterable attributes
+  - B003: Suggests embedders for text-heavy indexes
+  - B004: Detects outdated MeiliSearch versions
+  - Added task history collection to DataCollector
+  - Global analysis now includes version checking
+  - 22 new tests for Best Practices Analyzer
+  - Total: 219 passing tests
 
 ### 2026-01-01 (Phase 4)
 - SARIF export for GitHub/IDE integration
