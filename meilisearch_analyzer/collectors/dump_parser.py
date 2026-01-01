@@ -175,8 +175,12 @@ class DumpParser(BaseCollector):
         """Get all parsed indexes."""
         return self._indexes
 
-    async def get_tasks(self) -> list[dict]:
-        """Get task history from the dump."""
+    async def get_tasks(self, limit: int = 1000) -> list[dict]:
+        """Get task history from the dump.
+
+        Args:
+            limit: Maximum number of tasks to retrieve
+        """
         if not self._extracted_path:
             return []
 
