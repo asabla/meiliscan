@@ -45,9 +45,23 @@
 <div class="card mb-2">
     <div class="card-header">
         <h2 class="card-title">Health Score</h2>
-        <form action="/refresh" method="post" style="margin: 0;">
-            <button type="submit" class="btn btn-secondary">🔄 Refresh</button>
-        </form>
+        <div class="flex gap-1">
+            <!-- Export Dropdown -->
+            <div class="dropdown">
+                <button type="button" class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown(this)">
+                    📥 Export
+                </button>
+                <div class="dropdown-menu">
+                    <a href="/api/export?format=json" class="dropdown-item">JSON (.json)</a>
+                    <a href="/api/export?format=markdown" class="dropdown-item">Markdown (.md)</a>
+                    <a href="/api/export?format=sarif" class="dropdown-item">SARIF (.sarif)</a>
+                    <a href="/api/export?format=agent" class="dropdown-item">Agent (.md)</a>
+                </div>
+            </div>
+            <form action="/refresh" method="post" style="margin: 0;">
+                <button type="submit" class="btn btn-secondary">🔄 Refresh</button>
+            </form>
+        </div>
     </div>
     <div class="health-score">
         <div class="health-score-value {% if report.summary.health_score >= 80 %}text-green{% elif report.summary.health_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
