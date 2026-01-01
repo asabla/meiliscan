@@ -26,5 +26,28 @@
             {% block content %}{% endblock %}
         </div>
     </main>
+
+    <script>
+        // Dropdown toggle functionality
+        function toggleDropdown(button) {
+            const menu = button.nextElementSibling;
+            const isOpen = menu.classList.contains('show');
+            
+            // Close all dropdowns first
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+            
+            // Toggle this dropdown
+            if (!isOpen) {
+                menu.classList.add('show');
+            }
+        }
+        
+        // Close dropdown when clicking outside
+        document.addEventListener('click', function(event) {
+            if (!event.target.closest('.dropdown')) {
+                document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+            }
+        });
+    </script>
 </body>
 </html>
