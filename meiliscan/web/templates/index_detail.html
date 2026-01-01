@@ -20,7 +20,7 @@
         <div class="stat-label">Documents</div>
     </div>
     <div class="card stat">
-        <div class="stat-value">{{ index_analysis.metadata.get('field_count', 0) }}</div>
+        <div class="stat-value">{{ index_analysis.statistics.get('field_count', 0) }}</div>
         <div class="stat-label">Fields</div>
     </div>
     <div class="card stat">
@@ -64,43 +64,124 @@
         <div class="card-header">
             <h2 class="card-title">Settings Overview</h2>
         </div>
-        {% set settings = index_analysis.metadata.get('settings', {}) %}
-        <table>
-            <tbody>
-                <tr>
-                    <td class="text-secondary">Searchable Attributes</td>
-                    <td>
-                        {% if settings.get('searchable_attributes') == ['*'] %}
+        {% set settings = index_analysis.settings.get('current', {}) %}
+        <div class="accordion">
+            <!-- Searchable Attributes -->
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="accordion-title">Searchable Attributes</span>
+                    <span class="accordion-value">
+                        {% if settings.get('searchableAttributes') == ['*'] %}
                         <span class="badge badge-red">All fields (*)</span>
                         {% else %}
-                        {{ settings.get('searchable_attributes', [])|length }} fields
+                        {{ settings.get('searchableAttributes', [])|length }} fields
                         {% endif %}
-                    </td>
-                </tr>
-                <tr>
-                    <td class="text-secondary">Filterable Attributes</td>
-                    <td>{{ settings.get('filterable_attributes', [])|length }} fields</td>
-                </tr>
-                <tr>
-                    <td class="text-secondary">Sortable Attributes</td>
-                    <td>{{ settings.get('sortable_attributes', [])|length }} fields</td>
-                </tr>
-                <tr>
-                    <td class="text-secondary">Stop Words</td>
-                    <td>{{ settings.get('stop_words', [])|length }} words</td>
-                </tr>
-                <tr>
-                    <td class="text-secondary">Distinct Attribute</td>
-                    <td>
-                        {% if settings.get('distinct_attribute') %}
-                        <code>{{ settings.get('distinct_attribute') }}</code>
+                        <span class="accordion-icon">▼</span>
+                    </span>
+                </div>
+                <div class="accordion-content">
+                    {% if settings.get('searchableAttributes') == ['*'] %}
+                    <p class="text-muted">All fields are searchable (wildcard)</p>
+                    {% elif settings.get('searchableAttributes', [])|length > 0 %}
+                    <ul class="accordion-list">
+                        {% for attr in settings.get('searchableAttributes', []) %}
+                        <li><code>{{ attr }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">No searchable attributes configured</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Filterable Attributes -->
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="accordion-title">Filterable Attributes</span>
+                    <span class="accordion-value">
+                        {{ settings.get('filterableAttributes', [])|length }} fields
+                        <span class="accordion-icon">▼</span>
+                    </span>
+                </div>
+                <div class="accordion-content">
+                    {% if settings.get('filterableAttributes', [])|length > 0 %}
+                    <ul class="accordion-list">
+                        {% for attr in settings.get('filterableAttributes', []) %}
+                        <li><code>{{ attr }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">No filterable attributes configured</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Sortable Attributes -->
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="accordion-title">Sortable Attributes</span>
+                    <span class="accordion-value">
+                        {{ settings.get('sortableAttributes', [])|length }} fields
+                        <span class="accordion-icon">▼</span>
+                    </span>
+                </div>
+                <div class="accordion-content">
+                    {% if settings.get('sortableAttributes', [])|length > 0 %}
+                    <ul class="accordion-list">
+                        {% for attr in settings.get('sortableAttributes', []) %}
+                        <li><code>{{ attr }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">No sortable attributes configured</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Stop Words -->
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="accordion-title">Stop Words</span>
+                    <span class="accordion-value">
+                        {{ settings.get('stopWords', [])|length }} words
+                        <span class="accordion-icon">▼</span>
+                    </span>
+                </div>
+                <div class="accordion-content">
+                    {% if settings.get('stopWords', [])|length > 0 %}
+                    <ul class="accordion-list">
+                        {% for word in settings.get('stopWords', []) %}
+                        <li><code>{{ word }}</code></li>
+                        {% endfor %}
+                    </ul>
+                    {% else %}
+                    <p class="text-muted">No stop words configured</p>
+                    {% endif %}
+                </div>
+            </div>
+
+            <!-- Distinct Attribute -->
+            <div class="accordion-item">
+                <div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+                    <span class="accordion-title">Distinct Attribute</span>
+                    <span class="accordion-value">
+                        {% if settings.get('distinctAttribute') %}
+                        <code>{{ settings.get('distinctAttribute') }}</code>
                         {% else %}
                         <span class="text-muted">Not set</span>
                         {% endif %}
-                    </td>
-                </tr>
-            </tbody>
-        </table>
+                        <span class="accordion-icon">▼</span>
+                    </span>
+                </div>
+                <div class="accordion-content">
+                    {% if settings.get('distinctAttribute') %}
+                    <p>Documents will be deduplicated based on the <code>{{ settings.get('distinctAttribute') }}</code> field.</p>
+                    {% else %}
+                    <p class="text-muted">No distinct attribute configured. All matching documents will be returned.</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
     </div>
 </div>
 
