@@ -2,12 +2,12 @@
 
 import pytest
 
-from meilisearch_analyzer.analyzers.best_practices import (
+from meiliscan.analyzers.best_practices import (
     BestPracticesAnalyzer,
     CURRENT_STABLE_VERSION,
 )
-from meilisearch_analyzer.models.finding import FindingCategory, FindingSeverity
-from meilisearch_analyzer.models.index import IndexData, IndexSettings, IndexStats
+from meiliscan.models.finding import FindingCategory, FindingSeverity
+from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 
 
 @pytest.fixture
@@ -440,5 +440,7 @@ class TestBestPracticesAnalyzer:
         b004_findings = [f for f in findings if f.id == "MEILI-B004"]
 
         assert len(b004_findings) == 1
-        assert any("updating" in ref.lower() or "releases" in ref.lower() 
-                   for ref in b004_findings[0].references)
+        assert any(
+            "updating" in ref.lower() or "releases" in ref.lower()
+            for ref in b004_findings[0].references
+        )

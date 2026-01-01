@@ -4,21 +4,19 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from meilisearch_analyzer.analyzers.historical import HistoricalAnalyzer
-from meilisearch_analyzer.models.comparison import (
+from meiliscan.analyzers.historical import HistoricalAnalyzer
+from meiliscan.models.comparison import (
     ChangeType,
     ComparisonReport,
     MetricChange,
     TrendDirection,
 )
-from meilisearch_analyzer.models.finding import (
+from meiliscan.models.finding import (
     Finding,
     FindingCategory,
-    FindingFix,
     FindingSeverity,
 )
-from meilisearch_analyzer.models.index import IndexData, IndexSettings, IndexStats
-from meilisearch_analyzer.models.report import (
+from meiliscan.models.report import (
     AnalysisReport,
     AnalysisSummary,
     IndexAnalysis,
@@ -211,7 +209,9 @@ class TestHistoricalAnalyzer:
         assert isinstance(result, ComparisonReport)
         assert result.summary is not None
 
-    def test_compare_detects_improvement(self, analyzer, old_report, new_report_improved):
+    def test_compare_detects_improvement(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test that improvement in health score is detected."""
         result = analyzer.compare(old_report, new_report_improved)
         assert result.summary.health_score.old_value == 70
@@ -219,7 +219,9 @@ class TestHistoricalAnalyzer:
         assert result.summary.health_score.trend == TrendDirection.UP
         assert result.summary.overall_trend == TrendDirection.UP
 
-    def test_compare_detects_degradation(self, analyzer, old_report, new_report_degraded):
+    def test_compare_detects_degradation(
+        self, analyzer, old_report, new_report_degraded
+    ):
         """Test that degradation in health score is detected."""
         result = analyzer.compare(old_report, new_report_degraded)
         assert result.summary.health_score.old_value == 70
@@ -227,13 +229,17 @@ class TestHistoricalAnalyzer:
         assert result.summary.health_score.trend == TrendDirection.DOWN
         assert result.summary.overall_trend == TrendDirection.DOWN
 
-    def test_compare_detects_new_indexes(self, analyzer, old_report, new_report_degraded):
+    def test_compare_detects_new_indexes(
+        self, analyzer, old_report, new_report_degraded
+    ):
         """Test detection of newly added indexes."""
         result = analyzer.compare(old_report, new_report_degraded)
         assert "customers" in result.summary.indexes_added
         assert len(result.summary.indexes_added) == 1
 
-    def test_compare_detects_removed_indexes(self, analyzer, old_report, new_report_improved):
+    def test_compare_detects_removed_indexes(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test detection of removed indexes when present."""
         # Modify new_report to remove an index
         new_report = new_report_improved
@@ -243,38 +249,52 @@ class TestHistoricalAnalyzer:
         result = analyzer.compare(old_report, new_report)
         assert "orders" in result.summary.indexes_removed
 
-    def test_compare_detects_resolved_findings(self, analyzer, old_report, new_report_improved):
+    def test_compare_detects_resolved_findings(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test detection of resolved findings."""
         result = analyzer.compare(old_report, new_report_improved)
-        
-        resolved = [fc for fc in result.finding_changes if fc.change_type == ChangeType.REMOVED]
+
+        resolved = [
+            fc for fc in result.finding_changes if fc.change_type == ChangeType.REMOVED
+        ]
         assert len(resolved) == 1
         assert resolved[0].finding.id == "MEILI-S001"
 
-    def test_compare_detects_new_findings(self, analyzer, old_report, new_report_degraded):
+    def test_compare_detects_new_findings(
+        self, analyzer, old_report, new_report_degraded
+    ):
         """Test detection of new findings."""
         result = analyzer.compare(old_report, new_report_degraded)
-        
-        new_findings = [fc for fc in result.finding_changes if fc.change_type == ChangeType.ADDED]
+
+        new_findings = [
+            fc for fc in result.finding_changes if fc.change_type == ChangeType.ADDED
+        ]
         # D001 is new, and S001 on customers is new
         new_ids = {fc.finding.id for fc in new_findings}
         assert "MEILI-D001" in new_ids
 
-    def test_compare_critical_issues_change(self, analyzer, old_report, new_report_improved):
+    def test_compare_critical_issues_change(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test critical issues count change."""
         result = analyzer.compare(old_report, new_report_improved)
         assert result.summary.critical_issues.old_value == 2
         assert result.summary.critical_issues.new_value == 0
         assert result.summary.critical_issues.trend == TrendDirection.DOWN
 
-    def test_compare_document_count_change(self, analyzer, old_report, new_report_improved):
+    def test_compare_document_count_change(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test document count change detection."""
         result = analyzer.compare(old_report, new_report_improved)
         assert result.summary.total_documents.old_value == 1000
         assert result.summary.total_documents.new_value == 1500
         assert result.summary.total_documents.change == 500
 
-    def test_compare_generates_recommendations(self, analyzer, old_report, new_report_degraded):
+    def test_compare_generates_recommendations(
+        self, analyzer, old_report, new_report_degraded
+    ):
         """Test that recommendations are generated."""
         result = analyzer.compare(old_report, new_report_degraded)
         assert len(result.recommendations) > 0
@@ -284,31 +304,39 @@ class TestHistoricalAnalyzer:
         result = analyzer.compare(old_report, new_report_improved)
         assert len(result.summary.improvement_areas) > 0
         # Should mention resolved critical issues
-        assert any("critical" in area.lower() for area in result.summary.improvement_areas)
+        assert any(
+            "critical" in area.lower() for area in result.summary.improvement_areas
+        )
 
     def test_compare_degradation_areas(self, analyzer, old_report, new_report_degraded):
         """Test degradation areas are identified."""
         result = analyzer.compare(old_report, new_report_degraded)
         assert len(result.summary.degradation_areas) > 0
 
-    def test_compare_time_between_reports(self, analyzer, old_report, new_report_improved):
+    def test_compare_time_between_reports(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test time difference is calculated."""
         result = analyzer.compare(old_report, new_report_improved)
         assert result.summary.time_between  # Should be "7 days" or similar
 
-    def test_compare_index_settings_change(self, analyzer, old_report, new_report_improved):
+    def test_compare_index_settings_change(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test detection of settings changes within an index."""
         result = analyzer.compare(old_report, new_report_improved)
-        
+
         products_change = result.index_changes.get("products")
         assert products_change is not None
         assert products_change.settings_changed is True
         assert "searchableAttributes" in products_change.settings_diff
 
-    def test_compare_index_document_growth(self, analyzer, old_report, new_report_improved):
+    def test_compare_index_document_growth(
+        self, analyzer, old_report, new_report_improved
+    ):
         """Test document count change within an index."""
         result = analyzer.compare(old_report, new_report_improved)
-        
+
         products_change = result.index_changes.get("products")
         assert products_change is not None
         assert products_change.document_count.old_value == 800
@@ -318,7 +346,7 @@ class TestHistoricalAnalyzer:
         """Test comparison report serialization."""
         result = analyzer.compare(old_report, new_report_improved)
         data = result.to_dict()
-        
+
         assert "summary" in data
         assert "index_changes" in data
         assert "finding_changes" in data
@@ -330,7 +358,7 @@ class TestComparisonReport:
 
     def test_to_dict_serialization(self):
         """Test that ComparisonReport serializes correctly."""
-        from meilisearch_analyzer.models.comparison import ComparisonSummary
+        from meiliscan.models.comparison import ComparisonSummary
 
         summary = ComparisonSummary(
             old_report_date=datetime.utcnow() - timedelta(days=1),
@@ -366,7 +394,7 @@ class TestComparisonReport:
 
     def test_comparison_summary_fields(self):
         """Test ComparisonSummary has all required fields."""
-        from meilisearch_analyzer.models.comparison import ComparisonSummary
+        from meiliscan.models.comparison import ComparisonSummary
 
         summary = ComparisonSummary(
             old_report_date=datetime.utcnow() - timedelta(days=1),
@@ -379,7 +407,7 @@ class TestComparisonReport:
             warnings=MetricChange.calculate("warnings", 5, 3),
             suggestions=MetricChange.calculate("suggestions", 3, 2),
         )
-        
+
         assert summary.overall_trend == TrendDirection.STABLE  # Default
         assert summary.indexes_added == []
         assert summary.indexes_removed == []

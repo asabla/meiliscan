@@ -5,15 +5,15 @@ from datetime import datetime, timezone
 import pytest
 from fastapi.testclient import TestClient
 
-from meilisearch_analyzer.models.finding import Finding, FindingCategory, FindingSeverity
-from meilisearch_analyzer.models.report import (
+from meiliscan.models.finding import Finding, FindingCategory, FindingSeverity
+from meiliscan.models.report import (
     ActionPlan,
     AnalysisReport,
     AnalysisSummary,
     IndexAnalysis,
     SourceInfo,
 )
-from meilisearch_analyzer.web.app import AppState, create_app
+from meiliscan.web.app import AppState, create_app
 
 
 @pytest.fixture

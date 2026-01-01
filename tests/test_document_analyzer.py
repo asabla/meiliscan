@@ -2,9 +2,9 @@
 
 import pytest
 
-from meilisearch_analyzer.analyzers.document_analyzer import DocumentAnalyzer
-from meilisearch_analyzer.models.finding import FindingCategory, FindingSeverity
-from meilisearch_analyzer.models.index import IndexData, IndexSettings, IndexStats
+from meiliscan.analyzers.document_analyzer import DocumentAnalyzer
+from meiliscan.models.finding import FindingCategory, FindingSeverity
+from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 
 
 class TestDocumentAnalyzer:
@@ -93,15 +93,7 @@ class TestDocumentAnalyzer:
         """Test detection of deeply nested documents (D003)."""
         deeply_nested = {
             "id": 1,
-            "level1": {
-                "level2": {
-                    "level3": {
-                        "level4": {
-                            "value": "deep"
-                        }
-                    }
-                }
-            }
+            "level1": {"level2": {"level3": {"level4": {"value": "deep"}}}},
         }
         index = IndexData(uid="test", sample_documents=[deeply_nested])
 
@@ -152,7 +144,10 @@ class TestDocumentAnalyzer:
             uid="test",
             sample_documents=[
                 {"id": 1, "content": "<p>This has <strong>HTML</strong> content</p>"},
-                {"id": 2, "content": "# Markdown Header\n\nThis is [a link](http://example.com)"},
+                {
+                    "id": 2,
+                    "content": "# Markdown Header\n\nThis is [a link](http://example.com)",
+                },
             ],
         )
 

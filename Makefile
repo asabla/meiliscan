@@ -5,7 +5,7 @@ MEILI_URL ?= http://localhost:7700
 
 # Default target
 help:
-	@echo "MeiliSearch Analyzer - Development Commands"
+	@echo "Meiliscan - Development Commands"
 	@echo ""
 	@echo "Setup:"
 	@echo "  make install      Install dependencies"
@@ -57,17 +57,17 @@ sync:
 
 # Development commands
 serve:
-	uv run meilisearch-analyzer serve --port 8080
+	uv run meiliscan serve --port 8080
 
 serve-dev:
-	uv run uvicorn meilisearch_analyzer.web.app:app --reload --port 8080
+	uv run uvicorn meiliscan.web.app:app --reload --port 8080
 
 # Testing commands
 test:
 	uv run pytest
 
 test-cov:
-	uv run pytest --cov=meilisearch_analyzer --cov-report=term-missing --cov-report=html
+	uv run pytest --cov=meiliscan --cov-report=term-missing --cov-report=html
 
 test-watch:
 	uv run pytest-watch
@@ -84,7 +84,7 @@ seed-dump:
 	@echo "Creating mock dump file..."
 	uv run python scripts/seed_data.py dump --output test-dump.dump
 	@echo ""
-	@echo "Analyze with: meilisearch-analyzer analyze --dump test-dump.dump"
+	@echo "Analyze with: meiliscan analyze --dump test-dump.dump"
 
 seed-instance:
 	@echo "Seeding MeiliSearch instance at $(MEILI_URL)..."
@@ -94,7 +94,7 @@ else
 	uv run python scripts/seed_data.py seed --url $(MEILI_URL)
 endif
 	@echo ""
-	@echo "Analyze with: meilisearch-analyzer analyze --url $(MEILI_URL)"
+	@echo "Analyze with: meiliscan analyze --url $(MEILI_URL)"
 
 seed-clean:
 	@echo "Cleaning MeiliSearch instance at $(MEILI_URL)..."

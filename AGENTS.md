@@ -1,4 +1,4 @@
-# AGENTS.md - MeiliSearch Analyzer
+# AGENTS.md - Meiliscan
 
 Guidelines for AI coding agents working on this codebase.
 
@@ -27,7 +27,7 @@ make seed-instance        # Seed MeiliSearch at localhost:7700
 ## Project Structure
 
 ```
-meilisearch_analyzer/
+meiliscan/
 ├── analyzers/       # Analysis logic (schema, document, performance, best_practices)
 ├── collectors/      # Data collection (live_instance.py, dump_parser.py)
 ├── core/            # Orchestration (collector.py, reporter.py, scorer.py)
@@ -52,7 +52,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 
-from meilisearch_analyzer.models.finding import Finding, FindingCategory
+from meiliscan.models.finding import Finding, FindingCategory
 ```
 
 ### Type Hints
@@ -165,12 +165,12 @@ pytest-asyncio configured with `asyncio_mode = "auto"`. Use `respx` for HTTP moc
 ## CLI Commands
 
 ```bash
-meilisearch-analyzer analyze --url http://localhost:7700 --api-key key
-meilisearch-analyzer analyze --dump ./dump.dump --format markdown -o report.md
-meilisearch-analyzer analyze --url ... --ci --fail-on-warnings  # CI mode
-meilisearch-analyzer serve --url http://localhost:7700 --port 8080
-meilisearch-analyzer compare old.json new.json -o comparison.md
-meilisearch-analyzer fix-script --input report.json --output fixes.sh
+meiliscan analyze --url http://localhost:7700 --api-key key
+meiliscan analyze --dump ./dump.dump --format markdown -o report.md
+meiliscan analyze --url ... --ci --fail-on-warnings  # CI mode
+meiliscan serve --url http://localhost:7700 --port 8080
+meiliscan compare old.json new.json -o comparison.md
+meiliscan fix-script --input report.json --output fixes.sh
 ```
 
 ## Key Dependencies

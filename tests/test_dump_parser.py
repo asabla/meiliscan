@@ -2,13 +2,11 @@
 
 import json
 import tarfile
-import tempfile
 from pathlib import Path
 
 import pytest
 
-from meilisearch_analyzer.collectors.dump_parser import DumpParser
-from meilisearch_analyzer.models.index import IndexSettings
+from meiliscan.collectors.dump_parser import DumpParser
 
 
 class TestDumpParser:
@@ -54,9 +52,27 @@ class TestDumpParser:
 
         # Documents (NDJSON format)
         documents = [
-            {"id": 1, "title": "Product 1", "description": "Desc 1", "category": "A", "price": 10.0},
-            {"id": 2, "title": "Product 2", "description": "Desc 2", "category": "B", "price": 20.0},
-            {"id": 3, "title": "Product 3", "description": "Desc 3", "category": "A", "price": 30.0},
+            {
+                "id": 1,
+                "title": "Product 1",
+                "description": "Desc 1",
+                "category": "A",
+                "price": 10.0,
+            },
+            {
+                "id": 2,
+                "title": "Product 2",
+                "description": "Desc 2",
+                "category": "B",
+                "price": 20.0,
+            },
+            {
+                "id": 3,
+                "title": "Product 3",
+                "description": "Desc 3",
+                "category": "A",
+                "price": 30.0,
+            },
         ]
         with open(index_dir / "documents.jsonl", "w") as f:
             for doc in documents:
@@ -81,7 +97,9 @@ class TestDumpParser:
         dump_file = mock_dump_dir / "test.dump"
 
         # Find the dump directory
-        dump_root = next(d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-"))
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
 
         # Create tar.gz archive
         with tarfile.open(dump_file, "w:gz") as tar:
@@ -192,7 +210,9 @@ class TestDumpParser:
     async def test_max_sample_docs_limit(self, mock_dump_dir: Path):
         """Test that max_sample_docs limits documents loaded."""
         # Create dump with more documents
-        dump_root = next(d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-"))
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
         index_dir = dump_root / "indexes" / "products"
 
         # Add more documents
@@ -302,7 +322,9 @@ class TestDumpParser:
     @pytest.mark.asyncio
     async def test_multiple_indexes(self, mock_dump_dir: Path):
         """Test parsing dump with multiple indexes."""
-        dump_root = next(d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-"))
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
         indexes_dir = dump_root / "indexes"
 
         # Create second index
@@ -310,11 +332,19 @@ class TestDumpParser:
         index2_dir.mkdir()
 
         (index2_dir / "metadata.json").write_text(json.dumps({"primaryKey": "user_id"}))
-        (index2_dir / "settings.json").write_text(json.dumps({"searchableAttributes": ["name", "email"]}))
+        (index2_dir / "settings.json").write_text(
+            json.dumps({"searchableAttributes": ["name", "email"]})
+        )
 
         with open(index2_dir / "documents.jsonl", "w") as f:
-            f.write(json.dumps({"user_id": 1, "name": "Alice", "email": "alice@test.com"}) + "\n")
-            f.write(json.dumps({"user_id": 2, "name": "Bob", "email": "bob@test.com"}) + "\n")
+            f.write(
+                json.dumps({"user_id": 1, "name": "Alice", "email": "alice@test.com"})
+                + "\n"
+            )
+            f.write(
+                json.dumps({"user_id": 2, "name": "Bob", "email": "bob@test.com"})
+                + "\n"
+            )
 
         # Create new dump file
         dump_file = mock_dump_dir / "multi.dump"
@@ -338,7 +368,9 @@ class TestDumpParser:
     @pytest.mark.asyncio
     async def test_empty_index(self, mock_dump_dir: Path):
         """Test parsing index with no documents."""
-        dump_root = next(d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-"))
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
         indexes_dir = dump_root / "indexes"
 
         # Create empty index
@@ -368,7 +400,9 @@ class TestDumpParser:
     @pytest.mark.asyncio
     async def test_missing_settings_file(self, mock_dump_dir: Path):
         """Test parsing index without settings.json."""
-        dump_root = next(d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-"))
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
         indexes_dir = dump_root / "indexes"
 
         # Create index without settings
@@ -398,7 +432,9 @@ class TestDumpParser:
     @pytest.mark.asyncio
     async def test_tasks_with_results_wrapper(self, mock_dump_dir: Path):
         """Test tasks file with 'results' wrapper."""
-        dump_root = next(d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-"))
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
         tasks_dir = dump_root / "tasks"
 
         # Write tasks with results wrapper

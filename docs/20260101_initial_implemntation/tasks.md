@@ -1,4 +1,4 @@
-# MeiliSearch Analyzer - Implementation Progress
+# Meiliscan - Implementation Progress
 
 ## Current Status: All Phases Complete + Historical Analysis
 
@@ -39,7 +39,7 @@ The tool is fully functional with:
 
 ### Phase 3 Tasks - Web Dashboard - COMPLETE
 
-- [x] FastAPI application structure (`meilisearch_analyzer/web/`)
+- [x] FastAPI application structure (`meiliscan/web/`)
 - [x] Dashboard overview page with health score, stats, and quick actions
 - [x] Index detail views with settings and findings
 - [x] Findings explorer with filtering
@@ -51,8 +51,8 @@ The tool is fully functional with:
 
 ### Phase 4 Tasks - Advanced Features - COMPLETE
 
-- [x] SARIF export (`meilisearch_analyzer/exporters/sarif_exporter.py`)
-- [x] Agent-friendly export (`meilisearch_analyzer/exporters/agent_exporter.py`)
+- [x] SARIF export (`meiliscan/exporters/sarif_exporter.py`)
+- [x] Agent-friendly export (`meiliscan/exporters/agent_exporter.py`)
 - [x] Fix script generation (`fix-script` CLI command)
 - [x] CI/CD integration mode (`--ci` and `--fail-on-warnings` flags)
 - [x] Tests for SARIF Exporter (27 tests)
@@ -151,33 +151,33 @@ Total tests: 254
 
 ```bash
 # Analyze live instance
-meilisearch-analyzer analyze --url http://localhost:7700 --api-key your-key
+meiliscan analyze --url http://localhost:7700 --api-key your-key
 
 # Analyze dump file
-meilisearch-analyzer analyze --dump ./path/to/dump.dump
+meiliscan analyze --dump ./path/to/dump.dump
 
 # Export formats
-meilisearch-analyzer analyze --url http://localhost:7700 --format json --output report.json
-meilisearch-analyzer analyze --url http://localhost:7700 --format markdown --output report.md
-meilisearch-analyzer analyze --url http://localhost:7700 --format sarif --output results.sarif
-meilisearch-analyzer analyze --url http://localhost:7700 --format agent --output agent-context.md
+meiliscan analyze --url http://localhost:7700 --format json --output report.json
+meiliscan analyze --url http://localhost:7700 --format markdown --output report.md
+meiliscan analyze --url http://localhost:7700 --format sarif --output results.sarif
+meiliscan analyze --url http://localhost:7700 --format agent --output agent-context.md
 
 # CI/CD mode (exit with non-zero code on issues)
-meilisearch-analyzer analyze --url http://localhost:7700 --ci
-meilisearch-analyzer analyze --url http://localhost:7700 --ci --fail-on-warnings
+meiliscan analyze --url http://localhost:7700 --ci
+meiliscan analyze --url http://localhost:7700 --ci --fail-on-warnings
 
 # Compare two analysis reports (historical analysis)
-meilisearch-analyzer compare old-report.json new-report.json --output comparison.md
-meilisearch-analyzer compare old-report.json new-report.json --format json --output comparison.json
+meiliscan compare old-report.json new-report.json --output comparison.md
+meiliscan compare old-report.json new-report.json --format json --output comparison.json
 
 # Generate fix script from analysis
-meilisearch-analyzer fix-script --input report.json --output apply-fixes.sh
+meiliscan fix-script --input report.json --output apply-fixes.sh
 
 # Start web dashboard
-meilisearch-analyzer serve --url http://localhost:7700 --port 8080
+meiliscan serve --url http://localhost:7700 --port 8080
 
 # Quick health summary
-meilisearch-analyzer summary --url http://localhost:7700
+meiliscan summary --url http://localhost:7700
 ```
 
 ## Changelog
