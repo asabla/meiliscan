@@ -278,7 +278,7 @@ def _display_summary(summary, version: str | None) -> None:
     # Build score bar
     filled = int(summary.health_score / 5)
     empty = 20 - filled
-    score_bar = "[green]" + "█" * filled + "[/green][dim]░" * empty + "[/dim]"
+    score_bar = "[green]" + "█" * filled + "[/green][dim]" + "░" * empty + "[/dim]"
 
     summary_text = f"""
 [bold]Version:[/bold] {version or 'Unknown'}    [bold]Indexes:[/bold] {summary.total_indexes}    [bold]Documents:[/bold] {summary.total_documents:,}
