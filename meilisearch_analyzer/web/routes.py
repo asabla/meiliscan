@@ -5,12 +5,19 @@ from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 
 from meilisearch_analyzer.analyzers.historical import HistoricalAnalyzer
+from meilisearch_analyzer.exporters.agent_exporter import AgentExporter
+from meilisearch_analyzer.exporters.json_exporter import JsonExporter
+from meilisearch_analyzer.exporters.markdown_exporter import MarkdownExporter
+from meilisearch_analyzer.exporters.sarif_exporter import SarifExporter
 from meilisearch_analyzer.models.finding import FindingSeverity
 from meilisearch_analyzer.models.report import AnalysisReport
 from meilisearch_analyzer.web.app import AppState, run_analysis
+
+# Valid export formats
+EXPORT_FORMATS = ("json", "markdown", "sarif", "agent")
 
 
 def register_routes(app: FastAPI) -> None:
@@ -202,6 +209,70 @@ def register_routes(app: FastAPI) -> None:
             "critical_issues": state.report.summary.critical_issues,
             "warnings": state.report.summary.warnings,
         }
+
+    @app.get("/api/export")
+    async def api_export(request: Request, format: str = "json") -> Response:
+        """Export the analysis report in various formats.
+
+        Args:
+            format: Export format - json, markdown, sarif, or agent
+
+        Returns:
+            The exported report as a downloadable file
+        """
+        state: AppState = request.app.state.analyzer_state
+
+        if not state.report:
+            return Response(
+                content=json.dumps({"error": "No analysis data available"}),
+                media_type="application/json",
+                status_code=400,
+            )
+
+        # Validate format
+        format_lower = format.lower()
+        if format_lower not in EXPORT_FORMATS:
+            return Response(
+                content=json.dumps({
+                    "error": f"Unknown format: {format}",
+                    "valid_formats": list(EXPORT_FORMATS),
+                }),
+                media_type="application/json",
+                status_code=400,
+            )
+
+        # Create appropriate exporter
+        if format_lower == "json":
+            exporter = JsonExporter(pretty=True)
+            media_type = "application/json"
+        elif format_lower == "markdown":
+            exporter = MarkdownExporter()
+            media_type = "text/markdown"
+        elif format_lower == "sarif":
+            exporter = SarifExporter()
+            media_type = "application/json"
+        elif format_lower == "agent":
+            exporter = AgentExporter()
+            media_type = "text/markdown"
+        else:
+            # Fallback (shouldn't reach here due to validation above)
+            exporter = JsonExporter(pretty=True)
+            media_type = "application/json"
+
+        # Generate export content
+        content = exporter.export(state.report)
+
+        # Build filename with timestamp
+        timestamp = state.report.generated_at.strftime("%Y%m%d_%H%M%S")
+        filename = f"meilisearch-analysis_{timestamp}{exporter.file_extension}"
+
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
 
     @app.get("/compare", response_class=HTMLResponse)
     async def compare_page(request: Request):
