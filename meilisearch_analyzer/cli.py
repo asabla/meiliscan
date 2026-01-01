@@ -14,8 +14,10 @@ from meilisearch_analyzer import __version__
 from meilisearch_analyzer.core.collector import DataCollector
 from meilisearch_analyzer.core.reporter import Reporter
 from meilisearch_analyzer.core.scorer import HealthScorer
+from meilisearch_analyzer.exporters.agent_exporter import AgentExporter
 from meilisearch_analyzer.exporters.json_exporter import JsonExporter
 from meilisearch_analyzer.exporters.markdown_exporter import MarkdownExporter
+from meilisearch_analyzer.exporters.sarif_exporter import SarifExporter
 from meilisearch_analyzer.models.finding import FindingSeverity
 
 app = typer.Typer(
@@ -25,6 +27,9 @@ app = typer.Typer(
 )
 
 console = Console()
+
+# Valid output formats
+VALID_FORMATS = ("json", "markdown", "sarif", "agent")
 
 
 def version_callback(value: bool) -> None:
@@ -91,9 +96,23 @@ def analyze(
         typer.Option(
             "--format",
             "-f",
-            help="Output format (json, markdown)",
+            help="Output format (json, markdown, sarif, agent)",
         ),
     ] = "json",
+    ci_mode: Annotated[
+        bool,
+        typer.Option(
+            "--ci",
+            help="CI/CD mode: exit with non-zero code if critical issues found",
+        ),
+    ] = False,
+    fail_on_warnings: Annotated[
+        bool,
+        typer.Option(
+            "--fail-on-warnings",
+            help="In CI mode, also fail on warnings (not just critical)",
+        ),
+    ] = False,
 ) -> None:
     """Analyze a MeiliSearch instance or dump file."""
     if not url and not dump:
@@ -104,22 +123,30 @@ def analyze(
         console.print("[red]Error:[/red] Cannot specify both --url and --dump.")
         raise typer.Exit(1)
 
-    if format_type not in ("json", "markdown"):
-        console.print(f"[red]Error:[/red] Unknown format '{format_type}'. Use 'json' or 'markdown'.")
+    if format_type not in VALID_FORMATS:
+        console.print(
+            f"[red]Error:[/red] Unknown format '{format_type}'. "
+            f"Use one of: {', '.join(VALID_FORMATS)}."
+        )
         raise typer.Exit(1)
 
     if dump:
-        asyncio.run(_analyze_dump(dump, output, format_type))
+        exit_code = asyncio.run(_analyze_dump(dump, output, format_type, ci_mode, fail_on_warnings))
     else:
         assert url is not None
-        asyncio.run(_analyze_instance(url, api_key, output, format_type))
+        exit_code = asyncio.run(_analyze_instance(url, api_key, output, format_type, ci_mode, fail_on_warnings))
+
+    if exit_code != 0:
+        raise typer.Exit(exit_code)
 
 
 async def _analyze_dump(
     dump_path: Path,
     output: Path | None,
     format_type: str,
-) -> None:
+    ci_mode: bool,
+    fail_on_warnings: bool,
+) -> int:
     """Analyze a MeiliSearch dump file."""
     with Progress(
         SpinnerColumn(),
@@ -132,7 +159,7 @@ async def _analyze_dump(
         if not await collector.collect():
             console.print(f"[red]Error:[/red] Failed to parse dump file at {dump_path}")
             await collector.close()
-            raise typer.Exit(1)
+            return 1
 
         progress.update(task, description=f"Loaded. Found {len(collector.indexes)} indexes.")
 
@@ -154,13 +181,18 @@ async def _analyze_dump(
     # Export report
     _export_report(report, output, format_type)
 
+    # CI mode exit code
+    return _get_ci_exit_code(report, ci_mode, fail_on_warnings)
+
 
 async def _analyze_instance(
     url: str,
     api_key: str | None,
     output: Path | None,
     format_type: str,
-) -> None:
+    ci_mode: bool,
+    fail_on_warnings: bool,
+) -> int:
     """Analyze a live MeiliSearch instance."""
     with Progress(
         SpinnerColumn(),
@@ -174,7 +206,7 @@ async def _analyze_instance(
         if not await collector.collect():
             console.print(f"[red]Error:[/red] Failed to connect to MeiliSearch at {url}")
             await collector.close()
-            raise typer.Exit(1)
+            return 1
 
         progress.update(task, description=f"Connected. Found {len(collector.indexes)} indexes.")
 
@@ -194,13 +226,41 @@ async def _analyze_instance(
     # Export report
     _export_report(report, output, format_type)
 
+    # CI mode exit code
+    return _get_ci_exit_code(report, ci_mode, fail_on_warnings)
+
+
+def _get_ci_exit_code(report, ci_mode: bool, fail_on_warnings: bool) -> int:
+    """Determine exit code for CI mode."""
+    if not ci_mode:
+        return 0
+
+    # Check for critical issues
+    if report.summary.critical_issues > 0:
+        console.print("\n[red]CI Mode:[/red] Failing due to critical issues.")
+        return 2  # Exit code 2 for critical issues
+
+    # Check for warnings if fail_on_warnings is set
+    if fail_on_warnings and report.summary.warnings > 0:
+        console.print("\n[yellow]CI Mode:[/yellow] Failing due to warnings.")
+        return 1  # Exit code 1 for warnings
+
+    console.print("\n[green]CI Mode:[/green] All checks passed.")
+    return 0
+
 
 def _export_report(report, output: Path | None, format_type: str) -> None:
     """Export the report in the specified format."""
     if format_type == "json":
         exporter = JsonExporter(pretty=True)
-    else:
+    elif format_type == "markdown":
         exporter = MarkdownExporter()
+    elif format_type == "sarif":
+        exporter = SarifExporter()
+    elif format_type == "agent":
+        exporter = AgentExporter()
+    else:
+        exporter = JsonExporter(pretty=True)
 
     exporter.export(report, output)
 
@@ -334,6 +394,141 @@ async def _summary_instance(url: str, api_key: str | None) -> None:
             console.print(f"  • [bold]{finding.index_uid or 'global'}:[/bold] {finding.title}")
 
     console.print("\n[dim]Run 'analyze' for full report[/dim]")
+
+
+@app.command(name="fix-script")
+def fix_script(
+    input_file: Annotated[
+        Path,
+        typer.Option(
+            "--input",
+            "-i",
+            help="Path to analysis JSON file",
+        ),
+    ],
+    output: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output file path for the fix script",
+        ),
+    ] = None,
+    base_url: Annotated[
+        str,
+        typer.Option(
+            "--url",
+            "-u",
+            help="MeiliSearch instance URL for fix commands",
+        ),
+    ] = "http://localhost:7700",
+) -> None:
+    """Generate a shell script to apply recommended fixes from an analysis file."""
+    import orjson
+
+    from meilisearch_analyzer.models.report import AnalysisReport
+
+    if not input_file.exists():
+        console.print(f"[red]Error:[/red] Input file not found: {input_file}")
+        raise typer.Exit(1)
+
+    try:
+        data = orjson.loads(input_file.read_bytes())
+        report = AnalysisReport.from_dict(data)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] Failed to parse input file: {e}")
+        raise typer.Exit(1)
+
+    # Generate fix script
+    script_lines = [
+        "#!/bin/bash",
+        "#",
+        "# MeiliSearch Configuration Fix Script",
+        "# Generated by MeiliSearch Analyzer",
+        "#",
+        f"# Based on analysis from: {input_file}",
+        "#",
+        "",
+        "set -e  # Exit on error",
+        "",
+        f'MEILISEARCH_URL="${{MEILISEARCH_URL:-{base_url}}}"',
+        'API_KEY="${MEILI_MASTER_KEY:-YOUR_API_KEY}"',
+        "",
+        'echo "Applying MeiliSearch configuration fixes..."',
+        'echo "Target: $MEILISEARCH_URL"',
+        "echo",
+        "",
+    ]
+
+    # Collect all findings with fixes
+    fixable_findings = []
+    for index_data in report.indexes.values():
+        for finding in index_data.findings:
+            if finding.fix:
+                fixable_findings.append(finding)
+
+    for finding in report.global_findings:
+        if finding.fix:
+            fixable_findings.append(finding)
+
+    if not fixable_findings:
+        console.print("[yellow]No fixable findings found in the analysis.[/yellow]")
+        raise typer.Exit(0)
+
+    for finding in fixable_findings:
+        fix = finding.fix
+        method = "PATCH"
+        endpoint = fix.endpoint
+
+        if endpoint.startswith("PATCH "):
+            method = "PATCH"
+            endpoint = endpoint[6:]
+        elif endpoint.startswith("PUT "):
+            method = "PUT"
+            endpoint = endpoint[4:]
+        elif endpoint.startswith("POST "):
+            method = "POST"
+            endpoint = endpoint[5:]
+        elif endpoint.startswith("DELETE "):
+            method = "DELETE"
+            endpoint = endpoint[7:]
+
+        payload_json = orjson.dumps(fix.payload, option=orjson.OPT_INDENT_2).decode("utf-8")
+        # Escape for heredoc
+        payload_escaped = payload_json.replace("'", "'\"'\"'")
+
+        script_lines.extend([
+            f"# {finding.id}: {finding.title}",
+        ])
+
+        if finding.index_uid:
+            script_lines.append(f"# Index: {finding.index_uid}")
+
+        script_lines.extend([
+            f'echo "Applying fix: {finding.id} - {finding.title}"',
+            f'curl -s -X {method} "$MEILISEARCH_URL{endpoint}" \\',
+            "  -H 'Content-Type: application/json' \\",
+            '  -H "Authorization: Bearer $API_KEY" \\',
+            f"  --data-binary '{payload_escaped}'",
+            "echo",
+            "",
+        ])
+
+    script_lines.extend([
+        'echo "All fixes applied successfully!"',
+        "",
+    ])
+
+    script_content = "\n".join(script_lines)
+
+    if output:
+        output.write_text(script_content)
+        # Make executable
+        output.chmod(0o755)
+        console.print(f"[green]Fix script saved to:[/green] {output}")
+        console.print(f"[dim]Run with: ./{output}[/dim]")
+    else:
+        console.print(script_content)
 
 
 @app.command()
