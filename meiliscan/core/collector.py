@@ -102,6 +102,17 @@ class DataCollector:
         """Get task history."""
         return self._tasks
 
+    async def get_tasks(self, limit: int = 1000) -> list[dict]:
+        """Get tasks from the underlying collector.
+
+        Args:
+            limit: Maximum number of tasks to retrieve
+
+        Returns:
+            List of task dictionaries
+        """
+        return await self._collector.get_tasks(limit=limit)
+
     async def close(self) -> None:
         """Close the underlying collector."""
         await self._collector.close()

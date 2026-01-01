@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-instance seed-clean
+.PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-instance seed-tasks seed-clean
 
 # Default MeiliSearch URL for seeding (can be overridden)
 MEILI_URL ?= http://localhost:7700
@@ -25,6 +25,7 @@ help:
 	@echo "Test Data:"
 	@echo "  make seed-dump    Create a mock dump file (test-dump.dump)"
 	@echo "  make seed-instance  Seed MeiliSearch instance with test data"
+	@echo "  make seed-tasks   Generate tasks on MeiliSearch instance"
 	@echo "  make seed-clean   Delete all indexes from MeiliSearch instance"
 	@echo ""
 	@echo "Code Quality:"
@@ -103,6 +104,16 @@ ifdef MEILI_API_KEY
 else
 	uv run python scripts/seed_data.py clean --url $(MEILI_URL)
 endif
+
+seed-tasks:
+	@echo "Generating tasks on MeiliSearch instance at $(MEILI_URL)..."
+ifdef MEILI_API_KEY
+	uv run python scripts/seed_tasks.py --url $(MEILI_URL) --api-key $(MEILI_API_KEY)
+else
+	uv run python scripts/seed_tasks.py --url $(MEILI_URL)
+endif
+	@echo ""
+	@echo "View tasks with: meiliscan tasks --url $(MEILI_URL)"
 
 # Code quality commands
 lint:
