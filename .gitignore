@@ -8,3 +8,11 @@ wheels/
 
 # Virtual environments
 .venv
+
+# Test artifacts
+test-dump.dump
+*.dump
+htmlcov/
+.coverage
+.pytest_cache/
+.ruff_cache/
