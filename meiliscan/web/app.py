@@ -131,6 +131,12 @@ def create_app(
     templates.env.filters["trend_icon"] = trend_icon
     templates.env.filters["trend_color"] = trend_color
 
+    # Add global template function to check if connected to live instance
+    def is_live_instance() -> bool:
+        return state.meili_url is not None
+
+    templates.env.globals["is_live_instance"] = is_live_instance
+
     # Store state and templates in app
     app.state.analyzer_state = state
     app.state.templates = templates

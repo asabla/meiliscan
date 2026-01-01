@@ -16,6 +16,9 @@
             <ul class="nav-links">
                 <li><a href="/" {% if request.url.path == "/" %}class="active"{% endif %}>Dashboard</a></li>
                 <li><a href="/findings" {% if request.url.path == "/findings" %}class="active"{% endif %}>Findings</a></li>
+                {% if is_live_instance() %}
+                <li><a href="/search" {% if request.url.path.startswith("/search") %}class="active"{% endif %}>Search</a></li>
+                {% endif %}
                 <li><a href="/compare" {% if request.url.path == "/compare" %}class="active"{% endif %}>Compare</a></li>
             </ul>
         </div>
