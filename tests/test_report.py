@@ -224,6 +224,48 @@ class TestAnalysisReport:
         assert len(all_findings) == 2
         assert {f.id for f in all_findings} == {"F1", "F2"}
 
+    def test_get_finding_by_id(self, sample_report):
+        """Test getting a finding by its ID."""
+        index = IndexData(uid="test")
+        sample_report.add_index(index)
+        
+        # Add index finding
+        sample_report.add_finding(Finding(
+            id="MEILI-S001",
+            category=FindingCategory.SCHEMA,
+            severity=FindingSeverity.CRITICAL,
+            title="Wildcard searchableAttributes",
+            description="Test description",
+            impact="Test impact",
+            index_uid="test",
+            references=["https://www.meilisearch.com/docs/test"],
+        ))
+        
+        # Add global finding
+        sample_report.add_finding(Finding(
+            id="MEILI-P001",
+            category=FindingCategory.PERFORMANCE,
+            severity=FindingSeverity.WARNING,
+            title="Global performance issue",
+            description="Test description",
+            impact="Test impact",
+        ))
+        
+        # Test finding index finding
+        finding = sample_report.get_finding_by_id("MEILI-S001")
+        assert finding is not None
+        assert finding.title == "Wildcard searchableAttributes"
+        assert finding.index_uid == "test"
+        
+        # Test finding global finding
+        finding = sample_report.get_finding_by_id("MEILI-P001")
+        assert finding is not None
+        assert finding.title == "Global performance issue"
+        
+        # Test finding non-existent ID
+        finding = sample_report.get_finding_by_id("MEILI-X999")
+        assert finding is None
+
     def test_to_dict(self, sample_report):
         """Test converting report to dictionary."""
         data = sample_report.to_dict()

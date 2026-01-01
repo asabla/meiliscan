@@ -116,6 +116,24 @@ class AnalysisReport(BaseModel):
             findings.extend(index_analysis.findings)
         return findings
 
+    def get_finding_by_id(self, finding_id: str) -> Finding | None:
+        """Get a finding by its ID.
+
+        Args:
+            finding_id: The finding ID (e.g., 'MEILI-S001')
+
+        Returns:
+            The finding if found, None otherwise
+        """
+        for finding in self.global_findings:
+            if finding.id == finding_id:
+                return finding
+        for index_analysis in self.indexes.values():
+            for finding in index_analysis.findings:
+                if finding.id == finding_id:
+                    return finding
+        return None
+
     def to_dict(self) -> dict[str, Any]:
         """Convert report to dictionary for export."""
         return self.model_dump(mode="json", by_alias=True, exclude_none=True, exclude={"_raw_indexes"})

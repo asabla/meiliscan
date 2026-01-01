@@ -182,8 +182,25 @@
     <p class="text-secondary mb-2">Address these issues in order of priority:</p>
     <ol style="padding-left: 1.5rem;">
         {% for finding_id in report.action_plan.priority_order[:10] %}
-        <li style="margin-bottom: 0.5rem;">
-            <code>{{ finding_id }}</code>
+        {% set finding = report.get_finding_by_id(finding_id) %}
+        <li style="margin-bottom: 0.75rem;">
+            <div class="flex align-center gap-1" style="flex-wrap: wrap;">
+                <code>{{ finding_id }}</code>
+                {% if finding %}
+                <span>{{ finding.title }}</span>
+                {% endif %}
+            </div>
+            {% if finding %}
+            <div class="text-secondary" style="font-size: 0.8rem; margin-top: 0.25rem;">
+                {% if finding.index_uid %}
+                <span>Index: <a href="/index/{{ finding.index_uid }}">{{ finding.index_uid }}</a></span>
+                {% endif %}
+                {% if finding.references %}
+                {% if finding.index_uid %}<span style="margin: 0 0.5rem;">|</span>{% endif %}
+                <a href="{{ finding.references[0] }}" target="_blank" rel="noopener">📖 Docs</a>
+                {% endif %}
+            </div>
+            {% endif %}
         </li>
         {% endfor %}
     </ol>
