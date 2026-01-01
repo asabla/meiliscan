@@ -336,5 +336,70 @@ async def _summary_instance(url: str, api_key: str | None) -> None:
     console.print("\n[dim]Run 'analyze' for full report[/dim]")
 
 
+@app.command()
+def serve(
+    url: Annotated[
+        Optional[str],
+        typer.Option(
+            "--url",
+            "-u",
+            help="MeiliSearch instance URL",
+        ),
+    ] = None,
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-k",
+            help="MeiliSearch API key",
+            envvar="MEILI_MASTER_KEY",
+        ),
+    ] = None,
+    dump: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--dump",
+            "-d",
+            help="Path to MeiliSearch dump file",
+        ),
+    ] = None,
+    host: Annotated[
+        str,
+        typer.Option(
+            "--host",
+            "-h",
+            help="Host to bind to",
+        ),
+    ] = "127.0.0.1",
+    port: Annotated[
+        int,
+        typer.Option(
+            "--port",
+            "-p",
+            help="Port to bind to",
+        ),
+    ] = 8080,
+) -> None:
+    """Start the web dashboard server."""
+    import uvicorn
+
+    from meilisearch_analyzer.web import create_app
+
+    console.print(Panel.fit(
+        f"[bold]MeiliSearch Analyzer Dashboard[/bold]\n\n"
+        f"URL: [cyan]http://{host}:{port}[/cyan]\n"
+        f"Press [bold]Ctrl+C[/bold] to stop",
+        border_style="blue",
+    ))
+
+    app_instance = create_app(
+        meili_url=url,
+        meili_api_key=api_key,
+        dump_path=dump,
+    )
+
+    uvicorn.run(app_instance, host=host, port=port, log_level="info")
+
+
 if __name__ == "__main__":
     app()
