@@ -117,3 +117,15 @@ class AnalysisReport(BaseModel):
     def to_dict(self) -> dict[str, Any]:
         """Convert report to dictionary for export."""
         return self.model_dump(mode="json", by_alias=True, exclude_none=True, exclude={"_raw_indexes"})
+
+    @classmethod
+    def from_dict(cls, data: dict[str, Any]) -> "AnalysisReport":
+        """Create a report from a dictionary (e.g., from JSON).
+
+        Args:
+            data: Dictionary representation of the report
+
+        Returns:
+            AnalysisReport instance
+        """
+        return cls.model_validate(data)

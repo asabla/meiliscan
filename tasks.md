@@ -1,6 +1,6 @@
 # MeiliSearch Analyzer - Implementation Progress
 
-## Current Status: Phase 3 Complete
+## Current Status: Phase 4 Complete
 
 ### Phase 1 Tasks - Core Analysis (MVP) - COMPLETE
 
@@ -38,19 +38,22 @@
 - [x] Refresh analysis action
 - [x] API endpoints (`/api/report`, `/api/health`)
 
-### Phase 4 Tasks (Future)
+### Phase 4 Tasks - Advanced Features - COMPLETE
 
-- [ ] SARIF export
-- [ ] Agent-friendly export
-- [ ] Fix script generation
-- [ ] Historical analysis (comparing dumps)
-- [ ] CI/CD integration mode
+- [x] SARIF export (`meilisearch_analyzer/exporters/sarif_exporter.py`)
+- [x] Agent-friendly export (`meilisearch_analyzer/exporters/agent_exporter.py`)
+- [x] Fix script generation (`fix-script` CLI command)
+- [x] CI/CD integration mode (`--ci` and `--fail-on-warnings` flags)
+- [x] Tests for SARIF Exporter (27 tests)
+- [x] Tests for Agent Exporter (34 tests)
+- [ ] Historical analysis (comparing dumps) - Future
+- [ ] Additional CI/CD integration tests - Future
 
 ---
 
 ## Test Summary
 
-Total tests: 136
+Total tests: 197
 - Finding models: 9 tests
 - Index models: 12 tests
 - Report models: 15 tests
@@ -59,8 +62,58 @@ Total tests: 136
 - Performance Analyzer: 23 tests
 - Markdown Exporter: 20 tests
 - Dump Parser: 19 tests
+- SARIF Exporter: 27 tests
+- Agent Exporter: 34 tests
+
+## CLI Commands
+
+```bash
+# Analyze live instance
+meilisearch-analyzer analyze --url http://localhost:7700 --api-key your-key
+
+# Analyze dump file
+meilisearch-analyzer analyze --dump ./path/to/dump.dump
+
+# Export formats
+meilisearch-analyzer analyze --url http://localhost:7700 --format json --output report.json
+meilisearch-analyzer analyze --url http://localhost:7700 --format markdown --output report.md
+meilisearch-analyzer analyze --url http://localhost:7700 --format sarif --output results.sarif
+meilisearch-analyzer analyze --url http://localhost:7700 --format agent --output agent-context.md
+
+# CI/CD mode (exit with non-zero code on issues)
+meilisearch-analyzer analyze --url http://localhost:7700 --ci
+meilisearch-analyzer analyze --url http://localhost:7700 --ci --fail-on-warnings
+
+# Generate fix script from analysis
+meilisearch-analyzer fix-script --input report.json --output apply-fixes.sh
+
+# Start web dashboard
+meilisearch-analyzer serve --url http://localhost:7700 --port 8080
+
+# Quick health summary
+meilisearch-analyzer summary --url http://localhost:7700
+```
 
 ## Changelog
+
+### 2026-01-01 (Phase 4)
+- SARIF export for GitHub/IDE integration
+  - Full SARIF 2.1.0 compliant output
+  - Rules with severity levels, locations, and fix suggestions
+  - Integration with GitHub Code Scanning and VS Code
+- Agent-friendly export for AI coding agents
+  - Structured markdown optimized for Claude, GPT, etc.
+  - Prioritized issues with fix commands
+  - Quick fix script section
+  - Index overview table
+- Fix script generator
+  - New `fix-script` CLI command
+  - Generates executable bash script from analysis JSON
+  - Includes curl commands for all fixable findings
+- CI/CD integration mode
+  - `--ci` flag for exit codes based on findings
+  - `--fail-on-warnings` for stricter CI checks
+  - Exit code 2 for critical issues, 1 for warnings
 
 ### 2026-01-01 (Phase 3)
 - Web dashboard implementation:
