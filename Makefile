@@ -1,7 +1,7 @@
 .PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-instance seed-clean
 
 # Default MeiliSearch URL for seeding (can be overridden)
-MEILI_URL ?= http://10.11.0.4:7700
+MEILI_URL ?= http://localhost:7700
 
 # Default target
 help:
