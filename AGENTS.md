@@ -5,56 +5,47 @@ Guidelines for AI coding agents working on this codebase.
 ## Quick Reference
 
 ```bash
-# Install dependencies (using uv)
-uv sync --all-extras
+# Setup
+make install-dev          # Install all dependencies (uv sync --all-extras)
 
-# Run all tests
-uv run pytest
+# Testing
+make test                 # Run all tests
+make test-file F=tests/test_schema_analyzer.py  # Run single test file
+uv run pytest tests/test_schema_analyzer.py::TestSchemaAnalyzer::test_wildcard  # Single test
+uv run pytest -k "test_large"  # Pattern matching
 
-# Run single test file
-uv run pytest tests/test_schema_analyzer.py
+# Code quality
+make lint                 # Run ruff linter
+make format               # Format with ruff
 
-# Run single test by name
-uv run pytest tests/test_schema_analyzer.py::TestSchemaAnalyzer::test_wildcard_searchable_attributes
-
-# Run tests with pattern matching
-uv run pytest -k "test_large_documents"
-
-# Run tests with coverage
-uv run pytest --cov=meilisearch_analyzer --cov-report=term-missing
-
-# Type checking (not configured, but pydantic handles runtime validation)
-# Linting (not configured, follow existing code style)
+# Development
+make serve                # Start web dashboard at http://localhost:8080
+make seed-dump            # Create test-dump.dump with sample data
+make seed-instance        # Seed MeiliSearch at localhost:7700
 ```
 
 ## Project Structure
 
 ```
 meilisearch_analyzer/
-├── analyzers/          # Analysis logic (schema, document, performance, best_practices)
-│   └── base.py         # BaseAnalyzer ABC
-├── collectors/         # Data collection (live instance, dump parser)
-│   └── base.py         # BaseCollector ABC
-├── core/               # Orchestration (analyzer, collector, reporter, scorer)
-├── exporters/          # Output formats (json, markdown, sarif, agent)
-│   └── base.py         # BaseExporter ABC
-├── models/             # Pydantic data models (finding, index, report)
-├── web/                # FastAPI dashboard
-└── cli.py              # Typer CLI entry point
+├── analyzers/       # Analysis logic (schema, document, performance, best_practices)
+├── collectors/      # Data collection (live_instance.py, dump_parser.py)
+├── core/            # Orchestration (collector.py, reporter.py, scorer.py)
+├── exporters/       # Output formats (json, markdown, sarif, agent)
+├── models/          # Pydantic models (finding.py, index.py, report.py)
+├── web/             # FastAPI dashboard + templates
+└── cli.py           # Typer CLI entry point
 ```
 
-## Code Style Guidelines
+## Code Style
 
 ### Imports
-
-Order imports as: stdlib, third-party, local. Separate groups with blank lines.
+Order: stdlib, third-party, local. Separate with blank lines.
 
 ```python
-"""Module docstring - always include."""
+"""Module docstring."""
 
 import re
-from abc import ABC, abstractmethod
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -62,32 +53,21 @@ import httpx
 from pydantic import BaseModel, Field
 
 from meilisearch_analyzer.models.finding import Finding, FindingCategory
-from meilisearch_analyzer.models.index import IndexData
 ```
 
 ### Type Hints
-
-Always use type hints. Use modern syntax (Python 3.11+):
+Use Python 3.11+ syntax. Prefer `X | None` over `Optional[X]`, lowercase `list[]`/`dict[]`.
 
 ```python
-# Correct
 def process(items: list[str], config: dict[str, Any] | None = None) -> list[Finding]:
-
-# Avoid Optional[], use | None instead
-# Avoid List[], Dict[] - use lowercase list[], dict[]
 ```
 
 ### Pydantic Models
-
-Use Field with aliases for camelCase JSON compatibility:
+Use Field aliases for camelCase JSON compatibility:
 
 ```python
 class IndexSettings(BaseModel):
-    searchable_attributes: list[str] = Field(
-        default_factory=lambda: ["*"],
-        alias="searchableAttributes"
-    )
-    
+    searchable_attributes: list[str] = Field(default_factory=lambda: ["*"], alias="searchableAttributes")
     model_config = {"populate_by_name": True}
 ```
 
@@ -96,21 +76,18 @@ class IndexSettings(BaseModel):
 | Type | Convention | Example |
 |------|------------|---------|
 | Classes | PascalCase | `SchemaAnalyzer`, `FindingSeverity` |
-| Functions/methods | snake_case | `analyze_index`, `_check_settings` |
-| Constants | UPPER_SNAKE | `DEFAULT_RANKING_RULES`, `CURRENT_STABLE_VERSION` |
-| Private methods | _prefix | `_is_id_field`, `_check_pagination` |
-| Finding IDs | MEILI-XNNN | `MEILI-S001`, `MEILI-D002`, `MEILI-B004` |
+| Functions | snake_case | `analyze_index`, `_check_settings` |
+| Constants | UPPER_SNAKE | `DEFAULT_RANKING_RULES` |
+| Finding IDs | MEILI-XNNN | `MEILI-S001`, `MEILI-D002` |
 
 ### Finding ID Prefixes
-
 - `S` = Schema (S001-S010)
 - `D` = Documents (D001-D008)
 - `P` = Performance (P001-P006)
 - `B` = Best Practices (B001-B004)
 
 ### Docstrings
-
-Use Google-style docstrings:
+Google-style:
 
 ```python
 def analyze(self, index: IndexData) -> list[Finding]:
@@ -124,23 +101,7 @@ def analyze(self, index: IndexData) -> list[Finding]:
     """
 ```
 
-### Abstract Base Classes
-
-Analyzers, collectors, and exporters extend ABCs:
-
-```python
-class SchemaAnalyzer(BaseAnalyzer):
-    @property
-    def name(self) -> str:
-        return "schema"
-
-    def analyze(self, index: IndexData) -> list[Finding]:
-        # Implementation
-```
-
 ### Creating Findings
-
-Always use the Finding model with all required fields:
 
 ```python
 Finding(
@@ -148,7 +109,7 @@ Finding(
     category=FindingCategory.SCHEMA,
     severity=FindingSeverity.CRITICAL,
     title="Wildcard searchableAttributes",
-    description="Detailed explanation of the issue...",
+    description="Detailed explanation...",
     impact="What this means for the user",
     index_uid=index.uid,
     current_value=["*"],
@@ -162,25 +123,10 @@ Finding(
 )
 ```
 
-### Async Patterns
-
-Collectors use async/await:
-
-```python
-async def connect(self) -> bool:
-    self._client = httpx.AsyncClient(...)
-    try:
-        response = await self._client.get("/health")
-        return response.status_code == 200
-    except httpx.HTTPError:
-        return False
-```
-
 ### Error Handling
-
 - Use specific exceptions, not bare `except:`
-- Collectors return `False` on connection failure, not raise
-- CLI displays user-friendly errors via Rich console
+- Collectors return `False` on failure, don't raise
+- CLI uses Rich console for user-friendly errors
 
 ```python
 try:
@@ -190,77 +136,50 @@ except httpx.HTTPError:
     return False
 ```
 
-## Testing Patterns
+## Testing
 
 ### Test Structure
 
 ```python
 class TestSchemaAnalyzer:
-    """Tests for SchemaAnalyzer."""
-
     @pytest.fixture
     def analyzer(self) -> SchemaAnalyzer:
         return SchemaAnalyzer()
 
     @pytest.fixture
     def basic_index(self) -> IndexData:
-        return IndexData(
-            uid="test_index",
-            settings=IndexSettings(...),
-            stats=IndexStats(numberOfDocuments=1000, fieldDistribution={...}),
-        )
+        return IndexData(uid="test", settings=IndexSettings(), stats=IndexStats())
 
-    def test_finding_detection(self, analyzer, basic_index):
-        """Test detection of specific finding."""
+    def test_wildcard_searchable_attributes(self, analyzer, basic_index):
         findings = analyzer.analyze(basic_index)
-        s001_findings = [f for f in findings if f.id == "MEILI-S001"]
-        assert len(s001_findings) == 1
-        assert s001_findings[0].severity == FindingSeverity.CRITICAL
+        assert any(f.id == "MEILI-S001" for f in findings)
 ```
 
 ### Async Tests
-
-pytest-asyncio is configured with `asyncio_mode = "auto"`:
-
-```python
-async def test_collector_connect(self):
-    collector = LiveInstanceCollector(url="http://localhost:7700")
-    # respx for mocking HTTP
-```
+pytest-asyncio configured with `asyncio_mode = "auto"`. Use `respx` for HTTP mocking.
 
 ### Test Naming
-
-- `test_<feature>_<finding_id>` for finding tests
-- `test_<action>_<condition>` for behavior tests
+- `test_<feature>_<finding_id>` for findings
+- `test_<action>_<condition>` for behavior
 
 ## CLI Commands
 
 ```bash
-# Analyze live instance
 meilisearch-analyzer analyze --url http://localhost:7700 --api-key key
-
-# Analyze dump file
-meilisearch-analyzer analyze --dump ./path/to/dump.dump
-
-# Export formats: json, markdown, sarif, agent
-meilisearch-analyzer analyze --url ... --format sarif --output results.sarif
-
-# CI mode (exits non-zero on issues)
-meilisearch-analyzer analyze --url ... --ci --fail-on-warnings
-
-# Web dashboard
+meilisearch-analyzer analyze --dump ./dump.dump --format markdown -o report.md
+meilisearch-analyzer analyze --url ... --ci --fail-on-warnings  # CI mode
 meilisearch-analyzer serve --url http://localhost:7700 --port 8080
+meilisearch-analyzer compare old.json new.json -o comparison.md
+meilisearch-analyzer fix-script --input report.json --output fixes.sh
 ```
 
 ## Key Dependencies
 
 | Package | Purpose |
 |---------|---------|
-| pydantic | Data validation and models |
+| pydantic | Data models with validation |
 | httpx | Async HTTP client |
-| typer | CLI framework |
-| rich | Terminal output formatting |
+| typer/rich | CLI framework and formatting |
 | orjson | Fast JSON serialization |
-| pytest-asyncio | Async test support |
-| respx | HTTP mocking for tests |
-| fastapi | Web dashboard |
+| fastapi/jinja2 | Web dashboard |
+| pytest-asyncio/respx | Testing |
