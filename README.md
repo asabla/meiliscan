@@ -2,6 +2,8 @@
 
 A comprehensive tool for analyzing MeiliSearch instances and dump files to identify optimization opportunities, potential pitfalls, and provide actionable recommendations.
 
+![Dashboard Screenshot](docs/screenshots/dashboard.png)
+
 ## Features
 
 - **Live Instance Analysis**: Connect to a running MeiliSearch instance and analyze its configuration
@@ -83,25 +85,58 @@ meilisearch-analyzer summary --url http://localhost:7700
 
 ## Example Output
 
-```
-+---------------------------------------------------------------------+
-|                    MeiliSearch Analysis Summary                      |
-+---------------------------------------------------------------------+
-|  Version: 1.12.0    Indexes: 5    Documents: 125,000                |
-|                                                                      |
-|  Health Score: 72/100 (Needs Attention)                              |
-|  ████████████████░░░░░░░░░░░░░░░░░░░░░░░░                            |
-|                                                                      |
-|  * Critical: 2    * Warnings: 8    * Suggestions: 15                 |
-+---------------------------------------------------------------------+
+### CLI Summary
 
-                           Top Findings
-+-------------+-----------+-----------------+------------------------+
-| ID          | Severity  | Index           | Title                  |
-+-------------+-----------+-----------------+------------------------+
-| MEILI-S001  | critical  | products        | Wildcard searchable... |
-| MEILI-S002  | warning   | orders          | ID fields in search... |
-+-------------+-----------+-----------------+------------------------+
+```
+$ meilisearch-analyzer summary --url http://localhost:7700
+
+╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
+│ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
+│                                                                              │
+│ Health Score: 18/100 (Critical)                                              │
+│ ███░░░░░░░░░░░░░░░░░                                                         │
+│                                                                              │
+│ ● Critical: 1    ● Warnings: 5    ● Suggestions: 9    ● Info: 6              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Critical Issues:
+  • products: Wildcard searchableAttributes
+
+Run 'analyze' for full report
+```
+
+### CLI Analysis
+
+```
+$ meilisearch-analyzer analyze --url http://localhost:7700
+
+╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
+│ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
+│                                                                              │
+│ Health Score: 18/100 (Critical)                                              │
+│ ███░░░░░░░░░░░░░░░░░                                                         │
+│                                                                              │
+│ ● Critical: 1    ● Warnings: 5    ● Suggestions: 9    ● Info: 6              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+                                                                                
+                                  Top Findings                                  
+┏━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃ ID         ┃ Severi… ┃ Index         ┃ Title                                 ┃
+┡━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
+│ MEILI-S001 │ critic… │ products      │ Wildcard searchableAttributes         │
+│ MEILI-S002 │ warning │ orders        │ ID fields in searchableAttributes     │
+│ MEILI-S009 │ warning │ orders        │ Very low pagination limit             │
+│ MEILI-D004 │ warning │ products      │ Large array fields detected           │
+│ MEILI-D007 │ warning │ products      │ Mixed types in fields                 │
+│ MEILI-S002 │ warning │ users         │ ID fields in searchableAttributes     │
+│ MEILI-S010 │ sugges… │ articles      │ High pagination limit                 │
+│ MEILI-D005 │ sugges… │ articles      │ HTML/Markdown content in text fields  │
+│ MEILI-B002 │ sugges… │ articles      │ Fields in both searchable and         │
+│            │         │               │ filterable attributes                 │
+│ MEILI-S006 │ sugges… │ orders        │ No stop words configured              │
+└────────────┴─────────┴───────────────┴───────────────────────────────────────┘
+
+Use --output to save the full report to a file.
 ```
 
 ## Analysis Checks
@@ -302,6 +337,18 @@ Start the dashboard:
 ```bash
 meilisearch-analyzer serve --url http://localhost:7700 --port 8080
 ```
+
+### Findings Explorer
+
+Filter and explore all findings by severity, category, or index:
+
+![Findings Page](docs/screenshots/findings.png)
+
+### Index Details
+
+Drill down into individual indexes to see settings, statistics, and findings:
+
+![Index Detail Page](docs/screenshots/index_detail.png)
 
 ## Development
 
