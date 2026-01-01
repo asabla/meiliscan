@@ -1,0 +1,51 @@
+<div id="document-samples">
+    {% if documents %}
+    <div class="mb-1 flex justify-between items-center">
+        <span class="text-secondary">
+            Showing {{ (page - 1) * per_page + 1 }}-{{ [(page - 1) * per_page + documents|length, total]|min }} of {{ total }} sample documents
+        </span>
+    </div>
+    
+    {% for doc in documents %}
+    <div class="document-sample" style="margin-bottom: 0.75rem;">
+        <pre style="margin: 0; padding: 1rem; background-color: var(--bg-primary); border-radius: 0.375rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5;"><code>{{ doc | tojson(indent=2) }}</code></pre>
+    </div>
+    {% endfor %}
+    
+    <!-- Pagination -->
+    {% if total_pages > 1 %}
+    <div class="flex justify-between items-center mt-2" style="padding-top: 0.75rem; border-top: 1px solid var(--border);">
+        <div class="flex gap-1">
+            {% if page > 1 %}
+            <button 
+                class="btn btn-secondary"
+                hx-get="/index/{{ index_uid }}/documents?page={{ page - 1 }}"
+                hx-target="#document-samples"
+                hx-swap="outerHTML"
+            >
+                Previous
+            </button>
+            {% endif %}
+            
+            {% if page < total_pages %}
+            <button 
+                class="btn btn-secondary"
+                hx-get="/index/{{ index_uid }}/documents?page={{ page + 1 }}"
+                hx-target="#document-samples"
+                hx-swap="outerHTML"
+            >
+                Next
+            </button>
+            {% endif %}
+        </div>
+        
+        <span class="text-muted">
+            Page {{ page }} of {{ total_pages }}
+        </span>
+    </div>
+    {% endif %}
+    
+    {% else %}
+    <p class="text-muted">No sample documents available for this index.</p>
+    {% endif %}
+</div>

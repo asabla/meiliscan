@@ -39,6 +39,7 @@ class IndexAnalysis(BaseModel):
     settings: dict[str, Any] = Field(default_factory=dict)
     statistics: dict[str, Any] = Field(default_factory=dict)
     findings: list[Finding] = Field(default_factory=list)
+    sample_documents: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class ActionPlan(BaseModel):
@@ -83,6 +84,7 @@ class AnalysisReport(BaseModel):
                 "field_count": index.field_count,
                 "is_indexing": index.stats.is_indexing,
             },
+            sample_documents=index.sample_documents,
         )
 
     def add_finding(self, finding: Finding) -> None:

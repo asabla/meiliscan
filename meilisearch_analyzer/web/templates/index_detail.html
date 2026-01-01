@@ -171,6 +171,22 @@
     {% endif %}
 </div>
 
+<!-- Document Samples -->
+<div class="card mt-2">
+    <div class="card-header">
+        <h2 class="card-title">Sample Documents</h2>
+        <span class="text-secondary">Preview documents from this index</span>
+    </div>
+    
+    <div 
+        hx-get="/index/{{ index_uid }}/documents?page=1"
+        hx-trigger="load"
+        hx-swap="innerHTML"
+    >
+        <p class="text-muted">Loading documents...</p>
+    </div>
+</div>
+
 {% else %}
 <div class="card">
     <div class="empty-state">

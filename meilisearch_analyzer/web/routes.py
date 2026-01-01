@@ -282,3 +282,83 @@ def register_routes(app: FastAPI) -> None:
             return {"error": f"Invalid JSON: {e}"}
         except Exception as e:
             return {"error": str(e)}
+
+    @app.get("/api/indexes/{index_uid}/documents")
+    async def api_index_documents(
+        request: Request,
+        index_uid: str,
+        limit: int = 10,
+        offset: int = 0,
+    ) -> dict:
+        """Get sample documents for an index.
+
+        Args:
+            index_uid: The index UID
+            limit: Maximum number of documents to return (max 100)
+            offset: Number of documents to skip
+
+        Returns:
+            Dictionary with documents and pagination info
+        """
+        state: AppState = request.app.state.analyzer_state
+
+        if not state.report:
+            return {"error": "No analysis data available"}
+
+        if index_uid not in state.report.indexes:
+            return {"error": f"Index '{index_uid}' not found"}
+
+        index_analysis = state.report.indexes[index_uid]
+        all_docs = index_analysis.sample_documents
+
+        # Apply pagination
+        limit = min(limit, 100)  # Cap at 100
+        start = offset
+        end = offset + limit
+
+        paginated_docs = all_docs[start:end]
+
+        return {
+            "results": paginated_docs,
+            "offset": offset,
+            "limit": limit,
+            "total": len(all_docs),
+        }
+
+    @app.get("/index/{index_uid}/documents", response_class=HTMLResponse)
+    async def index_documents_partial(
+        request: Request,
+        index_uid: str,
+        page: int = 1,
+    ):
+        """Render document samples partial (HTMX)."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        documents = []
+        total = 0
+        per_page = 5
+
+        if state.report and index_uid in state.report.indexes:
+            index_analysis = state.report.indexes[index_uid]
+            all_docs = index_analysis.sample_documents
+            total = len(all_docs)
+
+            start = (page - 1) * per_page
+            end = start + per_page
+            documents = all_docs[start:end]
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+        return templates.TemplateResponse(
+            "components/document_samples.html",
+            {
+                "request": request,
+                "index_uid": index_uid,
+                "documents": documents,
+                "page": page,
+                "total_pages": total_pages,
+                "total": total,
+                "per_page": per_page,
+            },
+        )
