@@ -26,6 +26,60 @@ class AppState:
         self.dump_path: Path | None = None
 
 
+# Template filters - defined before create_app so they're available at registration time
+
+
+def severity_color(severity: str) -> str:
+    """Get CSS color class for severity level."""
+    colors = {
+        "critical": "red",
+        "warning": "yellow",
+        "suggestion": "blue",
+        "info": "gray",
+    }
+    return colors.get(severity.lower(), "gray")
+
+
+def severity_icon(severity: str) -> str:
+    """Get icon for severity level."""
+    icons = {
+        "critical": "🔴",
+        "warning": "🟡",
+        "suggestion": "🔵",
+        "info": "⚪",
+    }
+    return icons.get(severity.lower(), "⚪")
+
+
+def format_number(value: int | float) -> str:
+    """Format number with thousands separators."""
+    if isinstance(value, float):
+        return f"{value:,.2f}"
+    return f"{value:,}"
+
+
+def trend_icon(trend: str) -> str:
+    """Get icon for trend direction."""
+    icons = {
+        "up": "&#8593;",
+        "down": "&#8595;",
+        "stable": "&#8596;",
+    }
+    trend_str = trend.lower() if hasattr(trend, "lower") else str(trend)
+    return icons.get(trend_str, "&#8596;")
+
+
+def trend_color(trend: str) -> str:
+    """Get CSS color class for trend direction."""
+    colors = {
+        "up": "green",
+        "down": "red",
+        "stable": "blue",
+    }
+    trend_str = trend.lower() if hasattr(trend, "lower") else str(trend)
+    return colors.get(trend_str, "gray")
+
+
 def create_app(
     meili_url: str | None = None,
     meili_api_key: str | None = None,
@@ -77,6 +131,8 @@ def create_app(
     templates.env.filters["severity_color"] = severity_color
     templates.env.filters["severity_icon"] = severity_icon
     templates.env.filters["format_number"] = format_number
+    templates.env.filters["trend_icon"] = trend_icon
+    templates.env.filters["trend_color"] = trend_color
 
     # Store state and templates in app
     app.state.analyzer_state = state
@@ -84,6 +140,7 @@ def create_app(
 
     # Register routes
     from meilisearch_analyzer.web.routes import register_routes
+
     register_routes(app)
 
     return app
@@ -113,32 +170,3 @@ async def run_analysis(state: AppState) -> None:
     except Exception as e:
         # Log error but don't crash - UI will show "no data" state
         print(f"Error running analysis: {e}")
-
-
-def severity_color(severity: str) -> str:
-    """Get CSS color class for severity level."""
-    colors = {
-        "critical": "red",
-        "warning": "yellow",
-        "suggestion": "blue",
-        "info": "gray",
-    }
-    return colors.get(severity.lower(), "gray")
-
-
-def severity_icon(severity: str) -> str:
-    """Get icon for severity level."""
-    icons = {
-        "critical": "🔴",
-        "warning": "🟡",
-        "suggestion": "🔵",
-        "info": "⚪",
-    }
-    return icons.get(severity.lower(), "⚪")
-
-
-def format_number(value: int | float) -> str:
-    """Format number with thousands separators."""
-    if isinstance(value, float):
-        return f"{value:,.2f}"
-    return f"{value:,}"
