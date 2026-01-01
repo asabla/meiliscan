@@ -1,0 +1,277 @@
+{% extends "base.html" %}
+
+{% block title %}Search Playground - Meiliscan{% endblock %}
+
+{% block content %}
+<h1 style="font-size: 1.75rem; margin-bottom: 1.5rem;">Search Playground</h1>
+
+{% if not is_live %}
+<!-- Not Connected State -->
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">🔌</div>
+        <h2>Live Connection Required</h2>
+        <p class="text-secondary">The search playground requires a connection to a live MeiliSearch instance.</p>
+        <p class="text-secondary mt-1">Dump file analysis does not support live searches.</p>
+        <a href="/" class="btn btn-primary mt-2">Go to Dashboard</a>
+    </div>
+</div>
+
+{% elif not indexes %}
+<!-- No Indexes State -->
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">📭</div>
+        <h2>No Indexes Found</h2>
+        <p class="text-secondary">No indexes were found in the connected MeiliSearch instance.</p>
+        <a href="/" class="btn btn-primary mt-2">Go to Dashboard</a>
+    </div>
+</div>
+
+{% else %}
+<!-- Search Interface -->
+<div class="grid grid-3 mb-2">
+    <!-- Search Form -->
+    <div class="card" style="grid-column: span 2;">
+        <div class="card-header">
+            <h2 class="card-title">Search Query</h2>
+        </div>
+        
+        <form id="search-form" 
+              hx-post="/search/{{ selected_index }}/results" 
+              hx-target="#search-results"
+              hx-swap="innerHTML"
+              hx-indicator="#search-spinner">
+            
+            <!-- Index Selector -->
+            <div class="form-group">
+                <label for="index-select">Index</label>
+                <select id="index-select" 
+                        name="index" 
+                        style="width: 100%;"
+                        onchange="changeIndex(this.value)">
+                    {% for idx in indexes %}
+                    <option value="{{ idx }}" {% if idx == selected_index %}selected{% endif %}>{{ idx }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <!-- Query Input -->
+            <div class="form-group">
+                <label for="query">Search Query</label>
+                <input type="text" 
+                       id="query" 
+                       name="q" 
+                       placeholder="Enter your search query..." 
+                       style="width: 100%;"
+                       autocomplete="off">
+            </div>
+
+            <!-- Filter Expression -->
+            <div class="form-group">
+                <label for="filter">
+                    Filter Expression
+                    <span class="text-muted" style="font-weight: normal; font-size: 0.75rem;">
+                        (e.g., category = 'books' AND price < 50)
+                    </span>
+                </label>
+                <input type="text" 
+                       id="filter" 
+                       name="filter" 
+                       placeholder="Enter filter expression..." 
+                       style="width: 100%;"
+                       autocomplete="off">
+            </div>
+
+            <!-- Sort Options -->
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label for="sort_field">Sort By</label>
+                    <select id="sort_field" name="sort_field" style="width: 100%;">
+                        <option value="">-- No sorting --</option>
+                        {% if index_settings and index_settings.get('sortableAttributes') %}
+                            {% for attr in index_settings.get('sortableAttributes', []) %}
+                            <option value="{{ attr }}">{{ attr }}</option>
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="sort_direction">Direction</label>
+                    <select id="sort_direction" name="sort_direction" style="width: 100%;">
+                        <option value="asc">Ascending</option>
+                        <option value="desc">Descending</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Distinct and Page Size -->
+            <div class="grid grid-2">
+                <div class="form-group">
+                    <label for="distinct">Distinct Attribute</label>
+                    <select id="distinct" name="distinct" style="width: 100%;">
+                        <option value="">-- None --</option>
+                        {% if index_settings and index_settings.get('distinctAttribute') %}
+                            <option value="{{ index_settings.get('distinctAttribute') }}">
+                                {{ index_settings.get('distinctAttribute') }} (default)
+                            </option>
+                        {% endif %}
+                        {% if index_settings and index_settings.get('filterableAttributes') %}
+                            {% for attr in index_settings.get('filterableAttributes', []) %}
+                                {% if attr != index_settings.get('distinctAttribute') %}
+                                <option value="{{ attr }}">{{ attr }}</option>
+                                {% endif %}
+                            {% endfor %}
+                        {% endif %}
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="hitsPerPage">Results Per Page</label>
+                    <select id="hitsPerPage" name="hitsPerPage" style="width: 100%;">
+                        <option value="10">10</option>
+                        <option value="20" selected>20</option>
+                        <option value="50">50</option>
+                        <option value="100">100</option>
+                    </select>
+                </div>
+            </div>
+
+            <!-- Hidden page field for pagination -->
+            <input type="hidden" name="page" id="page-input" value="1">
+
+            <!-- Submit Button -->
+            <div class="flex gap-1 items-center">
+                <button type="submit" class="btn btn-primary">
+                    Search
+                </button>
+                <span id="search-spinner" class="htmx-indicator text-muted" style="margin-left: 0.5rem;">
+                    Searching...
+                </span>
+            </div>
+        </form>
+    </div>
+
+    <!-- Index Info Sidebar -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Index Info</h2>
+        </div>
+
+        {% if index_settings %}
+        <div class="mb-2">
+            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Filterable Attributes</h3>
+            {% if index_settings.get('filterableAttributes') %}
+            <div class="flex flex-wrap gap-1">
+                {% for attr in index_settings.get('filterableAttributes', []) %}
+                <code class="badge badge-blue" style="cursor: pointer;" onclick="addFilter('{{ attr }}')">{{ attr }}</code>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted" style="font-size: 0.875rem;">None configured</p>
+            {% endif %}
+        </div>
+
+        <div class="mb-2">
+            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Sortable Attributes</h3>
+            {% if index_settings.get('sortableAttributes') %}
+            <div class="flex flex-wrap gap-1">
+                {% for attr in index_settings.get('sortableAttributes', []) %}
+                <code class="badge badge-green">{{ attr }}</code>
+                {% endfor %}
+            </div>
+            {% else %}
+            <p class="text-muted" style="font-size: 0.875rem;">None configured</p>
+            {% endif %}
+        </div>
+
+        <div>
+            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Distinct Attribute</h3>
+            {% if index_settings.get('distinctAttribute') %}
+            <code class="badge badge-yellow">{{ index_settings.get('distinctAttribute') }}</code>
+            {% else %}
+            <p class="text-muted" style="font-size: 0.875rem;">Not configured</p>
+            {% endif %}
+        </div>
+        {% else %}
+        <p class="text-muted">Select an index to view settings</p>
+        {% endif %}
+
+        <div class="mt-2" style="border-top: 1px solid var(--border); padding-top: 1rem;">
+            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Filter Syntax Help</h3>
+            <div style="font-size: 0.75rem;" class="text-secondary">
+                <p><code>field = 'value'</code></p>
+                <p><code>field != 'value'</code></p>
+                <p><code>field > 10</code></p>
+                <p><code>field >= 10 AND field <= 100</code></p>
+                <p><code>field IN ['a', 'b', 'c']</code></p>
+                <p><code>field EXISTS</code></p>
+                <p><code>(expr1) OR (expr2)</code></p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Search Results Area -->
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Results</h2>
+    </div>
+    <div id="search-results">
+        <p class="text-muted">Enter a search query and click "Search" to see results.</p>
+    </div>
+</div>
+
+<script>
+    // Change index - redirect to update the form
+    function changeIndex(indexUid) {
+        window.location.href = '/search?index=' + encodeURIComponent(indexUid);
+    }
+
+    // Add filter helper - inserts attribute into filter field
+    function addFilter(attr) {
+        const filterInput = document.getElementById('filter');
+        const currentValue = filterInput.value.trim();
+        
+        if (currentValue) {
+            filterInput.value = currentValue + ' AND ' + attr + " = ''";
+        } else {
+            filterInput.value = attr + " = ''";
+        }
+        
+        // Focus and position cursor before the closing quote
+        filterInput.focus();
+        const pos = filterInput.value.length - 1;
+        filterInput.setSelectionRange(pos, pos);
+    }
+
+    // Reset page to 1 when form values change
+    document.querySelectorAll('#search-form input, #search-form select').forEach(el => {
+        if (el.name !== 'page') {
+            el.addEventListener('change', () => {
+                document.getElementById('page-input').value = '1';
+            });
+        }
+    });
+
+    // Also reset on query input
+    document.getElementById('query').addEventListener('input', () => {
+        document.getElementById('page-input').value = '1';
+    });
+
+    // Handle pagination clicks
+    document.addEventListener('click', function(e) {
+        if (e.target.matches('[data-page]')) {
+            e.preventDefault();
+            document.getElementById('page-input').value = e.target.dataset.page;
+            document.getElementById('search-form').requestSubmit();
+        }
+    });
+
+    // Update form action when index changes via JS (for HTMX)
+    function updateFormAction(indexUid) {
+        document.getElementById('search-form').setAttribute('hx-post', '/search/' + indexUid + '/results');
+        htmx.process(document.getElementById('search-form'));
+    }
+</script>
+{% endif %}
+{% endblock %}

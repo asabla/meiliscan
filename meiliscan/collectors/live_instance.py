@@ -157,6 +157,56 @@ class LiveInstanceCollector(BaseCollector):
             return data["results"]
         return data if isinstance(data, list) else []
 
+    async def search(
+        self,
+        index_uid: str,
+        query: str = "",
+        filter: str | None = None,
+        sort: list[str] | None = None,
+        distinct: str | None = None,
+        hits_per_page: int = 20,
+        page: int = 1,
+    ) -> dict[str, Any]:
+        """Execute a search query against an index.
+
+        Args:
+            index_uid: The index to search
+            query: Search query string
+            filter: Filter expression string
+            sort: List of sort expressions (e.g., ["price:asc", "title:desc"])
+            distinct: Attribute to use for distinct results
+            hits_per_page: Number of results per page
+            page: Page number (1-indexed)
+
+        Returns:
+            Search results dictionary from Meilisearch
+        """
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        # Build search payload
+        payload: dict[str, Any] = {
+            "q": query,
+            "hitsPerPage": hits_per_page,
+            "page": page,
+        }
+
+        if filter:
+            payload["filter"] = filter
+
+        if sort:
+            payload["sort"] = sort
+
+        if distinct:
+            payload["distinct"] = distinct
+
+        response = await self._client.post(
+            f"/indexes/{index_uid}/search",
+            json=payload,
+        )
+        response.raise_for_status()
+        return response.json()
+
     async def close(self) -> None:
         """Close the HTTP client."""
         if self._client:
