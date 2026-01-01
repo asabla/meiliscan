@@ -14,26 +14,31 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 - **CI/CD Integration**: Exit codes and flags for automated pipelines
 - **Fix Script Generation**: Generate executable scripts to apply recommended fixes
 
+## Requirements
+
+- Python 3.11+
+- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+
 ## Installation
 
-### Using uvx (Recommended)
+### From source (recommended for now)
 
 ```bash
-uvx meilisearch-analyzer --help
+git clone https://github.com/yourusername/meilisearch-analyzer.git
+cd meilisearch-analyzer
+make install-dev  # or: uv sync --all-extras
 ```
 
-### Using pip
+### Using pip (when published)
 
 ```bash
 pip install meilisearch-analyzer
 ```
 
-### From source
+### Using uvx (when published)
 
 ```bash
-git clone https://github.com/yourusername/meilisearch-analyzer.git
-cd meilisearch-analyzer
-uv sync
+uvx meilisearch-analyzer --help
 ```
 
 ## Quick Start
@@ -305,19 +310,70 @@ meilisearch-analyzer serve --url http://localhost:7700 --port 8080
 ```bash
 git clone https://github.com/yourusername/meilisearch-analyzer.git
 cd meilisearch-analyzer
-uv sync --all-extras
+make install-dev  # or: uv sync --all-extras
+```
+
+### Makefile Commands
+
+Run `make help` for a full list of commands.
+
+```bash
+# Setup
+make install-dev     # Install all dependencies
+
+# Testing
+make test            # Run all tests
+make test-cov        # Run tests with coverage report
+make test-file F=tests/test_schema_analyzer.py  # Run single test file
+
+# Code Quality
+make lint            # Run ruff linter
+make format          # Format code with ruff
+
+# Development
+make serve           # Start web dashboard on http://localhost:8080
+make serve-dev       # Start with auto-reload
+
+# Test Data Seeding
+make seed-dump       # Create test-dump.dump with sample data
+make seed-instance   # Seed MeiliSearch at localhost:7700
+make seed-instance MEILI_URL=http://localhost:7700 MEILI_API_KEY=my-key
+make seed-clean      # Delete all test indexes
+
+# Cleanup
+make clean           # Remove build artifacts and cache
 ```
 
 ### Running Tests
 
 ```bash
-uv run pytest
+# All tests
+make test
+
+# With coverage
+make test-cov
+
+# Single test file
+make test-file F=tests/test_schema_analyzer.py
+
+# Single test function
+uv run pytest tests/test_schema_analyzer.py::TestSchemaAnalyzer::test_wildcard -v
+
+# Pattern matching
+uv run pytest -k "test_large"
 ```
 
-### Running with Coverage
+### Project Structure
 
-```bash
-uv run pytest --cov=meilisearch_analyzer --cov-report=html
+```
+meilisearch_analyzer/
+├── analyzers/       # Analysis logic (schema, document, performance, best_practices)
+├── collectors/      # Data collection (live_instance.py, dump_parser.py)
+├── core/            # Orchestration (collector.py, reporter.py, scorer.py)
+├── exporters/       # Output formats (json, markdown, sarif, agent)
+├── models/          # Pydantic models (finding.py, index.py, report.py)
+├── web/             # FastAPI dashboard + templates + static/
+└── cli.py           # Typer CLI entry point
 ```
 
 ## License
