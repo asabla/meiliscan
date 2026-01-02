@@ -73,3 +73,52 @@ class HealthScorer:
             return "Poor"
         else:
             return "Critical"
+
+    def get_score_breakdown(self, findings: list[Finding]) -> dict:
+        """Get a detailed breakdown of score calculation.
+
+        Args:
+            findings: List of findings to analyze
+
+        Returns:
+            Dictionary with breakdown details including counts, penalties, and totals
+        """
+        counts = {
+            "critical": 0,
+            "warning": 0,
+            "suggestion": 0,
+            "info": 0,
+        }
+        penalties = {
+            "critical": 0,
+            "warning": 0,
+            "suggestion": 0,
+            "info": 0,
+        }
+
+        for finding in findings:
+            severity_key = finding.severity.value.lower()
+            if severity_key in counts:
+                counts[severity_key] += 1
+                penalties[severity_key] += self.SEVERITY_WEIGHTS.get(
+                    finding.severity, 0
+                )
+
+        total_penalty = sum(penalties.values())
+        score = max(0, self.max_score - total_penalty)
+
+        return {
+            "max_score": self.max_score,
+            "counts": counts,
+            "penalties": penalties,
+            "weights": {
+                "critical": self.SEVERITY_WEIGHTS[FindingSeverity.CRITICAL],
+                "warning": self.SEVERITY_WEIGHTS[FindingSeverity.WARNING],
+                "suggestion": self.SEVERITY_WEIGHTS[FindingSeverity.SUGGESTION],
+                "info": self.SEVERITY_WEIGHTS[FindingSeverity.INFO],
+            },
+            "total_penalty": total_penalty,
+            "final_score": score,
+            "label": self.get_score_label(score),
+            "capped": total_penalty > self.max_score,
+        }

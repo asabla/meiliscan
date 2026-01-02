@@ -3,6 +3,7 @@
 {% block title %}Dashboard - Meiliscan{% endblock %}
 
 {% block content %}
+{% if not report %}
 <div class="grid grid-2 mb-2">
     <!-- Connection Form -->
     <div class="card">
@@ -39,8 +40,29 @@
         {% endif %}
     </div>
 </div>
+{% endif %}
 
 {% if report %}
+<!-- Summary Stats -->
+<div class="grid grid-4 mb-2">
+    <div class="card stat">
+        <div class="stat-value">{{ report.summary.total_indexes }}</div>
+        <div class="stat-label">Indexes</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ report.summary.total_documents|format_number }}</div>
+        <div class="stat-label">Documents</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value text-red">{{ report.summary.critical_issues }}</div>
+        <div class="stat-label">Critical Issues</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value text-yellow">{{ report.summary.warnings }}</div>
+        <div class="stat-label">Warnings</div>
+    </div>
+</div>
+
 <!-- Health Score -->
 <div class="card mb-2">
     <div class="card-header">
@@ -63,41 +85,70 @@
             </form>
         </div>
     </div>
-    <div class="health-score">
-        <div class="health-score-value {% if report.summary.health_score >= 80 %}text-green{% elif report.summary.health_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
-            {{ report.summary.health_score }}
-        </div>
-        <div style="flex: 1;">
-            <div class="health-bar">
+    <div class="health-score-container">
+        <!-- Left: Score Display -->
+        <div class="health-score-display">
+            <div class="health-score-value {% if report.summary.health_score >= 80 %}text-green{% elif report.summary.health_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
+                {{ report.summary.health_score }}
+            </div>
+            <div class="health-score-label">out of 100</div>
+            {% if score_breakdown %}
+            <span class="badge badge-{{ 'red' if score_breakdown.label == 'Critical' else 'yellow' if score_breakdown.label in ['Poor', 'Needs Attention'] else 'green' }}">{{ score_breakdown.label }}</span>
+            {% endif %}
+            <div class="health-bar" style="margin-top: 1rem;">
                 <div class="health-bar-fill {% if report.summary.health_score >= 80 %}good{% elif report.summary.health_score >= 50 %}warning{% else %}critical{% endif %}" 
                      style="width: {{ report.summary.health_score }}%;"></div>
             </div>
-            <div class="flex justify-between mt-1 text-secondary" style="font-size: 0.75rem;">
-                <span>0</span>
-                <span>Health Score out of 100</span>
-                <span>100</span>
-            </div>
         </div>
-    </div>
-</div>
-
-<!-- Summary Stats -->
-<div class="grid grid-4 mb-2">
-    <div class="card stat">
-        <div class="stat-value">{{ report.summary.total_indexes }}</div>
-        <div class="stat-label">Indexes</div>
-    </div>
-    <div class="card stat">
-        <div class="stat-value">{{ report.summary.total_documents|format_number }}</div>
-        <div class="stat-label">Documents</div>
-    </div>
-    <div class="card stat">
-        <div class="stat-value text-red">{{ report.summary.critical_issues }}</div>
-        <div class="stat-label">Critical Issues</div>
-    </div>
-    <div class="card stat">
-        <div class="stat-value text-yellow">{{ report.summary.warnings }}</div>
-        <div class="stat-label">Warnings</div>
+        
+        <!-- Right: Calculation Table -->
+        {% if score_breakdown %}
+        <div class="health-score-calculation">
+            <table class="score-table">
+                <thead>
+                    <tr>
+                        <th>Severity</th>
+                        <th>Count</th>
+                        <th>Weight</th>
+                        <th>Penalty</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="text-red">Critical</span></td>
+                        <td>{{ score_breakdown.counts.critical }}</td>
+                        <td>× {{ score_breakdown.weights.critical }}</td>
+                        <td class="text-red">{% if score_breakdown.penalties.critical > 0 %}-{% endif %}{{ score_breakdown.penalties.critical }}</td>
+                    </tr>
+                    <tr>
+                        <td><span class="text-yellow">Warnings</span></td>
+                        <td>{{ score_breakdown.counts.warning }}</td>
+                        <td>× {{ score_breakdown.weights.warning }}</td>
+                        <td class="text-yellow">{% if score_breakdown.penalties.warning > 0 %}-{% endif %}{{ score_breakdown.penalties.warning }}</td>
+                    </tr>
+                    <tr>
+                        <td><span class="text-blue">Suggestions</span></td>
+                        <td>{{ score_breakdown.counts.suggestion }}</td>
+                        <td>× {{ score_breakdown.weights.suggestion }}</td>
+                        <td class="text-blue">{% if score_breakdown.penalties.suggestion > 0 %}-{% endif %}{{ score_breakdown.penalties.suggestion }}</td>
+                    </tr>
+                </tbody>
+                <tfoot>
+                    <tr class="score-table-total">
+                        <td colspan="3">Total Penalty</td>
+                        <td class="text-red">-{{ score_breakdown.total_penalty }}{% if score_breakdown.capped %} *{% endif %}</td>
+                    </tr>
+                    <tr class="score-table-final">
+                        <td colspan="3">Final Score (100 - penalty)</td>
+                        <td class="{% if score_breakdown.final_score >= 80 %}text-green{% elif score_breakdown.final_score >= 50 %}text-yellow{% else %}text-red{% endif %}">{{ score_breakdown.final_score }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+            {% if score_breakdown.capped %}
+            <div class="text-secondary" style="font-size: 0.75rem; margin-top: 0.5rem;">* Score cannot go below 0</div>
+            {% endif %}
+        </div>
+        {% endif %}
     </div>
 </div>
 

@@ -277,20 +277,98 @@ tr:hover {
 }
 
 /* Health Score */
-.health-score {
+.health-score-container {
     display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+}
+
+.health-score-display {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 1rem;
+    min-width: 140px;
 }
 
 .health-score-value {
-    font-size: 3rem;
+    font-size: 3.5rem;
     font-weight: 700;
+    line-height: 1;
+}
+
+.health-score-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.health-score-display .health-bar {
+    width: 100%;
+}
+
+.health-score-calculation {
+    flex: 1;
+}
+
+.score-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.score-table th,
+.score-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+
+.score-table th {
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.score-table td {
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.score-table th:last-child,
+.score-table td:last-child {
+    text-align: right;
+}
+
+.score-table-total td {
+    border-top: 1px dashed var(--border);
+    border-bottom: none;
+    padding-top: 0.75rem;
+    font-weight: 500;
+}
+
+.score-table-final td {
+    border-bottom: none;
+    font-weight: 600;
+}
+
+@media (max-width: 768px) {
+    .health-score-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .health-score-display {
+        flex-direction: row;
+        gap: 1rem;
+        align-items: center;
+        min-width: auto;
+    }
+
+    .health-score-display .health-bar {
+        flex: 1;
+    }
 }
 
 .health-bar {
-    flex: 1;
-    height: 1.5rem;
+    height: 1rem;
     background-color: var(--bg-tertiary);
     border-radius: 9999px;
     overflow: hidden;
