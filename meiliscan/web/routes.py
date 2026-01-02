@@ -207,6 +207,24 @@ def register_routes(app: FastAPI) -> None:
 
         return RedirectResponse(url="/", status_code=303)
 
+    @app.post("/disconnect", response_class=HTMLResponse)
+    async def disconnect(request: Request):
+        """Disconnect from current source and reset to initial state."""
+        state: AppState = request.app.state.analyzer_state
+
+        # Close existing collector
+        if state.collector:
+            await state.collector.close()
+
+        # Reset all state
+        state.report = None
+        state.collector = None
+        state.meili_url = None
+        state.meili_api_key = None
+        state.dump_path = None
+
+        return RedirectResponse(url="/", status_code=303)
+
     @app.get("/api/report")
     async def api_report(request: Request) -> dict:
         """Get the full report as JSON."""
