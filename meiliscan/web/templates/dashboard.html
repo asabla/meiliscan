@@ -3,46 +3,49 @@
 {% block title %}Dashboard - Meiliscan{% endblock %}
 
 {% block content %}
-{% if not report %}
-<div class="grid grid-2 mb-2">
-    <!-- Connection Form -->
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Connect to MeiliSearch</h2>
-        </div>
-        <form action="/connect" method="post">
-            <div class="form-group">
-                <label for="url">Instance URL</label>
-                <input type="url" id="url" name="url" value="{{ source_url or 'http://localhost:7700' }}" style="width: 100%;" required>
-            </div>
-            <div class="form-group">
-                <label for="api_key">API Key (optional)</label>
-                <input type="password" id="api_key" name="api_key" placeholder="Master key or API key" style="width: 100%;">
-            </div>
-            <button type="submit" class="btn btn-primary">Connect & Analyze</button>
-        </form>
-    </div>
-
-    <!-- Upload Form -->
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Analyze Dump File</h2>
-        </div>
-        <form action="/upload" method="post" enctype="multipart/form-data">
-            <div class="form-group">
-                <label for="file">Upload .dump file</label>
-                <input type="file" id="file" name="file" accept=".dump" style="width: 100%;" required>
-            </div>
-            <button type="submit" class="btn btn-secondary">Upload & Analyze</button>
-        </form>
-        {% if source_dump %}
-        <p class="text-muted mt-1">Currently analyzing: {{ source_dump.name }}</p>
+{% if report %}
+<!-- Connection Status Bar -->
+<div class="status-bar mb-2">
+    <div class="status-bar-info">
+        {% if source_url %}
+        <span class="status-indicator status-live"></span>
+        <span class="status-text">
+            <strong>Live Instance:</strong> {{ source_url }}
+            {% if report.source.meilisearch_version %}
+            <span class="text-secondary">(v{{ report.source.meilisearch_version }})</span>
+            {% endif %}
+        </span>
+        {% elif source_dump %}
+        <span class="status-indicator status-dump"></span>
+        <span class="status-text">
+            <strong>Dump File:</strong> {{ source_dump.name }}
+        </span>
         {% endif %}
     </div>
+    <div class="status-bar-actions">
+        <!-- Export Dropdown -->
+        <div class="dropdown">
+            <button type="button" class="btn btn-secondary btn-sm dropdown-toggle" onclick="toggleDropdown(this)">
+                Export ▾
+            </button>
+            <ul class="dropdown-menu">
+                <li><a href="/api/export?format=json" class="dropdown-item">JSON (.json)</a></li>
+                <li><a href="/api/export?format=markdown" class="dropdown-item">Markdown (.md)</a></li>
+                <li><a href="/api/export?format=sarif" class="dropdown-item">SARIF (.sarif)</a></li>
+                <li><a href="/api/export?format=agent" class="dropdown-item">Agent (.md)</a></li>
+            </ul>
+        </div>
+        {% if source_url %}
+        <form action="/refresh" method="post" style="margin: 0;">
+            <button type="submit" class="btn btn-secondary btn-sm">Refresh</button>
+        </form>
+        {% endif %}
+        <form action="/disconnect" method="post" style="margin: 0;">
+            <button type="submit" class="btn btn-outline btn-sm">Disconnect</button>
+        </form>
+    </div>
 </div>
-{% endif %}
 
-{% if report %}
 <!-- Summary Stats -->
 <div class="grid grid-4 mb-2">
     <div class="card stat">
@@ -67,23 +70,6 @@
 <div class="card mb-2">
     <div class="card-header">
         <h2 class="card-title">Health Score</h2>
-        <div class="flex gap-1">
-            <!-- Export Dropdown -->
-            <div class="dropdown">
-                <button type="button" class="btn btn-secondary dropdown-toggle" onclick="toggleDropdown(this)">
-                    📥 Export ▾
-                </button>
-                <ul class="dropdown-menu">
-                    <li><a href="/api/export?format=json" class="dropdown-item">JSON (.json)</a></li>
-                    <li><a href="/api/export?format=markdown" class="dropdown-item">Markdown (.md)</a></li>
-                    <li><a href="/api/export?format=sarif" class="dropdown-item">SARIF (.sarif)</a></li>
-                    <li><a href="/api/export?format=agent" class="dropdown-item">Agent (.md)</a></li>
-                </ul>
-            </div>
-            <form action="/refresh" method="post" style="margin: 0;">
-                <button type="submit" class="btn btn-secondary">🔄 Refresh</button>
-            </form>
-        </div>
     </div>
     <div class="health-score-container">
         <!-- Left: Score Display -->
@@ -194,12 +180,12 @@
     <div class="card">
         <div class="card-header">
             <h2 class="card-title">Issues by Severity</h2>
-            <a href="/findings" class="btn btn-secondary">View All →</a>
+            <a href="/findings" class="btn btn-secondary btn-sm">View All →</a>
         </div>
         <div class="flex gap-2 flex-wrap">
-            <span class="badge badge-red">🔴 {{ report.summary.critical_issues }} Critical</span>
-            <span class="badge badge-yellow">🟡 {{ report.summary.warnings }} Warnings</span>
-            <span class="badge badge-blue">🔵 {{ report.summary.suggestions }} Suggestions</span>
+            <span class="badge badge-red">{{ report.summary.critical_issues }} Critical</span>
+            <span class="badge badge-yellow">{{ report.summary.warnings }} Warnings</span>
+            <span class="badge badge-blue">{{ report.summary.suggestions }} Suggestions</span>
         </div>
 
         {% set all_findings = report.get_all_findings() %}
@@ -285,7 +271,7 @@
                 {% endif %}
                 {% if finding.references %}
                 {% if finding.index_uid %}<span style="margin: 0 0.5rem;">|</span>{% endif %}
-                <a href="{{ finding.references[0] }}" target="_blank" rel="noopener">📖 Docs</a>
+                <a href="{{ finding.references[0] }}" target="_blank" rel="noopener">Docs</a>
                 {% endif %}
             </div>
             {% endif %}
@@ -306,12 +292,53 @@
 {% endif %}
 
 {% else %}
-<!-- No Data State -->
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-state-icon">🔍</div>
-        <h2>No Analysis Data</h2>
-        <p class="text-secondary">Connect to a MeiliSearch instance or upload a dump file to get started.</p>
+<!-- Not Connected State -->
+<div class="welcome-container">
+    <div class="welcome-header mb-2">
+        <h1>Welcome to Meiliscan</h1>
+        <p class="text-secondary">Analyze your MeiliSearch instance for optimization opportunities</p>
+    </div>
+    
+    <div class="grid grid-2">
+        <!-- Connection Form -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Connect to Instance</h2>
+                <span class="badge badge-green">Live</span>
+            </div>
+            <p class="text-secondary mb-2" style="font-size: 0.875rem;">Connect to a running MeiliSearch instance for real-time analysis</p>
+            <form action="/connect" method="post">
+                <div class="form-group">
+                    <label for="url">Instance URL</label>
+                    <input type="url" id="url" name="url" value="http://localhost:7700" style="width: 100%;" required>
+                </div>
+                <div class="form-group">
+                    <label for="api_key">API Key <span class="text-secondary">(optional)</span></label>
+                    <input type="password" id="api_key" name="api_key" placeholder="Master key or API key" style="width: 100%;">
+                </div>
+                <button type="submit" class="btn btn-primary" style="width: 100%;">Connect & Analyze</button>
+            </form>
+        </div>
+
+        <!-- Upload Form -->
+        <div class="card">
+            <div class="card-header">
+                <h2 class="card-title">Analyze Dump File</h2>
+                <span class="badge badge-blue">Offline</span>
+            </div>
+            <p class="text-secondary mb-2" style="font-size: 0.875rem;">Upload a MeiliSearch dump file for offline analysis</p>
+            <form action="/upload" method="post" enctype="multipart/form-data">
+                <div class="form-group">
+                    <label for="file">Select .dump file</label>
+                    <input type="file" id="file" name="file" accept=".dump" style="width: 100%;" required>
+                </div>
+                <div class="form-group" style="visibility: hidden;">
+                    <label>&nbsp;</label>
+                    <input type="hidden">
+                </div>
+                <button type="submit" class="btn btn-secondary" style="width: 100%;">Upload & Analyze</button>
+            </form>
+        </div>
     </div>
 </div>
 {% endif %}
