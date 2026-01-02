@@ -27,6 +27,7 @@ def register_routes(app: FastAPI) -> None:
         state: AppState = request.app.state.analyzer_state
         templates = request.app.state.templates
 
+        from meiliscan.core.scorer import HealthScorer
         from meiliscan.models.task import Task, TasksSummary
 
         # Get tasks summary if we have a collector
@@ -39,6 +40,13 @@ def register_routes(app: FastAPI) -> None:
             except Exception:
                 pass
 
+        # Get health score breakdown if we have a report
+        score_breakdown: dict | None = None
+        if state.report:
+            scorer = HealthScorer()
+            all_findings = state.report.get_all_findings()
+            score_breakdown = scorer.get_score_breakdown(all_findings)
+
         return templates.TemplateResponse(
             "dashboard.html",
             {
@@ -47,6 +55,7 @@ def register_routes(app: FastAPI) -> None:
                 "source_url": state.meili_url,
                 "source_dump": state.dump_path,
                 "tasks_summary": tasks_summary,
+                "score_breakdown": score_breakdown,
             },
         )
 
