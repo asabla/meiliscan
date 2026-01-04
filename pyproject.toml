@@ -13,15 +13,17 @@ dependencies = [
     "orjson>=3.10.0",
     "packaging>=23.0",
     "uvicorn>=0.40.0",
-]
-
-[project.optional-dependencies]
-web = [
+    # `serve` is part of the default CLI, so web deps
+    # must be installed for `uvx meiliscan serve` to work.
     "fastapi>=0.115.0",
-    "uvicorn>=0.32.0",
     "jinja2>=3.1.0",
     "python-multipart>=0.0.9",
 ]
+
+[project.optional-dependencies]
+# Kept for backward compatibility; web deps are now part
+# of default install so `uvx meiliscan serve` works.
+web = []
 analysis = [
     "pandas>=2.2.0",
 ]
@@ -32,7 +34,7 @@ dev = [
     "respx>=0.21.0",
 ]
 all = [
-    "meiliscan[web,analysis,dev]",
+    "meiliscan[analysis,dev]",
 ]
 
 [project.scripts]

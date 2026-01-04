@@ -31,14 +31,21 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 ```bash
 git clone https://github.com/asabla/meiliscan.git
 cd meiliscan
-make install-dev  # or: uv sync --all-extras
+make install-dev
 ```
+
+Notes:
+- The default install includes the web dashboard dependencies, so `meiliscan serve` works without extras.
+- If you want a minimal install, use `uv sync` and manage optional deps yourself.
 
 ### Using uv
 
 ```bash
 # Run without installing (temporary environment)
 uvx --from git+https://github.com/asabla/meiliscan meiliscan --help
+
+# Serve the web dashboard (works without extras)
+uvx --from git+https://github.com/asabla/meiliscan meiliscan serve --url http://localhost:7700 --port 8080
 
 # Or install persistently to PATH
 uv tool install git+https://github.com/asabla/meiliscan
