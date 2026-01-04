@@ -1,5 +1,9 @@
 """Performance analyzer for MeiliSearch instances."""
 
+import re
+from collections import Counter
+from datetime import datetime
+
 from meiliscan.analyzers.base import BaseAnalyzer
 from meiliscan.models.finding import (
     Finding,
@@ -48,6 +52,12 @@ class PerformanceAnalyzer(BaseAnalyzer):
         findings.extend(self._check_database_fragmentation(global_stats))
         findings.extend(self._check_index_count(indexes))
         findings.extend(self._check_index_imbalance(indexes))
+
+        # New task-based checks (P007-P010)
+        findings.extend(self._check_task_backlog(tasks))
+        findings.extend(self._check_tiny_indexing_tasks(tasks))
+        findings.extend(self._check_oversized_indexing_tasks(tasks))
+        findings.extend(self._check_error_clustering(tasks))
 
         return findings
 
@@ -278,5 +288,302 @@ class PerformanceAnalyzer(BaseAnalyzer):
                         )
                     )
                     break
+
+        return findings
+
+    def _check_task_backlog(self, tasks: list[dict] | None) -> list[Finding]:
+        """Check for sustained task backlog (P007)."""
+        findings: list[Finding] = []
+
+        if not tasks or len(tasks) < 10:
+            return findings
+
+        # Filter finished tasks with timing info
+        timed_tasks = []
+        for task in tasks:
+            enqueued_at = task.get("enqueuedAt")
+            started_at = task.get("startedAt")
+            if enqueued_at and started_at:
+                try:
+                    # Parse ISO timestamps
+                    if isinstance(enqueued_at, str):
+                        enqueued = datetime.fromisoformat(
+                            enqueued_at.replace("Z", "+00:00")
+                        )
+                    else:
+                        enqueued = enqueued_at
+
+                    if isinstance(started_at, str):
+                        started = datetime.fromisoformat(
+                            started_at.replace("Z", "+00:00")
+                        )
+                    else:
+                        started = started_at
+
+                    queue_time = (started - enqueued).total_seconds()
+                    if queue_time >= 0:
+                        timed_tasks.append({"task": task, "queue_time": queue_time})
+                except (ValueError, TypeError):
+                    continue
+
+        if len(timed_tasks) < 5:
+            return findings
+
+        # Calculate queue time statistics
+        queue_times = [t["queue_time"] for t in timed_tasks]
+        avg_queue_time = sum(queue_times) / len(queue_times)
+        max_queue_time = max(queue_times)
+
+        # P007: Sustained task backlog (average queue time > 60 seconds)
+        if avg_queue_time > 60:
+            # Find tasks with significant queue delay
+            delayed_count = sum(1 for qt in queue_times if qt > 30)
+
+            findings.append(
+                Finding(
+                    id="MEILI-P007",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.WARNING,
+                    title="Sustained task queue backlog detected",
+                    description=(
+                        f"Tasks are waiting an average of {avg_queue_time:.0f} seconds "
+                        f"in the queue before processing starts (max: {max_queue_time:.0f}s). "
+                        f"{delayed_count} of {len(timed_tasks)} analyzed tasks had delays > 30s. "
+                        f"This suggests the instance may be overloaded."
+                    ),
+                    impact="Increased latency for document updates and search freshness",
+                    current_value={
+                        "avg_queue_time_seconds": round(avg_queue_time, 1),
+                        "max_queue_time_seconds": round(max_queue_time, 1),
+                        "tasks_analyzed": len(timed_tasks),
+                        "tasks_delayed": delayed_count,
+                    },
+                    recommended_value="< 60 seconds average queue time",
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/async/understanding-asynchronous-operations"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _check_tiny_indexing_tasks(self, tasks: list[dict] | None) -> list[Finding]:
+        """Check for too many tiny indexing tasks (P008)."""
+        findings: list[Finding] = []
+
+        if not tasks:
+            return findings
+
+        # Filter document addition tasks
+        doc_tasks = [
+            t
+            for t in tasks
+            if t.get("type") == "documentAdditionOrUpdate"
+            and t.get("status") == "succeeded"
+        ]
+
+        if len(doc_tasks) < 20:
+            return findings
+
+        # Check details for document counts
+        tiny_tasks = []
+        for task in doc_tasks:
+            details = task.get("details", {})
+            # Check various possible detail fields
+            doc_count = (
+                details.get("receivedDocuments")
+                or details.get("indexedDocuments")
+                or details.get("providedIds")
+                or 0
+            )
+            if isinstance(doc_count, int) and 0 < doc_count < 10:
+                tiny_tasks.append(task)
+
+        # P008: Too many tiny indexing tasks (more than 50% are tiny)
+        tiny_ratio = len(tiny_tasks) / len(doc_tasks)
+        if tiny_ratio > 0.5 and len(tiny_tasks) >= 10:
+            findings.append(
+                Finding(
+                    id="MEILI-P008",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.SUGGESTION,
+                    title="Many tiny indexing tasks detected",
+                    description=(
+                        f"{len(tiny_tasks)} of {len(doc_tasks)} document addition tasks "
+                        f"({tiny_ratio * 100:.0f}%) contain fewer than 10 documents each. "
+                        f"Consider batching documents client-side to reduce task overhead."
+                    ),
+                    impact="Increased task queue overhead, slower overall indexing throughput",
+                    current_value={
+                        "tiny_tasks": len(tiny_tasks),
+                        "total_doc_tasks": len(doc_tasks),
+                        "tiny_ratio": f"{tiny_ratio * 100:.0f}%",
+                    },
+                    recommended_value="Batch documents into larger groups (100-10,000 per request)",
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/indexing/indexing_best_practices"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _check_oversized_indexing_tasks(
+        self, tasks: list[dict] | None
+    ) -> list[Finding]:
+        """Check for oversized indexing tasks (P009)."""
+        findings: list[Finding] = []
+
+        if not tasks:
+            return findings
+
+        # Filter document addition tasks with duration info
+        doc_tasks = [
+            t
+            for t in tasks
+            if t.get("type") == "documentAdditionOrUpdate" and t.get("duration")
+        ]
+
+        if not doc_tasks:
+            return findings
+
+        # Parse durations and find very slow tasks
+        slow_tasks = []
+        for task in doc_tasks:
+            duration = task.get("duration")
+            duration_seconds = None
+
+            if isinstance(duration, str):
+                # Parse ISO duration (PT1.234S or PT1M30.5S)
+                match = re.search(r"PT(?:(\d+)M)?(\d+\.?\d*)S", duration)
+                if match:
+                    minutes = int(match.group(1) or 0)
+                    seconds = float(match.group(2))
+                    duration_seconds = minutes * 60 + seconds
+            elif isinstance(duration, (int, float)):
+                duration_seconds = duration
+
+            if duration_seconds is not None and duration_seconds > 600:  # > 10 minutes
+                details = task.get("details", {})
+                doc_count = details.get("receivedDocuments") or details.get(
+                    "indexedDocuments", 0
+                )
+                slow_tasks.append(
+                    {
+                        "uid": task.get("uid"),
+                        "duration_seconds": duration_seconds,
+                        "documents": doc_count,
+                        "index": task.get("indexUid"),
+                    }
+                )
+
+        # P009: Oversized indexing tasks
+        if slow_tasks:
+            avg_duration = sum(t["duration_seconds"] for t in slow_tasks) / len(
+                slow_tasks
+            )
+            findings.append(
+                Finding(
+                    id="MEILI-P009",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.SUGGESTION,
+                    title="Oversized indexing tasks detected",
+                    description=(
+                        f"Found {len(slow_tasks)} indexing tasks taking over 10 minutes each "
+                        f"(average: {avg_duration / 60:.1f} minutes). "
+                        f"Consider splitting large imports into smaller batches."
+                    ),
+                    impact="Long-running tasks block other operations and increase memory pressure",
+                    current_value={
+                        "slow_task_count": len(slow_tasks),
+                        "avg_duration_minutes": round(avg_duration / 60, 1),
+                        "examples": slow_tasks[:3],
+                    },
+                    recommended_value="Keep individual tasks under 10 minutes",
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/indexing/indexing_best_practices"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _check_error_clustering(self, tasks: list[dict] | None) -> list[Finding]:
+        """Check for recurring error patterns (P010)."""
+        findings: list[Finding] = []
+
+        if not tasks:
+            return findings
+
+        # Filter failed tasks with error info
+        failed_tasks = [
+            t for t in tasks if t.get("status") == "failed" and t.get("error")
+        ]
+
+        if len(failed_tasks) < 3:
+            return findings
+
+        # Cluster errors by code/message
+        error_codes: Counter[str] = Counter()
+        error_messages: Counter[str] = Counter()
+        error_examples: dict[str, dict] = {}
+
+        for task in failed_tasks:
+            error = task.get("error", {})
+            code = error.get("code", "unknown")
+            message = error.get("message", "")
+
+            error_codes[code] += 1
+
+            # Truncate message for grouping (first 100 chars)
+            msg_key = message[:100] if message else "no message"
+            error_messages[msg_key] += 1
+
+            # Store example if not already present
+            if code not in error_examples:
+                error_examples[code] = {
+                    "code": code,
+                    "message": message[:200] if message else "",
+                    "type": error.get("type", ""),
+                    "count": 0,
+                }
+            error_examples[code]["count"] = error_codes[code]
+
+        # P010: Report top recurring errors
+        top_errors = error_codes.most_common(5)
+        recurring_errors = [(code, count) for code, count in top_errors if count >= 3]
+
+        if recurring_errors:
+            error_summary = [
+                {
+                    "code": code,
+                    "count": count,
+                    "message": error_examples.get(code, {}).get("message", "")[:100],
+                }
+                for code, count in recurring_errors
+            ]
+
+            total_recurring = sum(count for _, count in recurring_errors)
+            findings.append(
+                Finding(
+                    id="MEILI-P010",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.WARNING,
+                    title="Recurring task failures detected",
+                    description=(
+                        f"Found {total_recurring} failed tasks with recurring error patterns. "
+                        f"Top error codes: {', '.join(code for code, _ in recurring_errors)}. "
+                        f"Review and fix the root causes to improve reliability."
+                    ),
+                    impact="Repeated failures indicate systematic issues affecting data consistency",
+                    current_value={
+                        "total_failed": len(failed_tasks),
+                        "recurring_errors": error_summary,
+                    },
+                    references=[
+                        "https://www.meilisearch.com/docs/reference/errors/error_codes"
+                    ],
+                )
+            )
 
         return findings
