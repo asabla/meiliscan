@@ -23,7 +23,7 @@ Non-goals:
 | 1) Instance launch config analytics | **DONE** | CLI flag, model, analyzer, findings I001-I006 |
 | 2) Opt-in search probing | **DONE** | CLI flag, analyzer, findings Q001-Q003 |
 | 3) Expand index setting analytics | **DONE** | S011-S020 implemented in schema_analyzer.py |
-| 4) Expand document/sample analytics | **PARTIAL** | D009-D010 (PII) done; D011 pending |
+| 4) Expand document/sample analytics | **DONE** | D009-D013 implemented in document_analyzer.py |
 | 5) Task-based performance analytics | **DONE** | P007-P010 implemented in performance_analyzer.py |
 
 ---
@@ -159,7 +159,7 @@ The `IndexSettings` model already contains more than we currently analyze.
 
 ---
 
-### 4) Expand document/sample analytics - **PARTIAL**
+### 4) Expand document/sample analytics - **DONE**
 
 Use sample documents as heuristics; default remains `limit=20`.
 
@@ -168,16 +168,20 @@ Use sample documents as heuristics; default remains `limit=20`.
   - `--sample-documents N` (default `20`)
 
 **Additional checks**
-- `MEILI-D009` (Warning): ~~arrays of objects detected~~ **CHANGED**: Potentially sensitive field names detected. **DONE**
-- `MEILI-D010` (Critical): ~~candidate filter/facet fields detected~~ **CHANGED**: Potential PII detected in document content (opt-in via `--detect-sensitive`). **DONE**
-- `MEILI-D011` (Opt-in / Warning): potential PII fields detected (email/phone/token/password patterns). **PENDING** - merged into D009/D010.
+- `MEILI-D009` (Warning): Potentially sensitive field names detected. **DONE**
+- `MEILI-D010` (Critical): Potential PII detected in document content (opt-in via `--detect-sensitive`). **DONE**
+- `MEILI-D011` (Warning/Info): Arrays of objects detected in fields - warns about MeiliSearch flattening behavior, especially for filterable fields. **DONE**
+- `MEILI-D012` (Suggestion): Geo coordinates detected but not using `_geo` format - suggests restructuring for geo search. **DONE**
+- `MEILI-D013` (Suggestion/Info): Date strings detected - suggests converting to Unix timestamps for proper sorting. **DONE**
 
 **Implementation files:**
-- `meiliscan/analyzers/document_analyzer.py` - PII detection methods added
+- `meiliscan/analyzers/document_analyzer.py` - PII detection, array detection, geo detection, date detection
 - `meiliscan/cli.py` - `--sample-documents` and `--detect-sensitive` flags
 
 Notes:
 - PII detection should be conservative and based on field names + value patterns.
+- Geo detection looks for lat/lng field patterns and nested location objects.
+- Date detection identifies ISO 8601, US/EU date formats in string fields.
 
 ---
 
@@ -214,17 +218,18 @@ Notes:
   - 27 new tests for S011-S020 in `test_schema_analyzer.py` (41 total)
   - 18 new tests for P007-P010 in `test_performance_analyzer.py` (41 total)
   - 23 tests for Q001-Q003 in `test_search_probe_analyzer.py`
+  - 14 new tests for D011-D013 in `test_document_analyzer.py` (39 total)
 - Add mock live-collector tests for `--probe-search` behavior (mock `search()` results). - **DONE** (covered in search probe tests)
 
-**Total test count: 376 tests passing**
+**Total test count: 390 tests passing**
 
 ---
 
-## Rollout plan - **MOSTLY COMPLETE**
+## Rollout plan - **COMPLETE**
 
 1. Implement CLI + data plumbing for optional inputs (config toml, sample-documents, probe-search). - **DONE**
 2. Add instance-config analyzer and 2–3 high-value findings first (`I001`, `I004`, `I003`). - **DONE** (all I001-I006)
-3. Add index/document improvements (primary key, sortable types, arrays-of-objects). - **DONE** (S011-S020)
+3. Add index/document improvements (primary key, sortable types, arrays-of-objects, geo, dates). - **DONE** (S011-S020, D011-D013)
 4. Add task backlog + error clustering. - **DONE** (P007-P010)
 5. Iterate on thresholds based on real-world feedback. - **PENDING**
 
@@ -232,6 +237,5 @@ Notes:
 
 ## Remaining work
 
-1. **Document analytics expansion (D011)**: Consider additional document-level checks beyond PII detection.
-2. **Real-world validation**: Test findings against production instances to tune thresholds.
-3. **Documentation**: Update README with new CLI flags and finding descriptions.
+1. **Real-world validation**: Test findings against production instances to tune thresholds.
+2. **Documentation**: Update README with new CLI flags and finding descriptions.
