@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-dump-large seed-index seed-instance seed-tasks seed-clean
+.PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-dump-large seed-index seed-instance seed-instance-large seed-instance-index seed-tasks seed-clean
 
 # Default MeiliSearch URL for seeding (can be overridden)
 MEILI_URL ?= http://localhost:7700
@@ -22,13 +22,17 @@ help:
 	@echo "  make test-watch   Run tests in watch mode (requires pytest-watch)"
 	@echo "  make test-file F=<file>  Run specific test file"
 	@echo ""
-	@echo "Test Data:"
-	@echo "  make seed-dump         Create a mock dump file (test-dump.dump)"
+	@echo "Test Data (Dump Files):"
+	@echo "  make seed-dump         Create a small dump file (test-dump.dump)"
 	@echo "  make seed-dump-large   Create a large dump (~100k docs)"
-	@echo "  make seed-index        Seed single index (requires I=<index> D=<docs>)"
-	@echo "  make seed-instance     Seed MeiliSearch instance with test data"
-	@echo "  make seed-tasks        Generate tasks on MeiliSearch instance"
-	@echo "  make seed-clean        Delete all indexes from MeiliSearch instance"
+	@echo "  make seed-index        Seed single index to dump (requires I=<index>)"
+	@echo ""
+	@echo "Test Data (Live Instance):"
+	@echo "  make seed-instance       Seed MeiliSearch instance with default data"
+	@echo "  make seed-instance-large Seed instance with large dataset (~100k docs)"
+	@echo "  make seed-instance-index Seed single index on instance (requires I=<index>)"
+	@echo "  make seed-tasks          Generate tasks on MeiliSearch instance"
+	@echo "  make seed-clean          Delete all indexes from MeiliSearch instance"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint         Run linter (ruff)"
@@ -50,6 +54,8 @@ help:
 	@echo "  make seed-dump-large D=500000"
 	@echo "  make seed-index I=products D=100000"
 	@echo "  make seed-instance"
+	@echo "  make seed-instance-large D=500000"
+	@echo "  make seed-instance-index I=products D=100000"
 	@echo "  make seed-instance MEILI_URL=http://localhost:7700 MEILI_API_KEY=my-key"
 
 # Setup commands
@@ -124,6 +130,36 @@ ifdef MEILI_API_KEY
 	uv run python scripts/seed_data.py seed --url $(MEILI_URL) --api-key $(MEILI_API_KEY)
 else
 	uv run python scripts/seed_data.py seed --url $(MEILI_URL)
+endif
+	@echo ""
+	@echo "Analyze with: meiliscan analyze --url $(MEILI_URL)"
+
+seed-instance-large:
+	@echo "Seeding MeiliSearch instance at $(MEILI_URL) with $(D) documents..."
+ifdef MEILI_API_KEY
+	uv run python scripts/seed_data.py seed --url $(MEILI_URL) --api-key $(MEILI_API_KEY) --documents $(D)
+else
+	uv run python scripts/seed_data.py seed --url $(MEILI_URL) --documents $(D)
+endif
+	@echo ""
+	@echo "Analyze with: meiliscan analyze --url $(MEILI_URL)"
+
+seed-instance-index:
+	@if [ -z "$(I)" ]; then \
+		echo "Usage: make seed-instance-index I=<index> D=<docs>"; \
+		echo "Example: make seed-instance-index I=products D=100000"; \
+		echo ""; \
+		echo "Available indexes:"; \
+		echo "  products, users, articles, orders, locations, events,"; \
+		echo "  reviews, categories, tags, logs, notifications, inventory,"; \
+		echo "  analytics, customers, employees, support_tickets, knowledge_base"; \
+		exit 1; \
+	fi
+	@echo "Seeding index '$(I)' with $(D) documents at $(MEILI_URL)..."
+ifdef MEILI_API_KEY
+	uv run python scripts/seed_data.py seed --url $(MEILI_URL) --api-key $(MEILI_API_KEY) --index $(I) --documents $(D)
+else
+	uv run python scripts/seed_data.py seed --url $(MEILI_URL) --index $(I) --documents $(D)
 endif
 	@echo ""
 	@echo "Analyze with: meiliscan analyze --url $(MEILI_URL)"
