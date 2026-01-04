@@ -1,4 +1,4 @@
-.PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-instance seed-tasks seed-clean
+.PHONY: help install install-dev sync test test-cov test-watch test-file lint format serve clean seed-dump seed-dump-large seed-index seed-instance seed-tasks seed-clean
 
 # Default MeiliSearch URL for seeding (can be overridden)
 MEILI_URL ?= http://localhost:7700
@@ -23,10 +23,12 @@ help:
 	@echo "  make test-file F=<file>  Run specific test file"
 	@echo ""
 	@echo "Test Data:"
-	@echo "  make seed-dump    Create a mock dump file (test-dump.dump)"
-	@echo "  make seed-instance  Seed MeiliSearch instance with test data"
-	@echo "  make seed-tasks   Generate tasks on MeiliSearch instance"
-	@echo "  make seed-clean   Delete all indexes from MeiliSearch instance"
+	@echo "  make seed-dump         Create a mock dump file (test-dump.dump)"
+	@echo "  make seed-dump-large   Create a large dump (~100k docs)"
+	@echo "  make seed-index        Seed single index (requires I=<index> D=<docs>)"
+	@echo "  make seed-instance     Seed MeiliSearch instance with test data"
+	@echo "  make seed-tasks        Generate tasks on MeiliSearch instance"
+	@echo "  make seed-clean        Delete all indexes from MeiliSearch instance"
 	@echo ""
 	@echo "Code Quality:"
 	@echo "  make lint         Run linter (ruff)"
@@ -38,12 +40,16 @@ help:
 	@echo "Variables:"
 	@echo "  MEILI_URL         MeiliSearch URL (default: $(MEILI_URL))"
 	@echo "  MEILI_API_KEY     MeiliSearch API key (optional)"
+	@echo "  D                 Document count for seed-dump-large/seed-index (default: 100000)"
+	@echo "  I                 Index name for seed-index"
 	@echo ""
 	@echo "Examples:"
 	@echo "  make test-file F=tests/test_schema_analyzer.py"
 	@echo "  make serve"
+	@echo "  make seed-dump"
+	@echo "  make seed-dump-large D=500000"
+	@echo "  make seed-index I=products D=100000"
 	@echo "  make seed-instance"
-	@echo "  make seed-instance MEILI_URL=http://localhost:7700"
 	@echo "  make seed-instance MEILI_URL=http://localhost:7700 MEILI_API_KEY=my-key"
 
 # Setup commands
@@ -81,9 +87,34 @@ test-file:
 	uv run pytest $(F) -v
 
 # Test data commands
+# Default document count for large dumps
+D ?= 100000
+
 seed-dump:
 	@echo "Creating mock dump file..."
-	uv run python scripts/seed_data.py dump --output test-dump.dump
+	uv run python scripts/seed_data.py dump --output test-dump.dump --size small
+	@echo ""
+	@echo "Analyze with: meiliscan analyze --dump test-dump.dump"
+
+seed-dump-large:
+	@echo "Creating large dump file with $(D) documents..."
+	uv run python scripts/seed_data.py dump --output test-dump.dump --documents $(D)
+	@echo ""
+	@echo "Analyze with: meiliscan analyze --dump test-dump.dump"
+
+seed-index:
+	@if [ -z "$(I)" ]; then \
+		echo "Usage: make seed-index I=<index> D=<docs>"; \
+		echo "Example: make seed-index I=products D=100000"; \
+		echo ""; \
+		echo "Available indexes:"; \
+		echo "  products, users, articles, orders, locations, events,"; \
+		echo "  reviews, categories, tags, logs, notifications, inventory,"; \
+		echo "  analytics, customers, employees, support_tickets, knowledge_base"; \
+		exit 1; \
+	fi
+	@echo "Creating dump with $(D) documents in index '$(I)'..."
+	uv run python scripts/seed_data.py dump --output test-dump.dump --index $(I) --documents $(D)
 	@echo ""
 	@echo "Analyze with: meiliscan analyze --dump test-dump.dump"
 
