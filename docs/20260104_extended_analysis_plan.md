@@ -16,6 +16,18 @@ Non-goals:
 
 ---
 
+## Implementation Status
+
+| Workstream | Status | Notes |
+|------------|--------|-------|
+| 1) Instance launch config analytics | **DONE** | CLI flag, model, analyzer, findings I001-I006 |
+| 2) Opt-in search probing | **DONE** | CLI flag, analyzer, findings Q001-Q003 |
+| 3) Expand index setting analytics | Pending | S011-S020 not yet implemented |
+| 4) Expand document/sample analytics | **PARTIAL** | D009-D010 (PII) done; D011 pending |
+| 5) Task-based performance analytics | Pending | P007-P010 not yet implemented |
+
+---
+
 ## Current coverage (baseline)
 
 Today meiliscan evaluates:
@@ -31,22 +43,27 @@ This plan adds **instance launch config**, **more index/document checks**, and *
 
 ## Workstreams
 
-### 1) Optional instance launch config analytics (via `config.toml`)
+### 1) Optional instance launch config analytics (via `config.toml`) - **IMPLEMENTED**
 
 **User constraints**
 - `config.toml` is **optional** input.
-- If no file is provided, these checks are **skipped silently** (no “unknown” findings).
+- If no file is provided, these checks are **skipped silently** (no "unknown" findings).
 
-**Proposed CLI extension**
+**Proposed CLI extension** - **DONE**
 - Add optional argument to `meiliscan analyze`:
   - `--config-toml PATH`
 - This keeps the UX simple while enabling enhanced audits.
 
-**Proposed internal model**
+**Proposed internal model** - **DONE**
 - Add `InstanceLaunchConfig` model that stores normalized values parsed from TOML.
 - Store it on the report source metadata and expose to analyzers via `analyze_global`.
 
-**TOML keys to support initially (from docs)**
+**Implementation files:**
+- `meiliscan/models/instance_config.py` - `InstanceLaunchConfig` Pydantic model
+- `meiliscan/analyzers/instance_config_analyzer.py` - `InstanceConfigAnalyzer`
+- `meiliscan/cli.py` - `--config-toml` flag wiring
+
+**TOML keys to support initially (from docs)** - **DONE**
 - Security & environment
   - `env` (production/development)
   - `master_key` (presence/timing/strength checks where possible)
@@ -65,7 +82,7 @@ This plan adds **instance launch config**, **more index/document checks**, and *
   - dumps (`dump_dir`, `import_dump`, ignore flags)
   - snapshot import flags and ignore flags
 
-**Instance-level findings (only when `--config-toml` provided)**
+**Instance-level findings (only when `--config-toml` provided)** - **DONE**
 - `MEILI-I001` (Critical): `env=production` but `master_key` missing/too short.
 - `MEILI-I002` (Warning): `http_addr` binds to `0.0.0.0:*` without SSL settings configured.
 - `MEILI-I003` (Suggestion): `log_level` set to `DEBUG`/`TRACE` in production.
@@ -79,23 +96,27 @@ Notes:
 
 ---
 
-### 2) Opt-in search probing (read-only)
+### 2) Opt-in search probing (read-only) - **IMPLEMENTED**
 
 **User constraints**
 - Probing should be opt-in.
-- Default behavior stays “passive” (settings/stats/tasks/samples only).
+- Default behavior stays "passive" (settings/stats/tasks/samples only).
 
-**Proposed CLI extension**
+**Proposed CLI extension** - **DONE**
 - Add optional flag:
   - `--probe-search`
 
-**Probe types**
+**Implementation files:**
+- `meiliscan/analyzers/search_probe_analyzer.py` - `SearchProbeAnalyzer`
+- `meiliscan/cli.py` - `--probe-search` flag wiring
+
+**Probe types** - **DONE**
 - Sort smoke test:
   - For each index with `sortableAttributes`, pick 1–2 configured fields and attempt a simple search with `sort=["field:asc"]`.
 - Filter smoke test:
   - For each index with `filterableAttributes`, select a candidate field/value from sample docs and attempt a filter query.
 
-**Probe findings**
+**Probe findings** - **DONE**
 - `MEILI-Q001` (Warning): configured sort fails (invalid attribute/type).
 - `MEILI-Q002` (Warning): configured filter fails.
 - `MEILI-Q003` (Info): response payload unusually large for default query (heuristic, helps validate `displayedAttributes`).
@@ -106,7 +127,7 @@ Implementation notes:
 
 ---
 
-### 3) Expand index setting analytics
+### 3) Expand index setting analytics - **PENDING**
 
 The `IndexSettings` model already contains more than we currently analyze.
 
@@ -136,25 +157,29 @@ The `IndexSettings` model already contains more than we currently analyze.
 
 ---
 
-### 4) Expand document/sample analytics
+### 4) Expand document/sample analytics - **PARTIAL**
 
 Use sample documents as heuristics; default remains `limit=20`.
 
-**Sampling control**
+**Sampling control** - **DONE**
 - Add optional argument:
   - `--sample-documents N` (default `20`)
 
 **Additional checks**
-- `MEILI-D009` (Warning): arrays of objects detected (flattening can lead to confusing fields and filtering behavior).
-- `MEILI-D010` (Suggestion): candidate filter/facet fields detected (low-cardinality fields) but not configured.
-- `MEILI-D011` (Opt-in / Warning): potential PII fields detected (email/phone/token/password patterns). Default off; enable with `--detect-sensitive`.
+- `MEILI-D009` (Warning): ~~arrays of objects detected~~ **CHANGED**: Potentially sensitive field names detected. **DONE**
+- `MEILI-D010` (Critical): ~~candidate filter/facet fields detected~~ **CHANGED**: Potential PII detected in document content (opt-in via `--detect-sensitive`). **DONE**
+- `MEILI-D011` (Opt-in / Warning): potential PII fields detected (email/phone/token/password patterns). **PENDING** - merged into D009/D010.
+
+**Implementation files:**
+- `meiliscan/analyzers/document_analyzer.py` - PII detection methods added
+- `meiliscan/cli.py` - `--sample-documents` and `--detect-sensitive` flags
 
 Notes:
 - PII detection should be conservative and based on field names + value patterns.
 
 ---
 
-### 5) Expand task-based performance analytics
+### 5) Expand task-based performance analytics - **PENDING**
 
 **Backlog detection**
 - `MEILI-P007` (Warning): sustained task backlog (enqueuedAt vs finishedAt suggests queueing delays).
@@ -168,28 +193,28 @@ Notes:
 
 ---
 
-## Data model & plumbing changes
+## Data model & plumbing changes - **DONE**
 
 - Extend the analysis pipeline to optionally include:
-  - `InstanceLaunchConfig` (parsed from TOML)
-  - `probe_results` (if `--probe-search`) stored in report metadata
-  - configurable `sample_documents` count
-- Ensure exporters (JSON/Markdown/Web/SARIF) gracefully handle additional metadata.
+  - `InstanceLaunchConfig` (parsed from TOML) - **DONE** (`meiliscan/models/instance_config.py`)
+  - `probe_results` (if `--probe-search`) stored in report metadata - **DONE** (via `_probe_findings` in `analysis_options`)
+  - configurable `sample_documents` count - **DONE** (`LiveInstanceCollector.sample_docs`)
+- Ensure exporters (JSON/Markdown/Web/SARIF) gracefully handle additional metadata. - **DONE** (findings flow through existing pipeline)
 
 ---
 
-## Testing plan
+## Testing plan - **PARTIAL**
 
-- Add unit tests for TOML parsing and instance-config findings.
-- Add analyzer tests for new Schema/Document/Performance findings.
-- Add mock live-collector tests for `--probe-search` behavior (mock `search()` results).
+- Add unit tests for TOML parsing and instance-config findings. - **PENDING**
+- Add analyzer tests for new Schema/Document/Performance findings. - **PENDING** (existing document tests pass, new D009/D010 not tested)
+- Add mock live-collector tests for `--probe-search` behavior (mock `search()` results). - **PENDING**
 
 ---
 
-## Rollout plan
+## Rollout plan - **IN PROGRESS**
 
-1. Implement CLI + data plumbing for optional inputs (config toml, sample-documents, probe-search).
-2. Add instance-config analyzer and 2–3 high-value findings first (`I001`, `I004`, `I003`).
-3. Add index/document improvements (primary key, sortable types, arrays-of-objects).
-4. Add task backlog + error clustering.
-5. Iterate on thresholds based on real-world feedback.
+1. Implement CLI + data plumbing for optional inputs (config toml, sample-documents, probe-search). - **DONE**
+2. Add instance-config analyzer and 2–3 high-value findings first (`I001`, `I004`, `I003`). - **DONE** (all I001-I006)
+3. Add index/document improvements (primary key, sortable types, arrays-of-objects). - **PENDING**
+4. Add task backlog + error clustering. - **PENDING**
+5. Iterate on thresholds based on real-world feedback. - **PENDING**

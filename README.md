@@ -8,7 +8,10 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 
 - **Live Instance Analysis**: Connect to a running MeiliSearch instance and analyze its configuration
 - **Dump File Analysis**: Parse and analyze MeiliSearch dump archives without a running instance
-- **28 Finding Types**: Comprehensive checks across schema, documents, performance, and best practices
+- **Instance Config Analysis**: Optional analysis of `config.toml` for production security/reliability checks
+- **Search Probing**: Opt-in read-only search probes to validate sort/filter configurations
+- **PII Detection**: Optional detection of sensitive/PII fields in documents
+- **34 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, and best practices
 - **Health Scoring**: Get an overall health score for your MeiliSearch setup
 - **Web Dashboard**: Interactive web UI for exploring analysis results
 - **Historical Comparison**: Compare two analysis reports to track changes over time
@@ -56,6 +59,18 @@ meiliscan analyze --url http://localhost:7700 --api-key your-master-key
 
 # Save results to file
 meiliscan analyze --url http://localhost:7700 --output analysis.json
+
+# Enhanced analysis with config.toml (production checks)
+meiliscan analyze --url http://localhost:7700 --config-toml /path/to/config.toml
+
+# Run search probes to validate sort/filter configuration
+meiliscan analyze --url http://localhost:7700 --probe-search
+
+# Enable PII/sensitive field detection
+meiliscan analyze --url http://localhost:7700 --detect-sensitive
+
+# Increase sample document count for better analysis
+meiliscan analyze --url http://localhost:7700 --sample-documents 50
 ```
 
 ### Analyze a Dump File
@@ -156,7 +171,7 @@ Use --output to save the full report to a file.
 | MEILI-S009 | Very low pagination limit | Warning | maxTotalHits < 100 |
 | MEILI-S010 | High pagination limit | Suggestion | maxTotalHits > 10000 |
 
-### Document Findings (D001-D008)
+### Document Findings (D001-D010)
 
 | ID | Title | Severity | Description |
 |----|-------|----------|-------------|
@@ -168,6 +183,8 @@ Use --output to save the full report to a file.
 | MEILI-D006 | Empty field values | Info | Fields with empty or null values |
 | MEILI-D007 | Mixed types in field | Warning | Same field has different types |
 | MEILI-D008 | Very long text | Suggestion | Text fields exceeding optimal length |
+| MEILI-D009 | Sensitive field names | Warning | Field names suggesting PII data (with `--detect-sensitive`) |
+| MEILI-D010 | PII content detected | Critical | PII patterns in field values (with `--detect-sensitive`) |
 
 ### Performance Findings (P001-P006)
 
@@ -189,6 +206,29 @@ Use --output to save the full report to a file.
 | MEILI-B003 | Missing embedders config | Info | No AI/vector search configuration |
 | MEILI-B004 | Old MeiliSearch version | Suggestion/Warning | Running an outdated version |
 
+### Instance Config Findings (I001-I006)
+
+These findings require providing a `config.toml` file via `--config-toml`.
+
+| ID | Title | Severity | Description |
+|----|-------|----------|-------------|
+| MEILI-I001 | Production without master key | Critical | `env=production` but master key missing or too short |
+| MEILI-I002 | Exposed without SSL | Warning | Binding to 0.0.0.0 without SSL configured |
+| MEILI-I003 | Verbose logging in production | Suggestion | DEBUG/TRACE logging enabled in production |
+| MEILI-I004 | No scheduled snapshots | Suggestion | Snapshots not scheduled in production environment |
+| MEILI-I005 | Extreme payload limits | Warning | HTTP payload size limit too low or too high |
+| MEILI-I006 | Risky indexing settings | Suggestion | Indexing memory/threads settings may cause issues |
+
+### Search Probe Findings (Q001-Q003)
+
+These findings require the `--probe-search` flag.
+
+| ID | Title | Severity | Description |
+|----|-------|----------|-------------|
+| MEILI-Q001 | Sort probe failed | Warning | Configured sortable attribute failed smoke test |
+| MEILI-Q002 | Filter probe failed | Warning | Configured filterable attribute failed smoke test |
+| MEILI-Q003 | Large response payload | Info | Search response unusually large |
+
 ## CLI Reference
 
 ### `analyze`
@@ -207,6 +247,10 @@ Options:
 - `--format, -f`: Output format: `json`, `markdown`, `sarif`, `agent` (default: json)
 - `--ci`: CI mode - exit with non-zero code on findings
 - `--fail-on-warnings`: In CI mode, also fail on warnings (not just critical)
+- `--config-toml`: Path to Meilisearch `config.toml` for enhanced instance analysis
+- `--probe-search`: Run read-only search probes to validate sort/filter configuration
+- `--sample-documents`: Number of sample documents to fetch per index (default: 20)
+- `--detect-sensitive`: Enable detection of potential PII/sensitive fields in documents
 
 ### `compare`
 

@@ -113,6 +113,34 @@ def analyze(
             help="In CI mode, also fail on warnings (not just critical)",
         ),
     ] = False,
+    config_toml: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--config-toml",
+            help="Path to Meilisearch config.toml for enhanced instance analysis",
+        ),
+    ] = None,
+    probe_search: Annotated[
+        bool,
+        typer.Option(
+            "--probe-search",
+            help="Run read-only search probes to validate sort/filter configuration",
+        ),
+    ] = False,
+    sample_documents: Annotated[
+        int,
+        typer.Option(
+            "--sample-documents",
+            help="Number of sample documents to fetch per index (default: 20)",
+        ),
+    ] = 20,
+    detect_sensitive: Annotated[
+        bool,
+        typer.Option(
+            "--detect-sensitive",
+            help="Enable detection of potential PII/sensitive fields in documents",
+        ),
+    ] = False,
 ) -> None:
     """Analyze a MeiliSearch instance or dump file."""
     if not url and not dump:
@@ -130,15 +158,52 @@ def analyze(
         )
         raise typer.Exit(1)
 
+    if probe_search and dump:
+        console.print(
+            "[yellow]Warning:[/yellow] --probe-search is ignored when analyzing dumps."
+        )
+        probe_search = False
+
+    # Parse config.toml if provided
+    instance_config = None
+    if config_toml:
+        if not config_toml.exists():
+            console.print(f"[red]Error:[/red] Config file not found: {config_toml}")
+            raise typer.Exit(1)
+        try:
+            from meiliscan.models.instance_config import InstanceLaunchConfig
+
+            instance_config = InstanceLaunchConfig.from_toml_file(config_toml)
+            console.print(f"[dim]Loaded config from: {config_toml}[/dim]")
+        except Exception as e:
+            console.print(f"[red]Error:[/red] Failed to parse config.toml: {e}")
+            raise typer.Exit(1)
+
+    # Build analysis options
+    analysis_options = {
+        "config_toml": instance_config,
+        "probe_search": probe_search,
+        "sample_documents": sample_documents,
+        "detect_sensitive": detect_sensitive,
+    }
+
     if dump:
         exit_code = asyncio.run(
-            _analyze_dump(dump, output, format_type, ci_mode, fail_on_warnings)
+            _analyze_dump(
+                dump, output, format_type, ci_mode, fail_on_warnings, analysis_options
+            )
         )
     else:
         assert url is not None
         exit_code = asyncio.run(
             _analyze_instance(
-                url, api_key, output, format_type, ci_mode, fail_on_warnings
+                url,
+                api_key,
+                output,
+                format_type,
+                ci_mode,
+                fail_on_warnings,
+                analysis_options,
             )
         )
 
@@ -152,15 +217,19 @@ async def _analyze_dump(
     format_type: str,
     ci_mode: bool,
     fail_on_warnings: bool,
+    analysis_options: dict | None = None,
 ) -> int:
     """Analyze a MeiliSearch dump file."""
+    analysis_options = analysis_options or {}
+    sample_docs = analysis_options.get("sample_documents", 20)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
         console=console,
     ) as progress:
         task = progress.add_task("Loading dump file...", total=None)
-        collector = DataCollector.from_dump(dump_path)
+        collector = DataCollector.from_dump(dump_path, max_sample_docs=sample_docs)
 
         if not await collector.collect():
             console.print(f"[red]Error:[/red] Failed to parse dump file at {dump_path}")
@@ -173,7 +242,7 @@ async def _analyze_dump(
 
         # Generate report
         progress.update(task, description="Analyzing indexes...")
-        reporter = Reporter(collector)
+        reporter = Reporter(collector, analysis_options=analysis_options)
         report = reporter.generate_report(source_url=None)
         report.source.type = "dump"
         report.source.dump_path = str(dump_path)
@@ -200,8 +269,12 @@ async def _analyze_instance(
     format_type: str,
     ci_mode: bool,
     fail_on_warnings: bool,
+    analysis_options: dict | None = None,
 ) -> int:
     """Analyze a live MeiliSearch instance."""
+    analysis_options = analysis_options or {}
+    sample_docs = analysis_options.get("sample_documents", 20)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
@@ -209,7 +282,7 @@ async def _analyze_instance(
     ) as progress:
         # Connect and collect data
         task = progress.add_task("Connecting to MeiliSearch...", total=None)
-        collector = DataCollector.from_url(url, api_key)
+        collector = DataCollector.from_url(url, api_key, sample_docs=sample_docs)
 
         if not await collector.collect():
             console.print(
@@ -222,9 +295,31 @@ async def _analyze_instance(
             task, description=f"Connected. Found {len(collector.indexes)} indexes."
         )
 
+        # Run search probes if requested
+        probe_results = None
+        if analysis_options.get("probe_search"):
+            progress.update(task, description="Running search probes...")
+            from meiliscan.analyzers.search_probe_analyzer import SearchProbeAnalyzer
+
+            probe_analyzer = SearchProbeAnalyzer()
+
+            async def search_fn(index_uid, query, filter, sort):
+                return await collector._collector.search(
+                    index_uid=index_uid,
+                    query=query,
+                    filter=filter,
+                    sort=sort,
+                )
+
+            probe_findings, probe_results = await probe_analyzer.analyze(
+                collector.indexes, search_fn
+            )
+            # Store probe findings in analysis_options to be added later
+            analysis_options["_probe_findings"] = probe_findings
+
         # Generate report
         progress.update(task, description="Analyzing indexes...")
-        reporter = Reporter(collector)
+        reporter = Reporter(collector, analysis_options=analysis_options)
         report = reporter.generate_report(source_url=url)
 
         await collector.close()
