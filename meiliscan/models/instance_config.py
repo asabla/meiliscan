@@ -74,20 +74,20 @@ class IndexingConfig(BaseModel):
 
         value = self.max_indexing_memory.strip().upper()
 
-        # Parse human-readable sizes
-        multipliers = {
-            "B": 1,
-            "KB": 1024,
-            "MB": 1024**2,
-            "GB": 1024**3,
-            "TB": 1024**4,
-            "KIB": 1024,
-            "MIB": 1024**2,
-            "GIB": 1024**3,
-            "TIB": 1024**4,
-        }
+        # Parse human-readable sizes (ordered by suffix length, longest first)
+        multipliers = [
+            ("TIB", 1024**4),
+            ("GIB", 1024**3),
+            ("MIB", 1024**2),
+            ("KIB", 1024),
+            ("TB", 1024**4),
+            ("GB", 1024**3),
+            ("MB", 1024**2),
+            ("KB", 1024),
+            ("B", 1),
+        ]
 
-        for suffix, multiplier in multipliers.items():
+        for suffix, multiplier in multipliers:
             if value.endswith(suffix):
                 try:
                     num = float(value[: -len(suffix)].strip())
