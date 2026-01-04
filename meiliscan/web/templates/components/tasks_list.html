@@ -4,30 +4,39 @@
 </div>
 {% elif tasks %}
 <div class="tasks-table-wrapper">
-    <table class="tasks-table">
-        <colgroup>
-            <col style="width: 60px;">
-            <col style="width: 110px;">
-            <col style="width: 250px;">
-            <col style="width: 90px;">
-            <col style="width: auto;">
-            <col style="width: 100px;">
-            <col style="width: 170px;">
-        </colgroup>
+    <table class="tasks-table" id="tasks-table">
         <thead>
             <tr>
-                <th>UID</th>
-                <th>Status</th>
-                <th>Type</th>
-                <th>Index</th>
-                <th>Details</th>
-                <th>Duration</th>
-                <th>Enqueued At</th>
+                <th class="sortable w-20" data-sort="uid" data-type="number" onclick="sortTable('uid', 'number')">
+                    UID<span class="sort-icon"></span>
+                </th>
+                <th class="sortable w-28" data-sort="status" data-type="string" onclick="sortTable('status', 'string')">
+                    Status<span class="sort-icon"></span>
+                </th>
+                <th class="sortable w-44" data-sort="type" data-type="string" onclick="sortTable('type', 'string')">
+                    Type<span class="sort-icon"></span>
+                </th>
+                <th class="sortable w-32" data-sort="index" data-type="string" onclick="sortTable('index', 'string')">
+                    Index<span class="sort-icon"></span>
+                </th>
+                <th class="w-auto min-w-20">Details</th>
+                <th class="sortable w-28" data-sort="duration" data-type="duration" onclick="sortTable('duration', 'duration')">
+                    Duration<span class="sort-icon"></span>
+                </th>
+                <th class="sortable sort-desc w-44" data-sort="enqueued" data-type="date" onclick="sortTable('enqueued', 'date')">
+                    Enqueued At<span class="sort-icon"></span>
+                </th>
             </tr>
         </thead>
         <tbody>
             {% for task in tasks %}
-            <tr class="task-row task-{{ task.status.value }}">
+            <tr class="task-row task-{{ task.status.value }}"
+                data-uid="{{ task.uid }}"
+                data-status="{{ task.status.value }}"
+                data-type="{{ task.task_type }}"
+                data-index="{{ task.index_uid or '' }}"
+                data-duration="{{ task.duration_ms or 0 }}"
+                data-enqueued="{{ task.enqueued_at.isoformat() }}">
                 <td class="task-uid">{{ task.uid }}</td>
                 <td>
                     <span class="task-status task-status-{{ task.status.value }}">

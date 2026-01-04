@@ -13,162 +13,144 @@
         <h2 class="card-title">Issues by Severity</h2>
     </div>
     <div class="flex gap-2 flex-wrap">
-        <a href="/findings?severity=critical{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
-           class="badge badge-red{% if current_severity == 'critical' %} badge-active{% endif %}" style="text-decoration: none;">
+        <button onclick="filterBySeverity('critical')" 
+           class="badge badge-red{% if current_severity == 'critical' %} badge-active{% endif %}" style="cursor: pointer; border: none;">
             {{ severity_counts.critical }} Critical
-        </a>
-        <a href="/findings?severity=warning{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
-           class="badge badge-yellow{% if current_severity == 'warning' %} badge-active{% endif %}" style="text-decoration: none;">
+        </button>
+        <button onclick="filterBySeverity('warning')" 
+           class="badge badge-yellow{% if current_severity == 'warning' %} badge-active{% endif %}" style="cursor: pointer; border: none;">
             {{ severity_counts.warning }} Warnings
-        </a>
-        <a href="/findings?severity=suggestion{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
-           class="badge badge-blue{% if current_severity == 'suggestion' %} badge-active{% endif %}" style="text-decoration: none;">
+        </button>
+        <button onclick="filterBySeverity('suggestion')" 
+           class="badge badge-blue{% if current_severity == 'suggestion' %} badge-active{% endif %}" style="cursor: pointer; border: none;">
             {{ severity_counts.suggestion }} Suggestions
-        </a>
-        <a href="/findings?severity=info{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
-           class="badge badge-gray{% if current_severity == 'info' %} badge-active{% endif %}" style="text-decoration: none;">
+        </button>
+        <button onclick="filterBySeverity('info')" 
+           class="badge badge-gray{% if current_severity == 'info' %} badge-active{% endif %}" style="cursor: pointer; border: none;">
             {{ severity_counts.info }} Info
-        </a>
+        </button>
         {% if current_severity %}
-        <a href="/findings{% if current_category %}?category={{ current_category }}{% endif %}{% if current_index %}{% if current_category %}&{% else %}?{% endif %}index={{ current_index }}{% endif %}" 
-           class="badge badge-outline" style="text-decoration: none;">
+        <button onclick="filterBySeverity('')" 
+           class="badge badge-outline" style="cursor: pointer; border: none;">
             Clear severity filter
-        </a>
+        </button>
         {% endif %}
     </div>
 </div>
 
 <!-- Filters -->
 <div class="card mb-2">
-    <div class="card-header">
-        <h2 class="card-title">Filters</h2>
-    </div>
-    <form method="get" action="/findings" class="flex gap-2 flex-wrap items-center">
-        <div>
-            <label for="severity">Severity</label>
-            <select name="severity" id="severity">
+    <div class="flex items-center gap-2 flex-wrap">
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="severity-filter" style="display: inline; margin-right: 0.5rem;">Severity</label>
+            <select id="severity-filter" onchange="applyFilters()" style="width: auto;">
                 <option value="">All</option>
-                <option value="critical" {% if current_severity == 'critical' %}selected{% endif %}>🔴 Critical</option>
-                <option value="warning" {% if current_severity == 'warning' %}selected{% endif %}>🟡 Warning</option>
-                <option value="suggestion" {% if current_severity == 'suggestion' %}selected{% endif %}>🔵 Suggestion</option>
-                <option value="info" {% if current_severity == 'info' %}selected{% endif %}>⚪ Info</option>
+                <option value="critical" {% if current_severity == 'critical' %}selected{% endif %}>Critical</option>
+                <option value="warning" {% if current_severity == 'warning' %}selected{% endif %}>Warning</option>
+                <option value="suggestion" {% if current_severity == 'suggestion' %}selected{% endif %}>Suggestion</option>
+                <option value="info" {% if current_severity == 'info' %}selected{% endif %}>Info</option>
             </select>
         </div>
-        <div>
-            <label for="category">Category</label>
-            <select name="category" id="category">
+        
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="category-filter" style="display: inline; margin-right: 0.5rem;">Category</label>
+            <select id="category-filter" onchange="applyFilters()" style="width: auto;">
                 <option value="">All</option>
                 {% for cat in categories %}
                 <option value="{{ cat }}" {% if current_category == cat %}selected{% endif %}>{{ cat|title }}</option>
                 {% endfor %}
             </select>
         </div>
-        <div>
-            <label for="index">Index</label>
-            <select name="index" id="index">
+        
+        {% if indexes %}
+        <div class="form-group" style="margin-bottom: 0;">
+            <label for="index-filter" style="display: inline; margin-right: 0.5rem;">Index</label>
+            <select id="index-filter" onchange="applyFilters()" style="width: auto;">
                 <option value="">All</option>
                 {% for idx in indexes %}
                 <option value="{{ idx }}" {% if current_index == idx %}selected{% endif %}>{{ idx }}</option>
                 {% endfor %}
             </select>
         </div>
-        <div style="margin-top: 1.25rem;">
-            <button type="submit" class="btn btn-primary">Apply Filters</button>
-            <a href="/findings" class="btn btn-secondary">Clear</a>
-        </div>
-    </form>
-</div>
-
-<!-- Results Summary -->
-<div class="mb-2">
-    <p class="text-secondary">
-        Showing {{ findings|length }} finding{% if findings|length != 1 %}s{% endif %}
-        {% if current_severity or current_category or current_index %}
-        (filtered)
         {% endif %}
-    </p>
+        
+        <button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+    </div>
 </div>
 
 <!-- Findings List -->
-{% if findings %}
-{% for finding in findings %}
-<div class="card finding finding-{{ finding.severity.value|lower }}">
-    <div class="finding-header">
-        <div class="finding-title">
-            {{ finding.severity.value|severity_icon }} {{ finding.title }}
-        </div>
-        <div class="flex gap-1 items-center">
-            <span class="badge badge-{{ finding.severity.value|severity_color }}">{{ finding.severity.value }}</span>
-            <span class="badge badge-gray">{{ finding.category.value }}</span>
-            <span class="finding-id">{{ finding.id }}</span>
-        </div>
-    </div>
-    <div class="finding-description">{{ finding.description }}</div>
-
-    {% if finding.index_uid %}
-    <div class="mt-1">
-        <strong class="text-secondary">Index:</strong>
-        <a href="/index/{{ finding.index_uid }}">{{ finding.index_uid }}</a>
-    </div>
-    {% endif %}
-
-    {% if finding.impact %}
-    <div class="mt-1">
-        <strong class="text-secondary">Impact:</strong> {{ finding.impact }}
-    </div>
-    {% endif %}
-
-    {% if finding.current_value is not none %}
-    <div class="mt-1">
-        <strong class="text-secondary">Current Value:</strong>
-        <pre><code>{{ finding.current_value }}</code></pre>
-    </div>
-    {% endif %}
-
-    {% if finding.recommended_value is not none %}
-    <div class="mt-1">
-        <strong class="text-secondary">Recommended:</strong>
-        <pre><code>{{ finding.recommended_value }}</code></pre>
-    </div>
-    {% endif %}
-
-    {% if finding.fix %}
-    <div class="mt-1">
-        <strong class="text-secondary">Fix Command:</strong>
-        <pre><code>curl -X PATCH '&lt;your-meilisearch-url&gt;{{ finding.fix.endpoint.split(' ')[1] }}' \
-  -H 'Content-Type: application/json' \
-  -H 'Authorization: Bearer &lt;your-api-key&gt;' \
-  --data-binary '{{ finding.fix.payload }}'</code></pre>
-    </div>
-    {% endif %}
-
-    {% if finding.references %}
-    <div class="mt-1">
-        <strong class="text-secondary">References:</strong>
-        <ul style="margin: 0.5rem 0 0 1.5rem;">
-            {% for ref in finding.references %}
-            <li><a href="{{ ref }}" target="_blank">{{ ref }}</a></li>
-            {% endfor %}
-        </ul>
-    </div>
-    {% endif %}
-</div>
-{% endfor %}
-{% else %}
-<div class="card">
-    <div class="empty-state">
-        <div class="empty-state-icon">✅</div>
-        <h2>No Findings</h2>
-        <p class="text-secondary">
-            {% if current_severity or current_category or current_index %}
-            No findings match the selected filters.
-            {% else %}
-            Great news! No issues were found in your MeiliSearch configuration.
-            {% endif %}
-        </p>
+<div id="findings-list"
+     hx-get="/findings/list?severity={{ current_severity or '' }}&category={{ current_category or '' }}&index={{ current_index or '' }}"
+     hx-trigger="load"
+     hx-swap="innerHTML">
+    <!-- Findings will be loaded here -->
+    <div class="text-center text-muted" style="padding: 2rem;">
+        Loading findings...
     </div>
 </div>
-{% endif %}
+
+<script>
+function filterBySeverity(severity) {
+    document.getElementById('severity-filter').value = severity;
+    applyFilters();
+}
+
+function applyFilters() {
+    const severity = document.getElementById('severity-filter').value;
+    const category = document.getElementById('category-filter').value;
+    const index = document.getElementById('index-filter')?.value || '';
+    
+    const params = new URLSearchParams();
+    if (severity) params.set('severity', severity);
+    if (category) params.set('category', category);
+    if (index) params.set('index', index);
+    
+    // Update URL without reloading
+    const newUrl = '/findings' + (params.toString() ? '?' + params.toString() : '');
+    window.history.pushState({}, '', newUrl);
+    
+    // Build HTMX endpoint URL
+    const htmxUrl = '/findings/list' + (params.toString() ? '?' + params.toString() : '');
+    const findingsList = document.getElementById('findings-list');
+    findingsList.setAttribute('hx-get', htmxUrl);
+    
+    // Trigger HTMX request
+    htmx.ajax('GET', htmxUrl, {target: '#findings-list', swap: 'innerHTML'});
+    
+    // Update severity badge highlights
+    updateSeverityBadges(severity);
+}
+
+function clearFilters() {
+    document.getElementById('severity-filter').value = '';
+    document.getElementById('category-filter').value = '';
+    const indexFilter = document.getElementById('index-filter');
+    if (indexFilter) indexFilter.value = '';
+    applyFilters();
+}
+
+function updateSeverityBadges(selectedSeverity) {
+    // This updates the badge active states after HTMX loads
+    const badges = document.querySelectorAll('.card:first-of-type .badge');
+    badges.forEach(badge => {
+        badge.classList.remove('badge-active');
+    });
+    
+    if (selectedSeverity) {
+        // Find and highlight the selected severity badge
+        const severityMap = {
+            'critical': 0,
+            'warning': 1,
+            'suggestion': 2,
+            'info': 3
+        };
+        const idx = severityMap[selectedSeverity];
+        if (idx !== undefined && badges[idx]) {
+            badges[idx].classList.add('badge-active');
+        }
+    }
+}
+</script>
 
 {% else %}
 <div class="card">

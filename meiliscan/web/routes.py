@@ -164,6 +164,49 @@ def register_routes(app: FastAPI) -> None:
             },
         )
 
+    @app.get("/findings/list", response_class=HTMLResponse)
+    async def findings_list_partial(
+        request: Request,
+        severity: str | None = None,
+        category: str | None = None,
+        index: str | None = None,
+    ):
+        """Render findings list partial (HTMX) for dynamic filtering."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        # Get all findings
+        all_findings = []
+        if state.report:
+            all_findings = state.report.get_all_findings()
+
+        # Filter findings
+        filtered = all_findings
+        if severity:
+            filtered = [
+                f for f in filtered if f.severity.value.lower() == severity.lower()
+            ]
+        if category:
+            filtered = [
+                f for f in filtered if f.category.value.lower() == category.lower()
+            ]
+        if index:
+            filtered = [f for f in filtered if f.index_uid == index]
+
+        # Sort by severity (critical first)
+        filtered = sort_findings_by_severity(filtered)
+
+        return templates.TemplateResponse(
+            "components/findings_list.html",
+            {
+                "request": request,
+                "findings": filtered,
+                "current_severity": severity,
+                "current_category": category,
+                "current_index": index,
+            },
+        )
+
     @app.get("/finding/{finding_id}", response_class=HTMLResponse)
     async def finding_detail(request: Request, finding_id: str):
         """Render finding detail (HTMX partial)."""
