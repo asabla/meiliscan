@@ -4,10 +4,13 @@ import json
 import tarfile
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
+
+if TYPE_CHECKING:
+    from meiliscan.core.progress import ProgressCallback
 
 
 class DumpParser(BaseCollector):
@@ -42,12 +45,20 @@ class DumpParser(BaseCollector):
         self._version: str | None = None
         self._indexes: list[IndexData] = []
 
-    async def connect(self) -> bool:
-        """Extract and parse the dump file."""
+    async def connect(self, progress_cb: "ProgressCallback | None" = None) -> bool:
+        """Extract and parse the dump file.
+
+        Args:
+            progress_cb: Optional callback for progress updates
+        """
+        from meiliscan.core.progress import emit_parse
+
         if not self.dump_path.exists():
             return False
 
         try:
+            emit_parse(progress_cb, f"Extracting dump file: {self.dump_path.name}")
+
             # Create temporary directory for extraction
             self._temp_dir = tempfile.TemporaryDirectory()
             temp_path = Path(self._temp_dir.name)
@@ -63,6 +74,8 @@ class DumpParser(BaseCollector):
 
             self._extracted_path = extracted_dirs[0]
 
+            emit_parse(progress_cb, "Reading dump metadata...")
+
             # Load metadata
             metadata_path = self._extracted_path / "metadata.json"
             if metadata_path.exists():
@@ -71,15 +84,32 @@ class DumpParser(BaseCollector):
                     "version"
                 )
 
+            emit_parse(progress_cb, "Loading indexes from dump...")
+
             # Load indexes
-            self._indexes = await self._load_indexes()
+            self._indexes = await self._load_indexes(progress_cb)
+
+            emit_parse(
+                progress_cb,
+                f"Loaded {len(self._indexes)} indexes from dump",
+                current=len(self._indexes),
+                total=len(self._indexes),
+            )
 
             return True
         except (tarfile.TarError, json.JSONDecodeError, OSError):
             return False
 
-    async def _load_indexes(self) -> list[IndexData]:
-        """Load all indexes from the dump."""
+    async def _load_indexes(
+        self, progress_cb: "ProgressCallback | None" = None
+    ) -> list[IndexData]:
+        """Load all indexes from the dump.
+
+        Args:
+            progress_cb: Optional callback for progress updates
+        """
+        from meiliscan.core.progress import emit_parse
+
         indexes: list[IndexData] = []
 
         if not self._extracted_path:
@@ -89,11 +119,19 @@ class DumpParser(BaseCollector):
         if not indexes_path.exists():
             return indexes
 
-        for index_dir in indexes_path.iterdir():
-            if not index_dir.is_dir():
-                continue
+        # Get list of index directories
+        index_dirs = [d for d in indexes_path.iterdir() if d.is_dir()]
+        total_indexes = len(index_dirs)
 
+        for i, index_dir in enumerate(index_dirs, start=1):
             uid = index_dir.name
+            emit_parse(
+                progress_cb,
+                f"Loading index {uid} ({i}/{total_indexes})...",
+                current=i,
+                total=total_indexes,
+                index_uid=uid,
+            )
             index_data = await self._load_index(index_dir, uid)
             if index_data:
                 indexes.append(index_data)
@@ -181,8 +219,14 @@ class DumpParser(BaseCollector):
             "totalDocuments": total_docs,
         }
 
-    async def get_indexes(self) -> list[IndexData]:
-        """Get all parsed indexes."""
+    async def get_indexes(
+        self, progress_cb: "ProgressCallback | None" = None
+    ) -> list[IndexData]:
+        """Get all parsed indexes.
+
+        Args:
+            progress_cb: Optional callback for progress updates (not used, indexes already loaded)
+        """
         return self._indexes
 
     async def get_tasks(self, limit: int = 1000) -> list[dict]:

@@ -1,10 +1,12 @@
 """Route definitions for the web dashboard."""
 
+import asyncio
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from sse_starlette.sse import EventSourceResponse
 
 from meiliscan.analyzers.historical import HistoricalAnalyzer
 from meiliscan.exporters.agent_exporter import AgentExporter
@@ -514,538 +516,121 @@ def register_routes(app: FastAPI) -> None:
         except Exception as e:
             return {"error": str(e)}
 
-    @app.get("/api/indexes/{index_uid}/documents")
-    async def api_index_documents(
-        request: Request,
-        index_uid: str,
-        limit: int = 10,
-        offset: int = 0,
-    ) -> dict:
-        """Get sample documents for an index.
+    # ==================== Analysis Progress Routes ====================
 
-        Args:
-            index_uid: The index UID
-            limit: Maximum number of documents to return (max 100)
-            offset: Number of documents to skip
-
-        Returns:
-            Dictionary with documents and pagination info
-        """
+    @app.get("/api/analysis/status")
+    async def api_analysis_status(request: Request) -> dict:
+        """Get current analysis status."""
         state: AppState = request.app.state.analyzer_state
-
-        if not state.report:
-            return {"error": "No analysis data available"}
-
-        if index_uid not in state.report.indexes:
-            return {"error": f"Index '{index_uid}' not found"}
-
-        index_analysis = state.report.indexes[index_uid]
-        all_docs = index_analysis.sample_documents
-
-        # Apply pagination
-        limit = min(limit, 100)  # Cap at 100
-        start = offset
-        end = offset + limit
-
-        paginated_docs = all_docs[start:end]
-
         return {
-            "results": paginated_docs,
-            "offset": offset,
-            "limit": limit,
-            "total": len(all_docs),
+            "status": state.analysis_status,
+            "error": state.analysis_error,
+            "has_report": state.report is not None,
         }
 
-    @app.get("/index/{index_uid}/documents", response_class=HTMLResponse)
-    async def index_documents_partial(
-        request: Request,
-        index_uid: str,
-        page: int = 1,
-    ):
-        """Render document samples partial (HTMX)."""
-        state: AppState = request.app.state.analyzer_state
-        templates = request.app.state.templates
+    @app.get("/api/analysis/events")
+    async def api_analysis_events(request: Request):
+        """Server-Sent Events endpoint for analysis progress.
 
-        documents = []
-        total = 0
-        per_page = 5
+        Streams progress events during analysis. Events are JSON objects with:
+        - phase: "collect", "parse", or "analyze"
+        - message: Human-readable status message
+        - current: Current item number (optional)
+        - total: Total items (optional)
+        - index_uid: Index being processed (optional)
 
-        if state.report and index_uid in state.report.indexes:
-            index_analysis = state.report.indexes[index_uid]
-            all_docs = index_analysis.sample_documents
-            total = len(all_docs)
-
-            start = (page - 1) * per_page
-            end = start + per_page
-            documents = all_docs[start:end]
-
-        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
-
-        return templates.TemplateResponse(
-            "components/document_samples.html",
-            {
-                "request": request,
-                "index_uid": index_uid,
-                "documents": documents,
-                "page": page,
-                "total_pages": total_pages,
-                "total": total,
-                "per_page": per_page,
-            },
-        )
-
-    # ==================== Search Playground Routes ====================
-
-    @app.get("/search", response_class=HTMLResponse)
-    async def search_playground(request: Request, index: str | None = None):
-        """Render the search playground page.
-
-        Only available when connected to a live MeiliSearch instance.
-        """
-        state: AppState = request.app.state.analyzer_state
-        templates = request.app.state.templates
-
-        # Check if we're connected to a live instance
-        if not state.meili_url:
-            return templates.TemplateResponse(
-                "search.html",
-                {
-                    "request": request,
-                    "report": state.report,
-                    "is_live": False,
-                    "indexes": [],
-                    "selected_index": None,
-                    "index_settings": None,
-                },
-            )
-
-        # Get list of indexes and their settings
-        indexes = []
-        index_settings = None
-
-        if state.report:
-            indexes = list(state.report.indexes.keys())
-
-            # Get settings for selected index
-            if index and index in state.report.indexes:
-                index_settings = state.report.indexes[index].settings.get("current", {})
-            elif indexes:
-                # Default to first index
-                index = indexes[0]
-                index_settings = state.report.indexes[index].settings.get("current", {})
-
-        return templates.TemplateResponse(
-            "search.html",
-            {
-                "request": request,
-                "report": state.report,
-                "is_live": True,
-                "indexes": indexes,
-                "selected_index": index,
-                "index_settings": index_settings,
-            },
-        )
-
-    @app.get("/api/search/settings/{index_uid}")
-    async def api_search_settings(request: Request, index_uid: str) -> dict:
-        """Get index settings for the search form.
-
-        Returns filterable attributes, sortable attributes, and distinct attribute.
+        A final event with data: null signals completion.
         """
         state: AppState = request.app.state.analyzer_state
 
-        if not state.report or index_uid not in state.report.indexes:
-            return {"error": f"Index '{index_uid}' not found"}
-
-        settings = state.report.indexes[index_uid].settings.get("current", {})
-
-        return {
-            "filterableAttributes": settings.get("filterableAttributes", []),
-            "sortableAttributes": settings.get("sortableAttributes", []),
-            "distinctAttribute": settings.get("distinctAttribute"),
-            "searchableAttributes": settings.get("searchableAttributes", ["*"]),
-        }
-
-    @app.post("/api/search/{index_uid}")
-    async def api_search(
-        request: Request,
-        index_uid: str,
-    ) -> dict:
-        """Execute a search query against a MeiliSearch index.
-
-        Request body should contain:
-        - q: Search query string
-        - filter: Filter expression (optional)
-        - sort: Array of sort expressions (optional)
-        - distinct: Distinct attribute (optional)
-        - hitsPerPage: Results per page (optional, default 20)
-        - page: Page number (optional, default 1)
-        """
-        state: AppState = request.app.state.analyzer_state
-
-        if not state.meili_url:
-            return {"error": "Not connected to a live MeiliSearch instance"}
-
-        # Parse request body
-        try:
-            body = await request.json()
-        except Exception:
-            body = {}
-
-        query = body.get("q", "")
-        filter_expr = body.get("filter") or None
-        sort = body.get("sort") or None
-        distinct = body.get("distinct") or None
-        hits_per_page = body.get("hitsPerPage", 20)
-        page = body.get("page", 1)
-
-        # Get the live collector
-        from meiliscan.collectors.live_instance import LiveInstanceCollector
-
-        collector = LiveInstanceCollector(
-            url=state.meili_url,
-            api_key=state.meili_api_key,
-        )
-
-        try:
-            if not await collector.connect():
-                return {"error": "Failed to connect to MeiliSearch instance"}
-
-            results = await collector.search(
-                index_uid=index_uid,
-                query=query,
-                filter=filter_expr,
-                sort=sort,
-                distinct=distinct,
-                hits_per_page=hits_per_page,
-                page=page,
-            )
-
-            return results
-
-        except Exception as e:
-            return {"error": str(e)}
-        finally:
-            await collector.close()
-
-    @app.post("/search/{index_uid}/results", response_class=HTMLResponse)
-    async def search_results_partial(
-        request: Request,
-        index_uid: str,
-    ):
-        """Execute search and render results partial (HTMX)."""
-        state: AppState = request.app.state.analyzer_state
-        templates = request.app.state.templates
-
-        error = None
-        results = None
-        search_params = {}
-
-        if not state.meili_url:
-            error = "Not connected to a live MeiliSearch instance"
-        else:
-            # Parse form data
-            form = await request.form()
-            query = str(form.get("q", ""))
-            filter_expr = str(form.get("filter", "")).strip() or None
-            sort_field = str(form.get("sort_field", ""))
-            sort_direction = str(form.get("sort_direction", "asc"))
-            distinct = str(form.get("distinct", "")).strip() or None
-            hits_per_page = int(str(form.get("hitsPerPage", "20")))
-            page = int(str(form.get("page", "1")))
-
-            # Build sort array if sort field is provided
-            sort = None
-            if sort_field:
-                sort = [f"{sort_field}:{sort_direction}"]
-
-            search_params = {
-                "q": query,
-                "filter": filter_expr,
-                "sort": sort,
-                "distinct": distinct,
-                "hitsPerPage": hits_per_page,
-                "page": page,
-            }
-
-            # Execute search
-            from meiliscan.collectors.live_instance import LiveInstanceCollector
-
-            collector = LiveInstanceCollector(
-                url=state.meili_url,
-                api_key=state.meili_api_key,
-            )
-
+        async def event_generator():
+            """Generate SSE events from progress queue."""
+            queue = state.subscribe_progress()
             try:
-                if not await collector.connect():
-                    error = "Failed to connect to MeiliSearch instance"
-                else:
-                    results = await collector.search(
-                        index_uid=index_uid,
-                        query=query,
-                        filter=filter_expr,
-                        sort=sort,
-                        distinct=distinct,
-                        hits_per_page=hits_per_page,
-                        page=page,
-                    )
-            except Exception as e:
-                error = str(e)
+                # Send initial status
+                yield {
+                    "event": "status",
+                    "data": json.dumps(
+                        {
+                            "status": state.analysis_status,
+                            "error": state.analysis_error,
+                        }
+                    ),
+                }
+
+                # If analysis is not running, just return current status
+                if state.analysis_status != "running":
+                    yield {
+                        "event": "done",
+                        "data": json.dumps(
+                            {
+                                "status": state.analysis_status,
+                                "has_report": state.report is not None,
+                            }
+                        ),
+                    }
+                    return
+
+                # Stream progress events
+                while True:
+                    try:
+                        # Wait for next event with timeout
+                        event = await asyncio.wait_for(queue.get(), timeout=30.0)
+
+                        if event is None:
+                            # None signals completion
+                            yield {
+                                "event": "done",
+                                "data": json.dumps(
+                                    {
+                                        "status": state.analysis_status,
+                                        "error": state.analysis_error,
+                                        "has_report": state.report is not None,
+                                    }
+                                ),
+                            }
+                            break
+
+                        # Send progress event
+                        yield {
+                            "event": "progress",
+                            "data": json.dumps(event.to_dict()),
+                        }
+
+                    except asyncio.TimeoutError:
+                        # Send heartbeat to keep connection alive
+                        yield {"event": "heartbeat", "data": ""}
+
             finally:
-                await collector.close()
+                state.unsubscribe_progress(queue)
 
-        return templates.TemplateResponse(
-            "components/search_results.html",
-            {
-                "request": request,
-                "index_uid": index_uid,
-                "results": results,
-                "error": error,
-                "search_params": search_params,
-            },
-        )
+        return EventSourceResponse(event_generator())
 
-    # ==================== Tasks Routes ====================
-
-    @app.get("/tasks", response_class=HTMLResponse)
-    async def tasks_page(
+    @app.post("/api/analyze")
+    async def api_start_analysis(
         request: Request,
-        status: str | None = None,
-        task_type: str | None = None,
-        index: str | None = None,
-    ):
-        """Render the tasks page.
+        background_tasks: BackgroundTasks,
+    ) -> dict:
+        """Start analysis in the background.
 
-        Works with both live instances (poll for updates) and dumps (static view).
+        Returns immediately with status. Use /api/analysis/events to track progress.
         """
         state: AppState = request.app.state.analyzer_state
-        templates = request.app.state.templates
 
-        from meiliscan.models.task import Task, TasksSummary
+        if state.analysis_status == "running":
+            return {"status": "already_running"}
 
-        tasks: list[Task] = []
-        summary: TasksSummary | None = None
-        indexes: list[str] = []
-        is_live = state.meili_url is not None
-        error = None
+        if not state.meili_url and not state.dump_path:
+            return {"status": "no_source", "error": "No data source configured"}
 
-        # Get tasks from collector if available
+        # Close existing collector
         if state.collector:
-            try:
-                raw_tasks = await state.collector.get_tasks(limit=100)
-                tasks = [Task(**t) for t in raw_tasks]
-                summary = TasksSummary.from_tasks(tasks)
+            await state.collector.close()
 
-                # Get index list for filter dropdown
-                if state.report:
-                    indexes = list(state.report.indexes.keys())
+        # Start analysis in background
+        background_tasks.add_task(run_analysis, state)
 
-                # Apply filters
-                if status:
-                    tasks = [t for t in tasks if t.status.value == status]
-                if task_type:
-                    tasks = [t for t in tasks if t.task_type == task_type]
-                if index:
-                    tasks = [t for t in tasks if t.index_uid == index]
-
-            except Exception as e:
-                error = str(e)
-
-        return templates.TemplateResponse(
-            "tasks.html",
-            {
-                "request": request,
-                "tasks": tasks,
-                "summary": summary,
-                "indexes": indexes,
-                "is_live": is_live,
-                "error": error,
-                "current_status": status,
-                "current_type": task_type,
-                "current_index": index,
-            },
-        )
-
-    @app.get("/tasks/list", response_class=HTMLResponse)
-    async def tasks_list_partial(
-        request: Request,
-        status: str | None = None,
-        task_type: str | None = None,
-        index: str | None = None,
-        from_uid: int | None = None,
-    ):
-        """Render tasks list partial (HTMX) for polling updates."""
-        state: AppState = request.app.state.analyzer_state
-        templates = request.app.state.templates
-
-        from meiliscan.collectors.live_instance import LiveInstanceCollector
-        from meiliscan.models.task import Task, TasksSummary
-
-        tasks: list[Task] = []
-        summary: TasksSummary | None = None
-        error = None
-        next_uid: int | None = None
-
-        if state.meili_url:
-            # Live instance - fetch fresh data
-            collector = LiveInstanceCollector(
-                url=state.meili_url,
-                api_key=state.meili_api_key,
-            )
-            try:
-                if await collector.connect():
-                    # Build filter lists
-                    statuses = [status] if status else None
-                    types = [task_type] if task_type else None
-                    index_uids = [index] if index else None
-
-                    response = await collector.get_tasks_paginated(
-                        limit=20,
-                        from_uid=from_uid,
-                        statuses=statuses,
-                        types=types,
-                        index_uids=index_uids,
-                    )
-                    tasks = response.results
-                    next_uid = response.next_uid
-
-                    # Get summary from all tasks (unfiltered)
-                    summary = await collector.get_tasks_summary()
-            except Exception as e:
-                error = str(e)
-            finally:
-                await collector.close()
-        elif state.collector:
-            # Dump - use cached data
-            try:
-                raw_tasks = await state.collector.get_tasks(limit=100)
-                all_tasks = [Task(**t) for t in raw_tasks]
-                summary = TasksSummary.from_tasks(all_tasks)
-
-                # Apply filters
-                tasks = all_tasks
-                if status:
-                    tasks = [t for t in tasks if t.status.value == status]
-                if task_type:
-                    tasks = [t for t in tasks if t.task_type == task_type]
-                if index:
-                    tasks = [t for t in tasks if t.index_uid == index]
-
-                # Simple pagination for dump
-                if from_uid is not None:
-                    tasks = [t for t in tasks if t.uid < from_uid]
-                tasks = tasks[:20]
-                if tasks:
-                    next_uid = tasks[-1].uid - 1 if tasks[-1].uid > 0 else None
-
-            except Exception as e:
-                error = str(e)
-
-        return templates.TemplateResponse(
-            "components/tasks_list.html",
-            {
-                "request": request,
-                "tasks": tasks,
-                "summary": summary,
-                "error": error,
-                "next_uid": next_uid,
-                "current_status": status,
-                "current_type": task_type,
-                "current_index": index,
-                "is_live": state.meili_url is not None,
-            },
-        )
-
-    @app.get("/api/tasks")
-    async def api_tasks(
-        request: Request,
-        limit: int = 20,
-        from_uid: int | None = None,
-        status: str | None = None,
-        task_type: str | None = None,
-        index_uid: str | None = None,
-    ) -> dict:
-        """Get tasks as JSON API.
-
-        Args:
-            limit: Maximum number of tasks to return
-            from_uid: Start from this task UID (for pagination)
-            status: Filter by status
-            task_type: Filter by task type
-            index_uid: Filter by index UID
-
-        Returns:
-            Tasks data with pagination info
-        """
-        state: AppState = request.app.state.analyzer_state
-
-        from meiliscan.collectors.live_instance import LiveInstanceCollector
-        from meiliscan.models.task import Task
-
-        if state.meili_url:
-            collector = LiveInstanceCollector(
-                url=state.meili_url,
-                api_key=state.meili_api_key,
-            )
-            try:
-                if not await collector.connect():
-                    return {"error": "Failed to connect to MeiliSearch instance"}
-
-                statuses = [status] if status else None
-                types = [task_type] if task_type else None
-                index_uids = [index_uid] if index_uid else None
-
-                response = await collector.get_tasks_paginated(
-                    limit=limit,
-                    from_uid=from_uid,
-                    statuses=statuses,
-                    types=types,
-                    index_uids=index_uids,
-                )
-
-                return {
-                    "results": [t.model_dump(by_alias=True) for t in response.results],
-                    "total": response.total,
-                    "limit": response.limit,
-                    "from": response.from_uid,
-                    "next": response.next_uid,
-                }
-            except Exception as e:
-                return {"error": str(e)}
-            finally:
-                await collector.close()
-
-        elif state.collector:
-            # From dump
-            try:
-                raw_tasks = await state.collector.get_tasks(limit=1000)
-                all_tasks = [Task(**t) for t in raw_tasks]
-
-                # Apply filters
-                tasks = all_tasks
-                if status:
-                    tasks = [t for t in tasks if t.status.value == status]
-                if task_type:
-                    tasks = [t for t in tasks if t.task_type == task_type]
-                if index_uid:
-                    tasks = [t for t in tasks if t.index_uid == index_uid]
-
-                # Pagination
-                if from_uid is not None:
-                    tasks = [t for t in tasks if t.uid < from_uid]
-                tasks = tasks[:limit]
-
-                return {
-                    "results": [t.model_dump(by_alias=True) for t in tasks],
-                    "total": len(all_tasks),
-                    "limit": limit,
-                    "from": from_uid,
-                    "next": tasks[-1].uid - 1 if tasks else None,
-                }
-            except Exception as e:
-                return {"error": str(e)}
-
-        return {"error": "No data source available"}
+        return {"status": "started"}
 
     @app.get("/api/tasks/summary")
     async def api_tasks_summary(request: Request) -> dict:

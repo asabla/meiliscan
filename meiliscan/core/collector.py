@@ -5,6 +5,7 @@ from pathlib import Path
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.collectors.dump_parser import DumpParser
 from meiliscan.collectors.live_instance import LiveInstanceCollector
+from meiliscan.core.progress import ProgressCallback, emit_collect
 from meiliscan.models.index import IndexData
 
 
@@ -65,24 +66,39 @@ class DataCollector:
         collector = DumpParser(dump_path=dump_path, max_sample_docs=max_sample_docs)
         return cls(collector)
 
-    async def collect(self) -> bool:
+    async def collect(self, progress_cb: ProgressCallback | None = None) -> bool:
         """Collect all data from the source.
+
+        Args:
+            progress_cb: Optional callback for progress updates
 
         Returns:
             True if collection was successful
         """
-        if not await self._collector.connect():
+        if not await self._collector.connect(progress_cb):
             return False
 
+        emit_collect(progress_cb, "Fetching version...")
         self._version = await self._collector.get_version()
+
+        emit_collect(progress_cb, "Fetching global stats...")
         self._global_stats = await self._collector.get_stats()
-        self._indexes = await self._collector.get_indexes()
+
+        self._indexes = await self._collector.get_indexes(progress_cb)
 
         # Get tasks if available
+        emit_collect(progress_cb, "Fetching tasks...")
         try:
             self._tasks = await self._collector.get_tasks()
         except Exception:
             self._tasks = []
+
+        emit_collect(
+            progress_cb,
+            f"Collection complete: {len(self._indexes)} indexes",
+            current=len(self._indexes),
+            total=len(self._indexes),
+        )
 
         return True
 

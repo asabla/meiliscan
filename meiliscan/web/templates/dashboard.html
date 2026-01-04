@@ -358,7 +358,7 @@
                 <span class="badge badge-green">Live</span>
             </div>
             <p class="text-secondary mb-2" style="font-size: 0.875rem;">Connect to a running MeiliSearch instance for real-time analysis</p>
-            <form action="/connect" method="post">
+            <form id="connect-form" action="/connect" method="post">
                 <div class="form-group">
                     <label for="url">Instance URL</label>
                     <input type="url" id="url" name="url" value="http://localhost:7700" style="width: 100%;" required>
@@ -405,7 +405,7 @@
                 <span class="badge badge-blue">Offline</span>
             </div>
             <p class="text-secondary mb-2" style="font-size: 0.875rem;">Upload a MeiliSearch dump file for offline analysis</p>
-            <form action="/upload" method="post" enctype="multipart/form-data">
+            <form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
                 <div class="form-group">
                     <label for="file">Select .dump file</label>
                     <input type="file" id="file" name="file" accept=".dump" style="width: 100%;" required>
@@ -449,6 +449,237 @@ function toggleSampleInput(checkbox, inputId) {
         input.disabled = false;
     }
 }
+
+// Progress Modal Management
+const ProgressModal = {
+    overlay: null,
+    spinner: null,
+    title: null,
+    phase: null,
+    message: null,
+    barFill: null,
+    count: null,
+    indexName: null,
+    errorEl: null,
+    eventSource: null,
+
+    init() {
+        this.overlay = document.getElementById('progress-overlay');
+        this.spinner = document.getElementById('progress-spinner');
+        this.title = document.getElementById('progress-title');
+        this.phase = document.getElementById('progress-phase');
+        this.message = document.getElementById('progress-message');
+        this.barFill = document.getElementById('progress-bar-fill');
+        this.count = document.getElementById('progress-count');
+        this.indexName = document.getElementById('progress-index');
+        this.errorEl = document.getElementById('progress-error');
+    },
+
+    show(titleText = 'Analyzing...') {
+        if (!this.overlay) this.init();
+        this.title.textContent = titleText;
+        this.phase.textContent = 'Initializing...';
+        this.message.textContent = '';
+        this.barFill.style.width = '0%';
+        this.barFill.classList.add('indeterminate');
+        this.count.textContent = '';
+        this.indexName.textContent = '';
+        this.errorEl.style.display = 'none';
+        this.errorEl.textContent = '';
+        this.overlay.classList.add('active');
+    },
+
+    hide() {
+        if (this.overlay) {
+            this.overlay.classList.remove('active');
+        }
+        this.closeEventSource();
+    },
+
+    showError(errorText) {
+        if (!this.errorEl) this.init();
+        this.errorEl.textContent = errorText;
+        this.errorEl.style.display = 'block';
+        this.spinner.style.display = 'none';
+        this.barFill.classList.remove('indeterminate');
+    },
+
+    updateProgress(event) {
+        if (!this.overlay) this.init();
+
+        // Update phase label
+        const phaseLabels = {
+            'collect': 'Collecting data...',
+            'parse': 'Parsing dump file...',
+            'analyze': 'Analyzing indexes...'
+        };
+        if (event.phase) {
+            this.phase.textContent = phaseLabels[event.phase] || event.phase;
+        }
+
+        // Update message
+        if (event.message) {
+            this.message.textContent = event.message;
+        }
+
+        // Update progress bar
+        if (event.total && event.current !== undefined) {
+            const percent = Math.round((event.current / event.total) * 100);
+            this.barFill.classList.remove('indeterminate');
+            this.barFill.style.width = percent + '%';
+            this.count.textContent = `${event.current} / ${event.total}`;
+        } else {
+            this.barFill.classList.add('indeterminate');
+            this.count.textContent = '';
+        }
+
+        // Update index name
+        if (event.index_uid) {
+            this.indexName.textContent = event.index_uid;
+        } else {
+            this.indexName.textContent = '';
+        }
+    },
+
+    closeEventSource() {
+        if (this.eventSource) {
+            this.eventSource.close();
+            this.eventSource = null;
+        }
+    },
+
+    connectToEvents() {
+        this.closeEventSource();
+        this.eventSource = new EventSource('/api/analysis/events');
+
+        this.eventSource.addEventListener('status', (e) => {
+            const data = JSON.parse(e.data);
+            if (data.status === 'running') {
+                this.phase.textContent = 'Starting analysis...';
+            }
+        });
+
+        this.eventSource.addEventListener('progress', (e) => {
+            const data = JSON.parse(e.data);
+            this.updateProgress(data);
+        });
+
+        this.eventSource.addEventListener('done', (e) => {
+            const data = JSON.parse(e.data);
+            this.closeEventSource();
+            if (data.status === 'error') {
+                this.showError(data.error || 'An error occurred during analysis');
+                // Hide modal after a delay to show the error
+                setTimeout(() => {
+                    this.hide();
+                    window.location.reload();
+                }, 3000);
+            } else {
+                // Success - reload page to show results
+                window.location.reload();
+            }
+        });
+
+        this.eventSource.addEventListener('heartbeat', () => {
+            // Just a keepalive, no action needed
+        });
+
+        this.eventSource.onerror = () => {
+            // Connection error - likely the page was refreshed or server restarted
+            this.closeEventSource();
+            // Try to reload after a short delay
+            setTimeout(() => {
+                window.location.reload();
+            }, 1000);
+        };
+    }
+};
+
+// Handle Connect form submission
+async function handleConnectSubmit(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    ProgressModal.show('Connecting to MeiliSearch...');
+
+    try {
+        // Submit the form via fetch
+        const response = await fetch('/connect', {
+            method: 'POST',
+            body: formData
+        });
+
+        // The server redirects, but we want to show progress
+        // Connect to SSE endpoint to track progress
+        ProgressModal.connectToEvents();
+
+    } catch (error) {
+        ProgressModal.showError('Failed to connect: ' + error.message);
+        setTimeout(() => {
+            ProgressModal.hide();
+        }, 3000);
+    }
+}
+
+// Handle Upload form submission
+async function handleUploadSubmit(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+
+    ProgressModal.show('Uploading and analyzing dump...');
+
+    try {
+        // Submit the form via fetch
+        const response = await fetch('/upload', {
+            method: 'POST',
+            body: formData
+        });
+
+        // Connect to SSE endpoint to track progress
+        ProgressModal.connectToEvents();
+
+    } catch (error) {
+        ProgressModal.showError('Failed to upload: ' + error.message);
+        setTimeout(() => {
+            ProgressModal.hide();
+        }, 3000);
+    }
+}
+
+// Initialize on DOM ready
+document.addEventListener('DOMContentLoaded', function() {
+    ProgressModal.init();
+    
+    // Attach handlers to forms
+    const connectForm = document.getElementById('connect-form');
+    if (connectForm) {
+        connectForm.addEventListener('submit', handleConnectSubmit);
+    }
+    
+    const uploadForm = document.getElementById('upload-form');
+    if (uploadForm) {
+        uploadForm.addEventListener('submit', handleUploadSubmit);
+    }
+});
 </script>
 {% endif %}
+
+<!-- Progress Overlay Modal -->
+<div id="progress-overlay" class="progress-overlay">
+    <div class="progress-modal">
+        <div id="progress-spinner" class="progress-spinner"></div>
+        <div id="progress-title" class="progress-title">Analyzing...</div>
+        <div id="progress-phase" class="progress-phase">Initializing...</div>
+        <div id="progress-message" class="progress-message"></div>
+        <div class="progress-bar-container">
+            <div id="progress-bar-fill" class="progress-bar-fill indeterminate"></div>
+        </div>
+        <div id="progress-count" class="progress-count"></div>
+        <div id="progress-index" class="progress-index"></div>
+        <div id="progress-error" class="progress-error" style="display: none;"></div>
+    </div>
+</div>
+
 {% endblock %}

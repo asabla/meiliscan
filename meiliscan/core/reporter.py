@@ -6,6 +6,7 @@ from datetime import datetime
 
 from meiliscan.core.analyzer import Analyzer
 from meiliscan.core.collector import DataCollector
+from meiliscan.core.progress import ProgressCallback, emit_analyze
 from meiliscan.core.scorer import HealthScorer
 from meiliscan.models.finding import FindingSeverity
 from meiliscan.models.report import ActionPlan, AnalysisReport, SourceInfo
@@ -38,11 +39,16 @@ class Reporter:
         self._scorer = scorer or HealthScorer()
         self._analysis_options = analysis_options or {}
 
-    def generate_report(self, source_url: str | None = None) -> AnalysisReport:
+    def generate_report(
+        self,
+        source_url: str | None = None,
+        progress_cb: ProgressCallback | None = None,
+    ) -> AnalysisReport:
         """Generate a complete analysis report.
 
         Args:
             source_url: URL of the MeiliSearch instance
+            progress_cb: Optional callback for progress updates
 
         Returns:
             Complete analysis report
@@ -63,8 +69,26 @@ class Reporter:
             report.summary.database_size_bytes = global_stats.get("databaseSize")
 
         # Process each index
+        indexes = self._collector.indexes
+        total_indexes = len(indexes)
         detect_sensitive = self._analysis_options.get("detect_sensitive", False)
-        for index in self._collector.indexes:
+
+        emit_analyze(
+            progress_cb,
+            f"Analyzing {total_indexes} indexes...",
+            current=0,
+            total=total_indexes,
+        )
+
+        for i, index in enumerate(indexes, start=1):
+            emit_analyze(
+                progress_cb,
+                f"Analyzing index: {index.uid}",
+                current=i,
+                total=total_indexes,
+                index_uid=index.uid,
+            )
+
             report.add_index(index)
 
             # Run analysis
@@ -75,6 +99,12 @@ class Reporter:
                 report.add_finding(finding)
 
         # Run global analysis
+        emit_analyze(
+            progress_cb,
+            "Running global checks...",
+            current=total_indexes,
+            total=total_indexes,
+        )
         global_findings = self._analyzer.analyze_global(
             indexes=self._collector.indexes,
             global_stats=self._collector.global_stats,
@@ -91,11 +121,24 @@ class Reporter:
             report.add_finding(finding)
 
         # Calculate summary and score
+        emit_analyze(
+            progress_cb,
+            "Calculating health score...",
+            current=total_indexes,
+            total=total_indexes,
+        )
         report.calculate_summary()
         self._scorer.score_report(report)
 
         # Generate action plan
         report.action_plan = self._generate_action_plan(report)
+
+        emit_analyze(
+            progress_cb,
+            f"Analysis complete: {len(report.get_all_findings())} findings",
+            current=total_indexes,
+            total=total_indexes,
+        )
 
         return report
 

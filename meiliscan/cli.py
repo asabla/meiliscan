@@ -7,11 +7,19 @@ from typing import Annotated, Optional
 import typer
 from rich.console import Console
 from rich.panel import Panel
-from rich.progress import Progress, SpinnerColumn, TextColumn
+from rich.progress import (
+    BarColumn,
+    MofNCompleteColumn,
+    Progress,
+    SpinnerColumn,
+    TextColumn,
+    TimeElapsedColumn,
+)
 from rich.table import Table
 
 from meiliscan import __version__
 from meiliscan.core.collector import DataCollector
+from meiliscan.core.progress import ProgressEvent
 from meiliscan.core.reporter import Reporter
 from meiliscan.core.scorer import HealthScorer
 from meiliscan.exporters.agent_exporter import AgentExporter
@@ -240,29 +248,71 @@ async def _analyze_dump(
     analysis_options = analysis_options or {}
     sample_docs = analysis_options.get("sample_documents", 20)
 
+    collector = DataCollector.from_dump(dump_path, max_sample_docs=sample_docs)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
         console=console,
+        transient=False,
     ) as progress:
-        task = progress.add_task("Loading dump file...", total=None)
-        collector = DataCollector.from_dump(dump_path, max_sample_docs=sample_docs)
+        # Phase task (top-level status)
+        phase_task = progress.add_task(
+            "[cyan]Phase:[/cyan] Parsing dump...", total=None
+        )
+        # Index task (per-index progress)
+        index_task = progress.add_task(
+            "[dim]Indexes:[/dim] waiting...", total=None, visible=False
+        )
 
-        if not await collector.collect():
+        def progress_cb(event: ProgressEvent) -> None:
+            """Handle progress events from collectors and reporter."""
+            if event.phase in ("collect", "parse"):
+                progress.update(
+                    phase_task, description=f"[cyan]Phase:[/cyan] {event.message}"
+                )
+                if event.total is not None:
+                    progress.update(
+                        index_task,
+                        description=f"[dim]Indexes:[/dim] {event.message}",
+                        total=event.total,
+                        completed=event.current or 0,
+                        visible=True,
+                    )
+            elif event.phase == "analyze":
+                progress.update(
+                    phase_task, description=f"[cyan]Phase:[/cyan] {event.message}"
+                )
+                if event.total is not None:
+                    progress.update(
+                        index_task,
+                        description=f"[dim]Analyzing:[/dim] {event.index_uid or 'global'}",
+                        total=event.total,
+                        completed=event.current or 0,
+                        visible=True,
+                    )
+
+        if not await collector.collect(progress_cb):
             console.print(f"[red]Error:[/red] Failed to parse dump file at {dump_path}")
             await collector.close()
             return 1
 
-        progress.update(
-            task, description=f"Loaded. Found {len(collector.indexes)} indexes."
-        )
-
         # Generate report
-        progress.update(task, description="Analyzing indexes...")
+        progress.update(
+            phase_task, description="[cyan]Phase:[/cyan] Analyzing indexes..."
+        )
+        progress.update(index_task, completed=0, visible=True)
+
         reporter = Reporter(collector, analysis_options=analysis_options)
-        report = reporter.generate_report(source_url=None)
+        report = reporter.generate_report(source_url=None, progress_cb=progress_cb)
         report.source.type = "dump"
         report.source.dump_path = str(dump_path)
+
+        progress.update(phase_task, description="[cyan]Phase:[/cyan] Analysis complete")
+        progress.update(index_task, visible=False)
 
         await collector.close()
 
@@ -292,30 +342,64 @@ async def _analyze_instance(
     analysis_options = analysis_options or {}
     sample_docs = analysis_options.get("sample_documents", 20)
 
+    collector = DataCollector.from_url(url, api_key, sample_docs=sample_docs)
+
     with Progress(
         SpinnerColumn(),
         TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
         console=console,
+        transient=False,
     ) as progress:
-        # Connect and collect data
-        task = progress.add_task("Connecting to MeiliSearch...", total=None)
-        collector = DataCollector.from_url(url, api_key, sample_docs=sample_docs)
+        # Phase task (top-level status)
+        phase_task = progress.add_task("[cyan]Phase:[/cyan] Connecting...", total=None)
+        # Index task (per-index progress)
+        index_task = progress.add_task(
+            "[dim]Indexes:[/dim] waiting...", total=None, visible=False
+        )
 
-        if not await collector.collect():
+        def progress_cb(event: ProgressEvent) -> None:
+            """Handle progress events from collectors and reporter."""
+            if event.phase == "collect":
+                progress.update(
+                    phase_task, description=f"[cyan]Phase:[/cyan] {event.message}"
+                )
+                if event.total is not None:
+                    progress.update(
+                        index_task,
+                        description=f"[dim]Indexes:[/dim] {event.message}",
+                        total=event.total,
+                        completed=event.current or 0,
+                        visible=True,
+                    )
+            elif event.phase == "analyze":
+                progress.update(
+                    phase_task, description=f"[cyan]Phase:[/cyan] {event.message}"
+                )
+                if event.total is not None:
+                    progress.update(
+                        index_task,
+                        description=f"[dim]Analyzing:[/dim] {event.index_uid or 'global'}",
+                        total=event.total,
+                        completed=event.current or 0,
+                        visible=True,
+                    )
+
+        if not await collector.collect(progress_cb):
             console.print(
                 f"[red]Error:[/red] Failed to connect to MeiliSearch at {url}"
             )
             await collector.close()
             return 1
 
-        progress.update(
-            task, description=f"Connected. Found {len(collector.indexes)} indexes."
-        )
-
         # Run search probes if requested
         probe_results = None
         if analysis_options.get("probe_search"):
-            progress.update(task, description="Running search probes...")
+            progress.update(
+                phase_task, description="[cyan]Phase:[/cyan] Running search probes..."
+            )
             from meiliscan.analyzers.search_probe_analyzer import SearchProbeAnalyzer
 
             probe_analyzer = SearchProbeAnalyzer()
@@ -335,9 +419,16 @@ async def _analyze_instance(
             analysis_options["_probe_findings"] = probe_findings
 
         # Generate report
-        progress.update(task, description="Analyzing indexes...")
+        progress.update(
+            phase_task, description="[cyan]Phase:[/cyan] Analyzing indexes..."
+        )
+        progress.update(index_task, completed=0, visible=True)
+
         reporter = Reporter(collector, analysis_options=analysis_options)
-        report = reporter.generate_report(source_url=url)
+        report = reporter.generate_report(source_url=url, progress_cb=progress_cb)
+
+        progress.update(phase_task, description="[cyan]Phase:[/cyan] Analysis complete")
+        progress.update(index_task, visible=False)
 
         await collector.close()
 

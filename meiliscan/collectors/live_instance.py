@@ -1,12 +1,15 @@
 """Live MeiliSearch instance collector."""
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 from meiliscan.models.task import Task, TasksResponse, TasksSummary
+
+if TYPE_CHECKING:
+    from meiliscan.core.progress import ProgressCallback
 
 
 class LiveInstanceCollector(BaseCollector):
@@ -43,8 +46,15 @@ class LiveInstanceCollector(BaseCollector):
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
 
-    async def connect(self) -> bool:
-        """Establish connection to the MeiliSearch instance."""
+    async def connect(self, progress_cb: "ProgressCallback | None" = None) -> bool:
+        """Establish connection to the MeiliSearch instance.
+
+        Args:
+            progress_cb: Optional callback for progress updates
+        """
+        from meiliscan.core.progress import emit_collect
+
+        emit_collect(progress_cb, "Connecting to MeiliSearch...")
         self._client = httpx.AsyncClient(
             base_url=self.url,
             headers=self._get_headers(),
@@ -55,12 +65,14 @@ class LiveInstanceCollector(BaseCollector):
             response = await self._client.get("/health")
             response.raise_for_status()
 
+            emit_collect(progress_cb, "Fetching version...")
             # Get version
             version_response = await self._client.get("/version")
             version_response.raise_for_status()
             version_data = version_response.json()
             self._version = version_data.get("pkgVersion")
 
+            emit_collect(progress_cb, f"Connected (version {self._version})")
             return True
         except httpx.HTTPError:
             return False
@@ -82,10 +94,20 @@ class LiveInstanceCollector(BaseCollector):
         self._global_stats = response.json()
         return self._global_stats or {}
 
-    async def get_indexes(self) -> list[IndexData]:
-        """Retrieve all indexes with their data."""
+    async def get_indexes(
+        self, progress_cb: "ProgressCallback | None" = None
+    ) -> list[IndexData]:
+        """Retrieve all indexes with their data.
+
+        Args:
+            progress_cb: Optional callback for progress updates
+        """
+        from meiliscan.core.progress import emit_collect
+
         if not self._client:
             raise RuntimeError("Collector not connected. Call connect() first.")
+
+        emit_collect(progress_cb, "Fetching indexes...")
 
         # Fetch all indexes with pagination
         indexes_list: list[dict[str, Any]] = []
@@ -108,6 +130,12 @@ class LiveInstanceCollector(BaseCollector):
                 # Check if we've fetched all indexes
                 # Use total if available, otherwise check if batch is smaller than requested
                 if total is not None:
+                    emit_collect(
+                        progress_cb,
+                        f"Fetching indexes ({len(indexes_list)}/{total})...",
+                        current=len(indexes_list),
+                        total=total,
+                    )
                     if len(indexes_list) >= total:
                         break
                 elif len(batch) < batch_size:
@@ -119,10 +147,25 @@ class LiveInstanceCollector(BaseCollector):
                 indexes_list = indexes_data if isinstance(indexes_data, list) else []
                 break
 
+        total_indexes = len(indexes_list)
+        emit_collect(
+            progress_cb,
+            f"Found {total_indexes} indexes",
+            current=total_indexes,
+            total=total_indexes,
+        )
+
         indexes: list[IndexData] = []
 
-        for idx_info in indexes_list:
+        for i, idx_info in enumerate(indexes_list, start=1):
             uid = idx_info["uid"]
+
+            emit_collect(
+                progress_cb,
+                f"Fetching index {uid} ({i}/{total_indexes})...",
+                current=i,
+                total=total_indexes,
+            )
 
             # Get settings for this index
             settings_response = await self._client.get(f"/indexes/{uid}/settings")
