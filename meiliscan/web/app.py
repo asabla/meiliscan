@@ -81,6 +81,28 @@ def trend_color(trend: str) -> str:
     return colors.get(trend_str, "gray")
 
 
+# Severity order for sorting (lower number = higher priority)
+SEVERITY_ORDER = {
+    "critical": 0,
+    "warning": 1,
+    "suggestion": 2,
+    "info": 3,
+}
+
+
+def sort_by_severity(findings: list) -> list:
+    """Sort findings by severity (critical first, then warning, suggestion, info)."""
+    return sorted(
+        findings,
+        key=lambda f: SEVERITY_ORDER.get(
+            f.severity.value.lower()
+            if hasattr(f.severity, "value")
+            else str(f.severity).lower(),
+            4,
+        ),
+    )
+
+
 def create_app(
     meili_url: str | None = None,
     meili_api_key: str | None = None,
@@ -143,6 +165,7 @@ def create_app(
     templates.env.filters["format_number"] = format_number
     templates.env.filters["trend_icon"] = trend_icon
     templates.env.filters["trend_color"] = trend_color
+    templates.env.filters["sort_by_severity"] = sort_by_severity
 
     # Add global template function to check if connected to live instance
     def is_live_instance() -> bool:

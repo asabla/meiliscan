@@ -193,12 +193,13 @@
             <a href="/findings" class="btn btn-secondary btn-sm">View All →</a>
         </div>
         <div class="flex gap-2 flex-wrap">
-            <span class="badge badge-red">{{ report.summary.critical_issues }} Critical</span>
-            <span class="badge badge-yellow">{{ report.summary.warnings }} Warnings</span>
-            <span class="badge badge-blue">{{ report.summary.suggestions }} Suggestions</span>
+            <a href="/findings?severity=critical" class="badge badge-red" style="text-decoration: none;">{{ report.summary.critical_issues }} Critical</a>
+            <a href="/findings?severity=warning" class="badge badge-yellow" style="text-decoration: none;">{{ report.summary.warnings }} Warnings</a>
+            <a href="/findings?severity=suggestion" class="badge badge-blue" style="text-decoration: none;">{{ report.summary.suggestions }} Suggestions</a>
+            <a href="/findings?severity=info" class="badge badge-gray" style="text-decoration: none;">{{ report.summary.info_count }} Info</a>
         </div>
 
-        {% set all_findings = report.get_all_findings() %}
+        {% set all_findings = report.get_all_findings()|sort_by_severity %}
         {% if all_findings %}
         <div class="mt-2">
             <h3 class="text-secondary mb-1" style="font-size: 0.875rem;">Top Issues</h3>
