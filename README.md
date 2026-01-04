@@ -11,7 +11,7 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 - **Instance Config Analysis**: Optional analysis of `config.toml` for production security/reliability checks
 - **Search Probing**: Opt-in read-only search probes to validate sort/filter configurations
 - **PII Detection**: Optional detection of sensitive/PII fields in documents
-- **34 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, and best practices
+- **42 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, search probes, and best practices
 - **Health Scoring**: Get an overall health score for your MeiliSearch setup
 - **Web Dashboard**: Interactive web UI for exploring analysis results
 - **Historical Comparison**: Compare two analysis reports to track changes over time
@@ -156,7 +156,7 @@ Use --output to save the full report to a file.
 
 ## Analysis Checks
 
-### Schema Findings (S001-S010)
+### Schema Findings (S001-S020)
 
 | ID | Title | Severity | Description |
 |----|-------|----------|-------------|
@@ -170,8 +170,18 @@ Use --output to save the full report to a file.
 | MEILI-S008 | No distinct attribute set | Suggestion | Potentially duplicate results |
 | MEILI-S009 | Very low pagination limit | Warning | maxTotalHits < 100 |
 | MEILI-S010 | High pagination limit | Suggestion | maxTotalHits > 10000 |
+| MEILI-S011 | Missing primary key | Critical | Index has no primary key configured |
+| MEILI-S012 | Suspicious primary key | Warning | Primary key looks like a mutable/non-identifier field |
+| MEILI-S013 | Missing sortable attributes | Info | No sortable attributes but index has common sort candidates |
+| MEILI-S014 | Sortable attribute type issues | Warning | Sortable attribute has inconsistent or complex types |
+| MEILI-S015 | High-cardinality filterable | Suggestion | Filterable attribute appears high-cardinality (UUID/email patterns) |
+| MEILI-S016 | Faceting maxValuesPerFacet mismatch | Suggestion | Faceting limit doesn't match observed cardinality |
+| MEILI-S017 | Suspicious synonyms | Suggestion | Synonyms set has issues (empty, self-synonyms, very large) |
+| MEILI-S018 | Typo tolerance on ID fields | Suggestion | Typo tolerance enabled on identifier-like fields |
+| MEILI-S019 | Permissive typo settings | Info | Very permissive minWordSizeForTypos settings |
+| MEILI-S020 | Dictionary issues | Suggestion | Large dictionary, duplicate entries, or suspicious separators |
 
-### Document Findings (D001-D010)
+### Document Findings (D001-D013)
 
 | ID | Title | Severity | Description |
 |----|-------|----------|-------------|
@@ -185,8 +195,11 @@ Use --output to save the full report to a file.
 | MEILI-D008 | Very long text | Suggestion | Text fields exceeding optimal length |
 | MEILI-D009 | Sensitive field names | Warning | Field names suggesting PII data (with `--detect-sensitive`) |
 | MEILI-D010 | PII content detected | Critical | PII patterns in field values (with `--detect-sensitive`) |
+| MEILI-D011 | Arrays of objects in filterable | Warning | Filterable fields contain arrays of objects (flattening issues) |
+| MEILI-D012 | Geo coordinates without _geo | Suggestion | Lat/lng fields detected but not using MeiliSearch _geo format |
+| MEILI-D013 | Date strings in sortable | Suggestion | String dates in sortable fields (should use Unix timestamps) |
 
-### Performance Findings (P001-P006)
+### Performance Findings (P001-P010)
 
 | ID | Title | Severity | Description |
 |----|-------|----------|-------------|
@@ -196,6 +209,10 @@ Use --output to save the full report to a file.
 | MEILI-P004 | Too many indexes | Suggestion | Large number of indexes may impact performance |
 | MEILI-P005 | Imbalanced indexes | Info | Document counts vary significantly |
 | MEILI-P006 | Too many fields | Warning | Indexes have excessive field counts |
+| MEILI-P007 | Task queue backlog | Warning | Sustained queueing delays (>60s average) |
+| MEILI-P008 | Tiny indexing tasks | Suggestion | Too many small batches (<10 docs), suggest client-side batching |
+| MEILI-P009 | Oversized indexing tasks | Suggestion | Tasks taking >10 minutes, suggest smaller batches |
+| MEILI-P010 | Recurring task errors | Warning | Same error codes appearing repeatedly (≥3 times) |
 
 ### Best Practices Findings (B001-B004)
 
