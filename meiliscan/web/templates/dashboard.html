@@ -188,22 +188,23 @@
         <h2 class="card-title">Indexes</h2>
     </div>
     {% if report.indexes %}
-    <table>
+    <div class="table-wrapper">
+    <table id="indexes-table">
         <thead>
             <tr>
-                <th>Index</th>
-                <th>Documents</th>
-                <th>Findings</th>
+                <th class="sortable sort-asc" data-sort="name" onclick="sortIndexTable('name')">Index<span class="sort-icon"></span></th>
+                <th class="sortable" data-sort="documents" onclick="sortIndexTable('documents')">Documents<span class="sort-icon"></span></th>
+                <th class="sortable" data-sort="findings" onclick="sortIndexTable('findings')">Findings<span class="sort-icon"></span></th>
             </tr>
         </thead>
         <tbody>
             {% for uid, index_analysis in report.indexes.items() %}
-            <tr>
+            {% set critical = index_analysis.findings|selectattr('severity.value', 'equalto', 'critical')|list|length %}
+            {% set warnings = index_analysis.findings|selectattr('severity.value', 'equalto', 'warning')|list|length %}
+            <tr data-name="{{ uid }}" data-documents="{{ index_analysis.metadata.get('document_count', 0) }}" data-findings="{{ critical * 1000 + warnings }}">
                 <td><a href="/index/{{ uid }}">{{ uid }}</a></td>
                 <td>{{ index_analysis.metadata.get('document_count', 0)|format_number }}</td>
                 <td>
-                    {% set critical = index_analysis.findings|selectattr('severity.value', 'equalto', 'critical')|list|length %}
-                    {% set warnings = index_analysis.findings|selectattr('severity.value', 'equalto', 'warning')|list|length %}
                     <span class="badge badge-red">{{ critical }}</span>
                     <span class="badge badge-yellow">{{ warnings }}</span>
                 </td>
@@ -211,6 +212,39 @@
             {% endfor %}
         </tbody>
     </table>
+    </div>
+    <script>
+    function sortIndexTable(column) {
+        const table = document.getElementById('indexes-table');
+        const tbody = table.querySelector('tbody');
+        const rows = Array.from(tbody.querySelectorAll('tr'));
+        const headers = table.querySelectorAll('th.sortable');
+        const clickedHeader = table.querySelector(`th[data-sort="${column}"]`);
+        
+        // Determine sort direction
+        const isAsc = clickedHeader.classList.contains('sort-asc');
+        const direction = isAsc ? -1 : 1;
+        
+        // Update header classes
+        headers.forEach(h => h.classList.remove('sort-asc', 'sort-desc'));
+        clickedHeader.classList.add(isAsc ? 'sort-desc' : 'sort-asc');
+        
+        // Sort rows
+        rows.sort((a, b) => {
+            let aVal = a.dataset[column];
+            let bVal = b.dataset[column];
+            
+            if (column === 'name') {
+                return direction * aVal.localeCompare(bVal);
+            } else {
+                return direction * (parseInt(aVal) - parseInt(bVal));
+            }
+        });
+        
+        // Re-append rows
+        rows.forEach(row => tbody.appendChild(row));
+    }
+    </script>
     {% else %}
     <p class="text-muted">No indexes found</p>
     {% endif %}

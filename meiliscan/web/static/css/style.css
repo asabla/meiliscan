@@ -1054,3 +1054,85 @@ pre code {
 .task-row.task-failed {
     background-color: rgba(239, 68, 68, 0.03);
 }
+
+/* Sortable Table */
+.table-wrapper {
+    max-height: 250px;
+    overflow-y: auto;
+    overflow-x: hidden;
+    margin: 0 -1.5rem -1.5rem -1.5rem;
+}
+
+.table-wrapper table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.table-wrapper thead {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+}
+
+.table-wrapper thead th {
+    background-color: var(--bg-secondary);
+}
+
+.table-wrapper th,
+.table-wrapper td {
+    padding: 0.5rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.table-wrapper th {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.table-wrapper tbody tr:last-child td {
+    border-bottom: none;
+}
+
+.table-wrapper tbody tr:hover {
+    background-color: var(--bg-tertiary);
+}
+
+th.sortable {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.2s;
+}
+
+th.sortable:hover {
+    background-color: var(--bg-tertiary);
+}
+
+th.sortable .sort-icon {
+    margin-left: 0.25rem;
+    font-size: 0.7rem;
+    opacity: 0.3;
+    display: inline-block;
+}
+
+th.sortable:hover .sort-icon {
+    opacity: 0.6;
+}
+
+th.sortable.sort-asc .sort-icon,
+th.sortable.sort-desc .sort-icon {
+    opacity: 1;
+}
+
+th.sortable.sort-asc .sort-icon::after {
+    content: "▲";
+}
+
+th.sortable.sort-desc .sort-icon::after {
+    content: "▼";
+}
+
+th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
+    content: "⇅";
+}
