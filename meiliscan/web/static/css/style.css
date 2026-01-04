@@ -1253,8 +1253,8 @@ th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
     border: 1px solid var(--border);
     border-radius: 0.75rem;
     padding: 2rem;
-    min-width: 400px;
-    max-width: 500px;
+    min-width: 450px;
+    max-width: 550px;
     text-align: center;
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
 }
@@ -1273,19 +1273,49 @@ th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
     font-size: 1.25rem;
     font-weight: 600;
     color: var(--text-primary);
+    margin-bottom: 1.5rem;
+}
+
+/* Two-level progress display */
+.progress-levels {
+    text-align: left;
+    margin-bottom: 1.5rem;
+}
+
+.progress-level {
+    margin-bottom: 1rem;
+}
+
+.progress-level:last-child {
+    margin-bottom: 0;
+}
+
+.progress-level-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 0.5rem;
 }
 
-.progress-phase {
-    font-size: 0.875rem;
+.progress-level-label {
+    font-size: 0.8125rem;
     color: var(--text-secondary);
-    margin-bottom: 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 500;
 }
 
-.progress-message {
+.progress-level-status {
     font-size: 0.875rem;
     color: var(--text-primary);
-    margin-bottom: 1rem;
+    font-weight: 500;
+}
+
+.progress-level-detail {
+    font-size: 0.875rem;
+    color: var(--accent);
+    font-family: 'SF Mono', 'Consolas', monospace;
+    margin-bottom: 0.5rem;
     min-height: 1.25rem;
 }
 
@@ -1294,7 +1324,6 @@ th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
     background-color: var(--bg-tertiary);
     border-radius: 9999px;
     overflow: hidden;
-    margin-bottom: 0.5rem;
 }
 
 .progress-bar-fill {
@@ -1310,6 +1339,10 @@ th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
     animation: progress-indeterminate 1.5s ease-in-out infinite;
 }
 
+.progress-bar-fill.phase-bar {
+    background-color: var(--green);
+}
+
 @keyframes progress-indeterminate {
     0% {
         transform: translateX(-100%);
@@ -1322,13 +1355,16 @@ th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
 .progress-count {
     font-size: 0.75rem;
     color: var(--text-muted);
+    text-align: right;
+    margin-top: 0.25rem;
 }
 
-.progress-index {
+.progress-message {
     font-size: 0.8125rem;
-    color: var(--accent);
-    margin-top: 0.5rem;
-    font-family: 'SF Mono', 'Consolas', monospace;
+    color: var(--text-secondary);
+    margin-top: 1rem;
+    min-height: 1rem;
+    text-align: center;
 }
 
 .progress-error {
@@ -1338,4 +1374,5 @@ th.sortable:not(.sort-asc):not(.sort-desc) .sort-icon::after {
     padding: 0.75rem;
     background-color: rgba(239, 68, 68, 0.1);
     border-radius: 0.375rem;
+    text-align: center;
 }
