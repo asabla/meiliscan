@@ -29,21 +29,27 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 ### From source (recommended for now)
 
 ```bash
-git clone https://github.com/yourusername/meiliscan.git
+git clone https://github.com/asabla/meiliscan.git
 cd meiliscan
 make install-dev  # or: uv sync --all-extras
 ```
 
-### Using pip (when published)
+### Using uv
 
 ```bash
-pip install meiliscan
+# Run without installing (temporary environment)
+uvx --from git+https://github.com/asabla/meiliscan meiliscan --help
+
+# Or install persistently to PATH
+uv tool install git+https://github.com/asabla/meiliscan
+meiliscan --help
 ```
 
-### Using uvx (when published)
+### Using pip
 
 ```bash
-uvx meiliscan --help
+pip install git+https://github.com/asabla/meiliscan.git
+meiliscan --help
 ```
 
 ## Quick Start
