@@ -1,15 +1,21 @@
 """FastAPI application for the web dashboard."""
 
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Literal
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
 from meiliscan.core.collector import DataCollector
+from meiliscan.core.progress import ProgressEvent
 from meiliscan.core.reporter import Reporter
 from meiliscan.models.report import AnalysisReport
+
+# Analysis status type
+AnalysisStatus = Literal["idle", "running", "done", "error"]
 
 
 class AppState:
@@ -25,6 +31,29 @@ class AppState:
         self.probe_search: bool = False
         self.sample_documents: int | None = 20  # None means "all"
         self.detect_sensitive: bool = False
+        # Analysis progress tracking
+        self.analysis_status: AnalysisStatus = "idle"
+        self.analysis_error: str | None = None
+        self._progress_subscribers: list[asyncio.Queue[ProgressEvent | None]] = []
+
+    def subscribe_progress(self) -> asyncio.Queue[ProgressEvent | None]:
+        """Subscribe to progress events. Returns a queue that will receive events."""
+        queue: asyncio.Queue[ProgressEvent | None] = asyncio.Queue()
+        self._progress_subscribers.append(queue)
+        return queue
+
+    def unsubscribe_progress(self, queue: asyncio.Queue[ProgressEvent | None]) -> None:
+        """Unsubscribe from progress events."""
+        if queue in self._progress_subscribers:
+            self._progress_subscribers.remove(queue)
+
+    async def emit_progress(self, event: ProgressEvent | None) -> None:
+        """Emit a progress event to all subscribers."""
+        for queue in self._progress_subscribers:
+            try:
+                await queue.put(event)
+            except Exception:
+                pass  # Ignore errors from closed queues
 
 
 # Template filters - defined before create_app so they're available at registration time
@@ -193,6 +222,13 @@ async def run_analysis(state: AppState) -> None:
     - probe_search: Run search probes (live instance only)
     - detect_sensitive: Enable PII/sensitive field detection
     """
+    state.analysis_status = "running"
+    state.analysis_error = None
+
+    async def progress_cb(event: ProgressEvent) -> None:
+        """Progress callback that emits to all subscribers."""
+        await state.emit_progress(event)
+
     try:
         if state.dump_path:
             state.collector = DataCollector.from_dump(
@@ -206,11 +242,14 @@ async def run_analysis(state: AppState) -> None:
                 sample_docs=state.sample_documents,
             )
         else:
+            state.analysis_status = "idle"
             return
 
         # Collect data
-        if not await state.collector.collect():
-            print("Failed to collect data from source")
+        if not await state.collector.collect(progress_cb):
+            state.analysis_status = "error"
+            state.analysis_error = "Failed to collect data from source"
+            await state.emit_progress(None)  # Signal completion
             return
 
         # Build analysis options
@@ -223,6 +262,10 @@ async def run_analysis(state: AppState) -> None:
         if state.probe_search and state.meili_url:
             from meiliscan.analyzers.search_probe_analyzer import SearchProbeAnalyzer
             from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+            await state.emit_progress(
+                ProgressEvent(phase="analyze", message="Running search probes...")
+            )
 
             probe_analyzer = SearchProbeAnalyzer()
 
@@ -245,7 +288,16 @@ async def run_analysis(state: AppState) -> None:
 
         # Run analysis
         reporter = Reporter(state.collector, analysis_options=analysis_options)
-        state.report = reporter.generate_report(source_url=state.meili_url)
+        state.report = reporter.generate_report(
+            source_url=state.meili_url, progress_cb=progress_cb
+        )
+
+        state.analysis_status = "done"
+        await state.emit_progress(None)  # Signal completion
+
     except Exception as e:
         # Log error but don't crash - UI will show "no data" state
+        state.analysis_status = "error"
+        state.analysis_error = str(e)
+        await state.emit_progress(None)  # Signal completion
         print(f"Error running analysis: {e}")
