@@ -208,6 +208,134 @@ def generate_orders(count: int = 1000) -> list[dict]:
     return orders
 
 
+def generate_locations(count: int = 50) -> list[dict]:
+    """Generate sample location documents for D011, D012, D013 testing."""
+    locations = []
+
+    # Sample cities with coordinates
+    cities = [
+        ("New York", 40.7128, -74.0060),
+        ("Los Angeles", 34.0522, -118.2437),
+        ("Chicago", 41.8781, -87.6298),
+        ("Houston", 29.7604, -95.3698),
+        ("Phoenix", 33.4484, -112.0740),
+        ("Philadelphia", 39.9526, -75.1652),
+        ("San Antonio", 29.4241, -98.4936),
+        ("San Diego", 32.7157, -117.1611),
+        ("Dallas", 32.7767, -96.7970),
+        ("San Jose", 37.3382, -121.8863),
+        ("Montreal", 45.5017, -73.5673),
+        ("Toronto", 43.6532, -79.3832),
+        ("Vancouver", 49.2827, -123.1207),
+        ("London", 51.5074, -0.1278),
+        ("Paris", 48.8566, 2.3522),
+        ("Berlin", 52.5200, 13.4050),
+        ("Tokyo", 35.6762, 139.6503),
+        ("Sydney", -33.8688, 151.2093),
+    ]
+
+    for i in range(count):
+        city_name, base_lat, base_lng = random.choice(cities)
+        # Add small random offset
+        lat = base_lat + random.uniform(-0.1, 0.1)
+        lng = base_lng + random.uniform(-0.1, 0.1)
+
+        location = {
+            "id": i + 1,
+            "name": f"{city_name} Location #{i + 1}",
+            "type": random.choice(["store", "warehouse", "office", "restaurant"]),
+            # D012: Geo coordinates as separate lat/lng fields (should trigger suggestion)
+            "lat": round(lat, 6),
+            "lng": round(lng, 6),
+            # D013: Date strings (should trigger suggestion for sorting)
+            "opened_at": (
+                datetime.now() - timedelta(days=random.randint(30, 1000))
+            ).strftime("%Y-%m-%d"),
+            "last_inspection": (
+                datetime.now() - timedelta(days=random.randint(1, 180))
+            ).isoformat(),
+            # D011: Arrays of objects (should trigger warning if filterable)
+            "operating_hours": [
+                {"day": "Monday", "open": "09:00", "close": "18:00"},
+                {"day": "Tuesday", "open": "09:00", "close": "18:00"},
+                {"day": "Wednesday", "open": "09:00", "close": "18:00"},
+                {"day": "Thursday", "open": "09:00", "close": "18:00"},
+                {"day": "Friday", "open": "09:00", "close": "17:00"},
+            ],
+            "rating": round(random.uniform(3.0, 5.0), 1),
+            "reviews_count": random.randint(10, 500),
+        }
+
+        # Some locations have contact info array of objects
+        if random.random() < 0.5:
+            location["contacts"] = [
+                {
+                    "name": f"Manager {i}",
+                    "phone": f"+1-555-{random.randint(1000, 9999)}",
+                },
+                {"name": f"Support {i}", "email": f"support{i}@example.com"},
+            ]
+
+        locations.append(location)
+
+    return locations
+
+
+def generate_events(count: int = 100) -> list[dict]:
+    """Generate sample event documents for D012 (nested geo) and D013 testing."""
+    events = []
+
+    event_types = ["conference", "meetup", "workshop", "concert", "exhibition"]
+
+    for i in range(count):
+        lat = round(random.uniform(25.0, 50.0), 6)
+        lng = round(random.uniform(-125.0, -70.0), 6)
+
+        event = {
+            "id": i + 1,
+            "title": f"Event #{i + 1}: {random.choice(event_types).title()}",
+            "description": f"Join us for this amazing {random.choice(event_types)}!",
+            "type": random.choice(event_types),
+            # D012: Nested location object (should trigger suggestion)
+            "venue": {
+                "name": f"Venue {i + 1}",
+                "address": f"{random.randint(100, 9999)} Main Street",
+                "coordinates": {
+                    "latitude": lat,
+                    "longitude": lng,
+                },
+            },
+            # D013: Multiple date string formats
+            "event_date": (
+                datetime.now() + timedelta(days=random.randint(1, 180))
+            ).strftime("%Y-%m-%d"),
+            "start_time": (
+                datetime.now() + timedelta(days=random.randint(1, 180))
+            ).isoformat(),
+            "registration_deadline": (
+                datetime.now() + timedelta(days=random.randint(1, 30))
+            ).strftime("%m/%d/%Y"),  # US format
+            "capacity": random.randint(50, 500),
+            "registered": random.randint(10, 200),
+            "price": round(random.uniform(0, 200.0), 2),
+        }
+
+        # Some events have speakers (array of objects)
+        if random.random() < 0.6:
+            event["speakers"] = [
+                {
+                    "name": f"Speaker {j}",
+                    "topic": f"Topic {j}",
+                    "bio": f"Expert in field {j}",
+                }
+                for j in range(random.randint(1, 5))
+            ]
+
+        events.append(event)
+
+    return events
+
+
 # Index configurations with intentional issues for the analyzer to detect
 INDEX_CONFIGS = {
     "products": {
@@ -317,6 +445,54 @@ INDEX_CONFIGS = {
         },
         "documents": generate_orders,
         "doc_count": 1000,
+    },
+    "locations": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "type"],
+            # D011: operating_hours is filterable but contains arrays of objects
+            "filterableAttributes": ["type", "rating", "operating_hours"],
+            # D013: sorting on date strings (should suggest timestamps)
+            "sortableAttributes": ["opened_at", "last_inspection", "rating"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_locations,
+        "doc_count": 50,
+    },
+    "events": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["title", "description", "type"],
+            # D011: speakers is filterable and contains arrays of objects
+            "filterableAttributes": ["type", "price", "speakers"],
+            # D013: sorting on date strings
+            "sortableAttributes": ["event_date", "start_time", "price", "capacity"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_events,
+        "doc_count": 100,
     },
 }
 
