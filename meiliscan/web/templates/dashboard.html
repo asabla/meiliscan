@@ -56,8 +56,8 @@
     </div>
 </div>
 
-<!-- Summary Stats -->
-<div class="grid grid-4 mb-2">
+<!-- Summary Stats & Tasks Queue -->
+<div class="grid grid-3 mb-2">
     <div class="card stat">
         <div class="stat-value">{{ report.summary.total_indexes }}</div>
         <div class="stat-label">Indexes</div>
@@ -66,17 +66,49 @@
         <div class="stat-value">{{ report.summary.total_documents|format_number }}</div>
         <div class="stat-label">Documents</div>
     </div>
-    <div class="card stat">
-        <div class="stat-value text-red">{{ report.summary.critical_issues }}</div>
-        <div class="stat-label">Critical Issues</div>
+    {% if tasks_summary %}
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Tasks Queue</h2>
+            <a href="/tasks" class="btn btn-secondary btn-sm">View All →</a>
+        </div>
+        <div class="grid grid-5">
+            <div class="stat">
+                <div class="stat-value" style="font-size: 1.25rem;">{{ tasks_summary.total }}</div>
+                <div class="stat-label">Total</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value text-green" style="font-size: 1.25rem;">{{ tasks_summary.succeeded }}</div>
+                <div class="stat-label">Succeeded</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value text-red" style="font-size: 1.25rem;">{{ tasks_summary.failed }}</div>
+                <div class="stat-label">Failed</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value text-blue" style="font-size: 1.25rem;">{{ tasks_summary.processing + tasks_summary.enqueued }}</div>
+                <div class="stat-label">Active</div>
+            </div>
+            <div class="stat">
+                <div class="stat-value" style="font-size: 1.25rem;">{{ "%.1f"|format(tasks_summary.success_rate) }}%</div>
+                <div class="stat-label">Success Rate</div>
+            </div>
+        </div>
+        {% if tasks_summary.has_active %}
+        <div class="alert alert-info mt-1" style="padding: 0.5rem 1rem;">
+            <strong>Active tasks:</strong> {{ tasks_summary.processing }} processing, {{ tasks_summary.enqueued }} enqueued
+        </div>
+        {% endif %}
     </div>
+    {% else %}
     <div class="card stat">
-        <div class="stat-value text-yellow">{{ report.summary.warnings }}</div>
-        <div class="stat-label">Warnings</div>
+        <div class="stat-value">-</div>
+        <div class="stat-label">Tasks</div>
     </div>
+    {% endif %}
 </div>
 
-<!-- Health Score & Tasks Queue -->
+<!-- Health Score & Indexes -->
 <div class="grid grid-2 mb-2">
 <!-- Health Score -->
 <div class="card">
@@ -150,47 +182,44 @@
     </div>
 </div>
 
-{% if tasks_summary %}
-<!-- Tasks Queue -->
+<!-- Indexes -->
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title">Tasks Queue</h2>
-        <a href="/tasks" class="btn btn-secondary btn-sm">View All →</a>
+        <h2 class="card-title">Indexes</h2>
     </div>
-    <div class="grid grid-5">
-        <div class="stat">
-            <div class="stat-value" style="font-size: 1.5rem;">{{ tasks_summary.total }}</div>
-            <div class="stat-label">Total</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value text-green" style="font-size: 1.5rem;">{{ tasks_summary.succeeded }}</div>
-            <div class="stat-label">Succeeded</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value text-red" style="font-size: 1.5rem;">{{ tasks_summary.failed }}</div>
-            <div class="stat-label">Failed</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value text-blue" style="font-size: 1.5rem;">{{ tasks_summary.processing + tasks_summary.enqueued }}</div>
-            <div class="stat-label">Active</div>
-        </div>
-        <div class="stat">
-            <div class="stat-value" style="font-size: 1.5rem;">{{ "%.1f"|format(tasks_summary.success_rate) }}%</div>
-            <div class="stat-label">Success Rate</div>
-        </div>
-    </div>
-    {% if tasks_summary.has_active %}
-    <div class="alert alert-info mt-1" style="padding: 0.5rem 1rem;">
-        <strong>Active tasks:</strong> {{ tasks_summary.processing }} processing, {{ tasks_summary.enqueued }} enqueued
-    </div>
+    {% if report.indexes %}
+    <table>
+        <thead>
+            <tr>
+                <th>Index</th>
+                <th>Documents</th>
+                <th>Findings</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for uid, index_analysis in report.indexes.items() %}
+            <tr>
+                <td><a href="/index/{{ uid }}">{{ uid }}</a></td>
+                <td>{{ index_analysis.metadata.get('document_count', 0)|format_number }}</td>
+                <td>
+                    {% set critical = index_analysis.findings|selectattr('severity.value', 'equalto', 'critical')|list|length %}
+                    {% set warnings = index_analysis.findings|selectattr('severity.value', 'equalto', 'warning')|list|length %}
+                    <span class="badge badge-red">{{ critical }}</span>
+                    <span class="badge badge-yellow">{{ warnings }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">No indexes found</p>
     {% endif %}
 </div>
-{% endif %}
 </div>
 
-<!-- Issues Overview -->
+<!-- Issues by Severity & Action Plan -->
 <div class="grid grid-2 mb-2">
-    <div class="card">
+<div class="card">
         <div class="card-header">
             <h2 class="card-title">Issues by Severity</h2>
             <a href="/findings" class="btn btn-secondary btn-sm">View All →</a>
@@ -225,41 +254,6 @@
         </div>
         {% endif %}
     </div>
-
-    <!-- Indexes -->
-    <div class="card">
-        <div class="card-header">
-            <h2 class="card-title">Indexes</h2>
-        </div>
-        {% if report.indexes %}
-        <table>
-            <thead>
-                <tr>
-                    <th>Index</th>
-                    <th>Documents</th>
-                    <th>Findings</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for uid, index_analysis in report.indexes.items() %}
-                <tr>
-                    <td><a href="/index/{{ uid }}">{{ uid }}</a></td>
-                    <td>{{ index_analysis.metadata.get('document_count', 0)|format_number }}</td>
-                    <td>
-                        {% set critical = index_analysis.findings|selectattr('severity.value', 'equalto', 'critical')|list|length %}
-                        {% set warnings = index_analysis.findings|selectattr('severity.value', 'equalto', 'warning')|list|length %}
-                        <span class="badge badge-red">{{ critical }}</span>
-                        <span class="badge badge-yellow">{{ warnings }}</span>
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="text-muted">No indexes found</p>
-        {% endif %}
-    </div>
-</div>
 
 {% if report.action_plan.priority_order %}
 <!-- Action Plan -->
@@ -304,6 +298,7 @@
     {% endif %}
 </div>
 {% endif %}
+</div>
 
 {% else %}
 <!-- Not Connected State -->
