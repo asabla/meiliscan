@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 
 from fastapi import BackgroundTasks, FastAPI, File, Form, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from sse_starlette.sse import EventSourceResponse
 
 from meiliscan.analyzers.historical import HistoricalAnalyzer
@@ -228,9 +228,10 @@ def register_routes(app: FastAPI) -> None:
             },
         )
 
-    @app.post("/connect", response_class=HTMLResponse)
+    @app.post("/connect")
     async def connect_instance(
         request: Request,
+        background_tasks: BackgroundTasks,
         url: str = Form(...),
         api_key: str = Form(default=""),
         probe_search: str = Form(default=""),
@@ -263,14 +264,23 @@ def register_routes(app: FastAPI) -> None:
         if state.collector:
             await state.collector.close()
 
-        # Run new analysis
-        await run_analysis(state)
+        # Check if this is an AJAX request (from our progress modal JS)
+        accept_header = request.headers.get("accept", "")
+        is_ajax = "application/json" in accept_header
 
-        return RedirectResponse(url="/", status_code=303)
+        if is_ajax:
+            # For AJAX requests: run analysis in background, return immediately
+            background_tasks.add_task(run_analysis, state)
+            return JSONResponse({"status": "started"})
+        else:
+            # For regular form submissions: run analysis and redirect
+            await run_analysis(state)
+            return RedirectResponse(url="/", status_code=303)
 
-    @app.post("/upload", response_class=HTMLResponse)
+    @app.post("/upload")
     async def upload_dump(
         request: Request,
+        background_tasks: BackgroundTasks,
         file: UploadFile = File(...),
         sample_documents: int = Form(default=20),
         sample_all: str = Form(default=""),
@@ -308,10 +318,18 @@ def register_routes(app: FastAPI) -> None:
         if state.collector:
             await state.collector.close()
 
-        # Run new analysis
-        await run_analysis(state)
+        # Check if this is an AJAX request (from our progress modal JS)
+        accept_header = request.headers.get("accept", "")
+        is_ajax = "application/json" in accept_header
 
-        return RedirectResponse(url="/", status_code=303)
+        if is_ajax:
+            # For AJAX requests: run analysis in background, return immediately
+            background_tasks.add_task(run_analysis, state)
+            return JSONResponse({"status": "started"})
+        else:
+            # For regular form submissions: run analysis and redirect
+            await run_analysis(state)
+            return RedirectResponse(url="/", status_code=303)
 
     @app.post("/refresh", response_class=HTMLResponse)
     async def refresh_analysis(request: Request):

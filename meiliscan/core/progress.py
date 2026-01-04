@@ -1,7 +1,9 @@
 """Progress reporting model for analysis operations."""
 
+import asyncio
+import inspect
 from dataclasses import dataclass
-from typing import Callable, Literal
+from typing import Awaitable, Callable, Literal, Union
 
 ProgressPhase = Literal["collect", "parse", "analyze", "report"]
 
@@ -38,18 +40,32 @@ class ProgressEvent:
         }
 
 
-ProgressCallback = Callable[[ProgressEvent], None]
+ProgressCallback = Union[
+    Callable[[ProgressEvent], None],
+    Callable[[ProgressEvent], Awaitable[None]],
+]
 
 
 def emit(callback: ProgressCallback | None, event: ProgressEvent) -> None:
     """Emit a progress event if callback is provided.
 
+    Handles both sync and async callbacks. For async callbacks,
+    schedules them on the running event loop if available.
+
     Args:
-        callback: Optional progress callback
+        callback: Optional progress callback (sync or async)
         event: The progress event to emit
     """
     if callback is not None:
-        callback(event)
+        result = callback(event)
+        # If callback is async, schedule it on the event loop
+        if inspect.iscoroutine(result):
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(result)
+            except RuntimeError:
+                # No running loop, run synchronously
+                asyncio.run(result)
 
 
 def emit_collect(
