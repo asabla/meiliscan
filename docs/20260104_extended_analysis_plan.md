@@ -22,9 +22,9 @@ Non-goals:
 |------------|--------|-------|
 | 1) Instance launch config analytics | **DONE** | CLI flag, model, analyzer, findings I001-I006 |
 | 2) Opt-in search probing | **DONE** | CLI flag, analyzer, findings Q001-Q003 |
-| 3) Expand index setting analytics | Pending | S011-S020 not yet implemented |
+| 3) Expand index setting analytics | **DONE** | S011-S020 implemented in schema_analyzer.py |
 | 4) Expand document/sample analytics | **PARTIAL** | D009-D010 (PII) done; D011 pending |
-| 5) Task-based performance analytics | Pending | P007-P010 not yet implemented |
+| 5) Task-based performance analytics | **DONE** | P007-P010 implemented in performance_analyzer.py |
 
 ---
 
