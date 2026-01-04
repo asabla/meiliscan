@@ -127,33 +127,35 @@ Implementation notes:
 
 ---
 
-### 3) Expand index setting analytics - **PENDING**
+### 3) Expand index setting analytics - **DONE**
 
 The `IndexSettings` model already contains more than we currently analyze.
 
-**Primary key**
+**Implementation file:** `meiliscan/analyzers/schema_analyzer.py`
+
+**Primary key** - **DONE**
 - `MEILI-S011` (Critical): index has no `primaryKey` (or sample docs missing the primary key field).
 - `MEILI-S012` (Warning): primary key looks mutable/non-identifier (heuristic: matches common non-id field names like `title`, `name`).
 
-**Sortable attributes**
+**Sortable attributes** - **DONE**
 - `MEILI-S013` (Info): no sortable attributes configured (only if index seems to contain common sort candidates like `createdAt`, `price`, `rating`).
-- `MEILI-S014` (Warning): sortable attribute has inconsistent types across sample docs.
+- `MEILI-S014` (Warning): sortable attribute has inconsistent types across sample docs or contains complex types (arrays/objects).
 
-**Filterable attributes**
-- `MEILI-S015` (Suggestion): filterable attribute appears high-cardinality (email/uuid/token patterns) — potential faceting/filter performance risk.
+**Filterable attributes** - **DONE**
+- `MEILI-S015` (Suggestion): filterable attribute appears high-cardinality (email/uuid/token patterns or sample analysis) — potential faceting/filter performance risk.
 
-**Faceting**
+**Faceting** - **DONE**
 - `MEILI-S016` (Info/Suggestion): `faceting.maxValuesPerFacet` is low/high relative to observed values (heuristic from samples).
 
-**Synonyms**
-- `MEILI-S017` (Suggestion): synonyms set is unusually large or contains suspicious entries (empty, self-synonyms, etc.).
+**Synonyms** - **DONE**
+- `MEILI-S017` (Suggestion): synonyms set is unusually large or contains suspicious entries (empty, self-synonyms, very long chains, etc.).
 
-**Typo tolerance**
+**Typo tolerance** - **DONE**
 - `MEILI-S018` (Suggestion): typo tolerance enabled on identifier-heavy indexes; suggest using `disableOnAttributes` for ID-like fields.
 - `MEILI-S019` (Info): extremely permissive `minWordSizeForTypos` settings.
 
-**Tokenization / dictionary**
-- `MEILI-S020` (Info/Suggestion): unusually large `dictionary` list (maintenance risk); separator token configs appear suspicious.
+**Tokenization / dictionary** - **DONE**
+- `MEILI-S020` (Info/Suggestion): unusually large `dictionary` list (maintenance risk); duplicate entries; separator token configs appear suspicious (alphanumeric or very long).
 
 ---
 
@@ -179,17 +181,19 @@ Notes:
 
 ---
 
-### 5) Expand task-based performance analytics - **PENDING**
+### 5) Expand task-based performance analytics - **DONE**
 
-**Backlog detection**
-- `MEILI-P007` (Warning): sustained task backlog (enqueuedAt vs finishedAt suggests queueing delays).
+**Implementation file:** `meiliscan/analyzers/performance_analyzer.py`
 
-**Indexing pattern recommendations**
-- `MEILI-P008` (Suggestion): too many tiny indexing tasks (suggest client-side batching).
-- `MEILI-P009` (Suggestion): oversized indexing tasks (suggest smaller batches/doc reduction) based on durations and/or error messages.
+**Backlog detection** - **DONE**
+- `MEILI-P007` (Warning): sustained task backlog (enqueuedAt vs startedAt suggests queueing delays >60s average).
 
-**Error clustering**
-- `MEILI-P010` (Warning): top recurring failure reasons from task error payloads.
+**Indexing pattern recommendations** - **DONE**
+- `MEILI-P008` (Suggestion): too many tiny indexing tasks (<10 docs, >50% of tasks) — suggest client-side batching.
+- `MEILI-P009` (Suggestion): oversized indexing tasks (>10 minute duration) — suggest smaller batches/doc reduction.
+
+**Error clustering** - **DONE**
+- `MEILI-P010` (Warning): top recurring failure reasons from task error payloads (error codes appearing ≥3 times).
 
 ---
 
@@ -203,18 +207,31 @@ Notes:
 
 ---
 
-## Testing plan - **PARTIAL**
+## Testing plan - **DONE**
 
-- Add unit tests for TOML parsing and instance-config findings. - **PENDING**
-- Add analyzer tests for new Schema/Document/Performance findings. - **PENDING** (existing document tests pass, new D009/D010 not tested)
-- Add mock live-collector tests for `--probe-search` behavior (mock `search()` results). - **PENDING**
+- Add unit tests for TOML parsing and instance-config findings. - **DONE** (44 tests in `test_instance_config_analyzer.py`)
+- Add analyzer tests for new Schema/Document/Performance findings. - **DONE**
+  - 27 new tests for S011-S020 in `test_schema_analyzer.py` (41 total)
+  - 18 new tests for P007-P010 in `test_performance_analyzer.py` (41 total)
+  - 23 tests for Q001-Q003 in `test_search_probe_analyzer.py`
+- Add mock live-collector tests for `--probe-search` behavior (mock `search()` results). - **DONE** (covered in search probe tests)
+
+**Total test count: 376 tests passing**
 
 ---
 
-## Rollout plan - **IN PROGRESS**
+## Rollout plan - **MOSTLY COMPLETE**
 
 1. Implement CLI + data plumbing for optional inputs (config toml, sample-documents, probe-search). - **DONE**
 2. Add instance-config analyzer and 2–3 high-value findings first (`I001`, `I004`, `I003`). - **DONE** (all I001-I006)
-3. Add index/document improvements (primary key, sortable types, arrays-of-objects). - **PENDING**
-4. Add task backlog + error clustering. - **PENDING**
+3. Add index/document improvements (primary key, sortable types, arrays-of-objects). - **DONE** (S011-S020)
+4. Add task backlog + error clustering. - **DONE** (P007-P010)
 5. Iterate on thresholds based on real-world feedback. - **PENDING**
+
+---
+
+## Remaining work
+
+1. **Document analytics expansion (D011)**: Consider additional document-level checks beyond PII detection.
+2. **Real-world validation**: Test findings against production instances to tune thresholds.
+3. **Documentation**: Update README with new CLI flags and finding descriptions.
