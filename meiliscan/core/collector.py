@@ -29,6 +29,7 @@ class DataCollector:
         url: str,
         api_key: str | None = None,
         timeout: float = 30.0,
+        sample_docs: int = 20,
     ) -> "DataCollector":
         """Create a collector for a live MeiliSearch instance.
 
@@ -36,11 +37,14 @@ class DataCollector:
             url: MeiliSearch instance URL
             api_key: Optional API key
             timeout: Request timeout in seconds
+            sample_docs: Number of sample documents to fetch per index
 
         Returns:
             Configured DataCollector
         """
-        collector = LiveInstanceCollector(url=url, api_key=api_key, timeout=timeout)
+        collector = LiveInstanceCollector(
+            url=url, api_key=api_key, timeout=timeout, sample_docs=sample_docs
+        )
         return cls(collector)
 
     @classmethod

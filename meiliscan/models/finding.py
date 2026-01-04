@@ -24,6 +24,8 @@ class FindingCategory(str, Enum):
     PERFORMANCE = "performance"
     BEST_PRACTICES = "best_practices"
     SECURITY = "security"
+    INSTANCE_CONFIG = "instance_config"
+    SEARCH_PROBE = "search_probe"
 
 
 class FindingFix(BaseModel):

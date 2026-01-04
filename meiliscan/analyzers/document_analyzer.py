@@ -26,12 +26,47 @@ class DocumentAnalyzer(BaseAnalyzer):
         re.compile(r"\*{1,2}[^*]+\*{1,2}"),  # Bold/italic
     ]
 
+    # PII detection patterns
+    PII_PATTERNS = {
+        "email": re.compile(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"),
+        "phone": re.compile(
+            r"(?:\+?1[-.\s]?)?\(?[0-9]{3}\)?[-.\s]?[0-9]{3}[-.\s]?[0-9]{4}"
+        ),
+        "ssn": re.compile(r"\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b"),
+        "credit_card": re.compile(r"\b(?:\d{4}[-\s]?){3}\d{4}\b"),
+        "ip_address": re.compile(r"\b(?:\d{1,3}\.){3}\d{1,3}\b"),
+    }
+
+    # Field name patterns that may indicate sensitive data
+    SENSITIVE_FIELD_PATTERNS = [
+        re.compile(r"(?i)^(email|e_mail|e-mail|mail)$"),
+        re.compile(r"(?i)(password|passwd|pwd|secret|token|api_key|apikey)"),
+        re.compile(r"(?i)(ssn|social_security|social-security)"),
+        re.compile(r"(?i)(credit.?card|card.?number|ccn)"),
+        re.compile(r"(?i)(phone|mobile|cell|tel|fax)"),
+        re.compile(r"(?i)(address|street|zip|postal|city)"),
+        re.compile(r"(?i)(birth.?date|dob|birthday|date.?of.?birth)"),
+        re.compile(r"(?i)(driver.?license|passport|national.?id)"),
+        re.compile(r"(?i)(salary|income|wage|compensation)"),
+        re.compile(r"(?i)(bank|account|routing|iban|swift)"),
+    ]
+
     @property
     def name(self) -> str:
         return "documents"
 
-    def analyze(self, index: IndexData) -> list[Finding]:
-        """Analyze index documents."""
+    def analyze(
+        self, index: IndexData, detect_sensitive: bool = False
+    ) -> list[Finding]:
+        """Analyze index documents.
+
+        Args:
+            index: The index to analyze
+            detect_sensitive: Whether to detect PII/sensitive fields
+
+        Returns:
+            List of findings
+        """
         findings: list[Finding] = []
 
         # Need sample documents to analyze
@@ -46,6 +81,11 @@ class DocumentAnalyzer(BaseAnalyzer):
         findings.extend(self._check_empty_fields(index))
         findings.extend(self._check_mixed_types(index))
         findings.extend(self._check_text_length(index))
+
+        # PII detection (opt-in)
+        if detect_sensitive:
+            findings.extend(self._check_sensitive_fields(index))
+            findings.extend(self._check_pii_content(index))
 
         return findings
 
@@ -434,3 +474,120 @@ class DocumentAnalyzer(BaseAnalyzer):
                 self._find_long_text(value, new_prefix, long_fields)
         elif isinstance(obj, str) and len(obj) > 65535:
             long_fields[prefix] = len(obj)
+
+    def _check_sensitive_fields(self, index: IndexData) -> list[Finding]:
+        """Check for field names that suggest sensitive data (D009)."""
+        findings: list[Finding] = []
+
+        sensitive_fields: list[str] = []
+
+        # Collect all field names from sample documents
+        all_fields: set[str] = set()
+        for doc in index.sample_documents:
+            self._collect_all_field_names(doc, "", all_fields)
+
+        # Check field names against sensitive patterns
+        for field in all_fields:
+            field_name = field.split(".")[-1]  # Get the leaf field name
+            for pattern in self.SENSITIVE_FIELD_PATTERNS:
+                if pattern.search(field_name):
+                    sensitive_fields.append(field)
+                    break
+
+        # D009: Potentially sensitive field names
+        if sensitive_fields:
+            findings.append(
+                Finding(
+                    id="MEILI-D009",
+                    category=FindingCategory.DOCUMENTS,
+                    severity=FindingSeverity.WARNING,
+                    title="Potentially sensitive field names detected",
+                    description=(
+                        f"Fields with names suggesting sensitive/PII data: "
+                        f"{sensitive_fields[:5]}. "
+                        f"Review whether these should be indexed or made searchable. "
+                        f"Consider excluding from searchableAttributes or not indexing at all."
+                    ),
+                    impact="Potential privacy/compliance risk if sensitive data is searchable",
+                    index_uid=index.uid,
+                    current_value=sensitive_fields[:10],
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/security/tenant_tokens"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _collect_all_field_names(self, obj: Any, prefix: str, fields: set[str]) -> None:
+        """Recursively collect all field names."""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                new_prefix = f"{prefix}.{key}" if prefix else key
+                fields.add(new_prefix)
+                if isinstance(value, (dict, list)):
+                    self._collect_all_field_names(value, new_prefix, fields)
+        elif isinstance(obj, list):
+            for item in obj:
+                if isinstance(item, dict):
+                    self._collect_all_field_names(item, prefix, fields)
+
+    def _check_pii_content(self, index: IndexData) -> list[Finding]:
+        """Check for PII patterns in field values (D010)."""
+        findings: list[Finding] = []
+
+        pii_detections: dict[str, list[str]] = {}
+
+        for doc in index.sample_documents:
+            self._scan_for_pii(doc, "", pii_detections)
+
+        # D010: PII patterns in content
+        if pii_detections:
+            # Format for display
+            pii_summary = {
+                field: types for field, types in list(pii_detections.items())[:5]
+            }
+
+            findings.append(
+                Finding(
+                    id="MEILI-D010",
+                    category=FindingCategory.DOCUMENTS,
+                    severity=FindingSeverity.CRITICAL,
+                    title="Potential PII detected in document content",
+                    description=(
+                        f"Fields contain data matching PII patterns: "
+                        f"{list(pii_detections.keys())[:5]}. "
+                        f"Detected patterns: {set(t for types in pii_detections.values() for t in types)}. "
+                        f"This may indicate personally identifiable information that "
+                        f"should be masked, excluded, or carefully controlled."
+                    ),
+                    impact="Privacy/compliance risk, potential data breach exposure",
+                    index_uid=index.uid,
+                    current_value=pii_summary,
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/security/tenant_tokens"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _scan_for_pii(
+        self, obj: Any, prefix: str, detections: dict[str, list[str]]
+    ) -> None:
+        """Scan document for PII patterns."""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                new_prefix = f"{prefix}.{key}" if prefix else key
+                self._scan_for_pii(value, new_prefix, detections)
+        elif isinstance(obj, list):
+            for item in obj:
+                self._scan_for_pii(item, prefix, detections)
+        elif isinstance(obj, str) and len(obj) >= 5:
+            # Check string values against PII patterns
+            for pii_type, pattern in self.PII_PATTERNS.items():
+                if pattern.search(obj):
+                    if prefix not in detections:
+                        detections[prefix] = []
+                    if pii_type not in detections[prefix]:
+                        detections[prefix].append(pii_type)

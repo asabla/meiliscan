@@ -1,12 +1,16 @@
 """Main analyzer that coordinates analysis across multiple analyzers."""
 
+from typing import Any
+
 from meiliscan.analyzers.base import BaseAnalyzer
 from meiliscan.analyzers.best_practices import BestPracticesAnalyzer
 from meiliscan.analyzers.document_analyzer import DocumentAnalyzer
+from meiliscan.analyzers.instance_config_analyzer import InstanceConfigAnalyzer
 from meiliscan.analyzers.performance_analyzer import PerformanceAnalyzer
 from meiliscan.analyzers.schema_analyzer import SchemaAnalyzer
 from meiliscan.models.finding import Finding
 from meiliscan.models.index import IndexData
+from meiliscan.models.instance_config import InstanceLaunchConfig
 
 
 class Analyzer:
@@ -32,12 +36,16 @@ class Analyzer:
         # Analyzers for global checks
         self._performance_analyzer = PerformanceAnalyzer()
         self._best_practices_analyzer = BestPracticesAnalyzer()
+        self._instance_config_analyzer = InstanceConfigAnalyzer()
 
-    def analyze_index(self, index: IndexData) -> list[Finding]:
+    def analyze_index(
+        self, index: IndexData, detect_sensitive: bool = False
+    ) -> list[Finding]:
         """Analyze a single index with all configured analyzers.
 
         Args:
             index: The index to analyze
+            detect_sensitive: Whether to detect PII/sensitive fields in documents
 
         Returns:
             List of all findings from all analyzers
@@ -46,7 +54,13 @@ class Analyzer:
 
         for analyzer in self._analyzers:
             try:
-                analyzer_findings = analyzer.analyze(index)
+                # Pass detect_sensitive to DocumentAnalyzer if supported
+                if isinstance(analyzer, DocumentAnalyzer):
+                    analyzer_findings = analyzer.analyze(
+                        index, detect_sensitive=detect_sensitive
+                    )
+                else:
+                    analyzer_findings = analyzer.analyze(index)
                 findings.extend(analyzer_findings)
             except Exception as e:
                 # Log error but continue with other analyzers
@@ -56,11 +70,14 @@ class Analyzer:
 
         return findings
 
-    def analyze_all(self, indexes: list[IndexData]) -> dict[str, list[Finding]]:
+    def analyze_all(
+        self, indexes: list[IndexData], detect_sensitive: bool = False
+    ) -> dict[str, list[Finding]]:
         """Analyze all indexes.
 
         Args:
             indexes: List of indexes to analyze
+            detect_sensitive: Whether to detect PII/sensitive fields
 
         Returns:
             Dictionary mapping index UID to findings
@@ -68,16 +85,19 @@ class Analyzer:
         results: dict[str, list[Finding]] = {}
 
         for index in indexes:
-            results[index.uid] = self.analyze_index(index)
+            results[index.uid] = self.analyze_index(
+                index, detect_sensitive=detect_sensitive
+            )
 
         return results
 
     def analyze_global(
         self,
         indexes: list[IndexData],
-        global_stats: dict,
-        tasks: list[dict] | None = None,
+        global_stats: dict[str, Any],
+        tasks: list[dict[str, Any]] | None = None,
         instance_version: str | None = None,
+        instance_config: InstanceLaunchConfig | None = None,
     ) -> list[Finding]:
         """Run global analysis across all indexes.
 
@@ -86,6 +106,7 @@ class Analyzer:
             global_stats: Global instance stats
             tasks: Optional task history
             instance_version: Optional MeiliSearch version string
+            instance_config: Optional instance configuration from config.toml
 
         Returns:
             List of global findings
@@ -103,6 +124,10 @@ class Analyzer:
                 indexes, global_stats, tasks, instance_version
             )
         )
+
+        # Instance configuration checks (if config provided)
+        if instance_config is not None:
+            findings.extend(self._instance_config_analyzer.analyze(instance_config))
 
         return findings
 

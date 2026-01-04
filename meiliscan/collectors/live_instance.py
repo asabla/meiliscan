@@ -17,6 +17,7 @@ class LiveInstanceCollector(BaseCollector):
         url: str,
         api_key: str | None = None,
         timeout: float = 30.0,
+        sample_docs: int = 20,
     ):
         """Initialize the collector.
 
@@ -24,10 +25,12 @@ class LiveInstanceCollector(BaseCollector):
             url: MeiliSearch instance URL
             api_key: Optional API key for authentication
             timeout: Request timeout in seconds
+            sample_docs: Number of sample documents to fetch per index
         """
         self.url = url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self.sample_docs = sample_docs
         self._client: httpx.AsyncClient | None = None
         self._version: str | None = None
         self._global_stats: dict | None = None
@@ -109,12 +112,12 @@ class LiveInstanceCollector(BaseCollector):
             stats_response.raise_for_status()
             stats_data = stats_response.json()
 
-            # Get sample documents (limit to 20)
+            # Get sample documents
             sample_docs: list[dict[str, Any]] = []
             try:
                 docs_response = await self._client.get(
                     f"/indexes/{uid}/documents",
-                    params={"limit": 20},
+                    params={"limit": self.sample_docs},
                 )
                 docs_response.raise_for_status()
                 docs_data = docs_response.json()

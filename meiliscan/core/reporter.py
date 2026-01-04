@@ -1,5 +1,7 @@
 """Reporter for generating analysis reports."""
 
+from typing import Any
+
 from datetime import datetime
 
 from meiliscan.core.analyzer import Analyzer
@@ -17,6 +19,7 @@ class Reporter:
         collector: DataCollector,
         analyzer: Analyzer | None = None,
         scorer: HealthScorer | None = None,
+        analysis_options: dict[str, Any] | None = None,
     ):
         """Initialize the reporter.
 
@@ -24,10 +27,16 @@ class Reporter:
             collector: Data collector with collected data
             analyzer: Optional analyzer instance
             scorer: Optional health scorer instance
+            analysis_options: Optional analysis configuration containing:
+                - config_toml: InstanceLaunchConfig for instance config analysis
+                - probe_search: Whether search probes were run
+                - _probe_findings: List of findings from search probes
+                - detect_sensitive: Whether to detect PII fields
         """
         self._collector = collector
         self._analyzer = analyzer or Analyzer()
         self._scorer = scorer or HealthScorer()
+        self._analysis_options = analysis_options or {}
 
     def generate_report(self, source_url: str | None = None) -> AnalysisReport:
         """Generate a complete analysis report.
@@ -54,11 +63,14 @@ class Reporter:
             report.summary.database_size_bytes = global_stats.get("databaseSize")
 
         # Process each index
+        detect_sensitive = self._analysis_options.get("detect_sensitive", False)
         for index in self._collector.indexes:
             report.add_index(index)
 
             # Run analysis
-            findings = self._analyzer.analyze_index(index)
+            findings = self._analyzer.analyze_index(
+                index, detect_sensitive=detect_sensitive
+            )
             for finding in findings:
                 report.add_finding(finding)
 
@@ -68,8 +80,14 @@ class Reporter:
             global_stats=self._collector.global_stats,
             tasks=self._collector.tasks,
             instance_version=self._collector.version,
+            instance_config=self._analysis_options.get("config_toml"),
         )
         for finding in global_findings:
+            report.add_finding(finding)
+
+        # Add probe findings if any
+        probe_findings = self._analysis_options.get("_probe_findings", [])
+        for finding in probe_findings:
             report.add_finding(finding)
 
         # Calculate summary and score
