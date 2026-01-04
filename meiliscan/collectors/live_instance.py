@@ -87,16 +87,37 @@ class LiveInstanceCollector(BaseCollector):
         if not self._client:
             raise RuntimeError("Collector not connected. Call connect() first.")
 
-        # Get list of indexes
-        response = await self._client.get("/indexes")
-        response.raise_for_status()
-        indexes_data = response.json()
+        # Fetch all indexes with pagination
+        indexes_list: list[dict[str, Any]] = []
+        offset = 0
+        batch_size = 1000  # MeiliSearch max limit for indexes endpoint
 
-        # Handle paginated response
-        if isinstance(indexes_data, dict) and "results" in indexes_data:
-            indexes_list = indexes_data["results"]
-        else:
-            indexes_list = indexes_data
+        while True:
+            response = await self._client.get(
+                "/indexes", params={"limit": batch_size, "offset": offset}
+            )
+            response.raise_for_status()
+            indexes_data = response.json()
+
+            # Handle paginated response (newer MeiliSearch versions)
+            if isinstance(indexes_data, dict) and "results" in indexes_data:
+                batch = indexes_data["results"]
+                indexes_list.extend(batch)
+                total = indexes_data.get("total")
+
+                # Check if we've fetched all indexes
+                # Use total if available, otherwise check if batch is smaller than requested
+                if total is not None:
+                    if len(indexes_list) >= total:
+                        break
+                elif len(batch) < batch_size:
+                    break
+
+                offset += len(batch)
+            else:
+                # Handle non-paginated response (older MeiliSearch versions)
+                indexes_list = indexes_data if isinstance(indexes_data, list) else []
+                break
 
         indexes: list[IndexData] = []
 
