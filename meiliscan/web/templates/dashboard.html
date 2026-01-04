@@ -621,24 +621,20 @@ async function handleConnectSubmit(event) {
     const formData = new FormData(form);
 
     ProgressModal.show('Connecting to MeiliSearch...');
+    
+    // Connect to SSE FIRST to catch all progress events
+    ProgressModal.connectToEvents();
 
-    try {
-        // Submit the form via fetch
-        const response = await fetch('/connect', {
-            method: 'POST',
-            body: formData
-        });
-
-        // The server redirects, but we want to show progress
-        // Connect to SSE endpoint to track progress
-        ProgressModal.connectToEvents();
-
-    } catch (error) {
+    // Then submit the form (don't await - let it run in background)
+    fetch('/connect', {
+        method: 'POST',
+        body: formData
+    }).catch(error => {
         ProgressModal.showError('Failed to connect: ' + error.message);
         setTimeout(() => {
             ProgressModal.hide();
         }, 3000);
-    }
+    });
 }
 
 // Handle Upload form submission
@@ -648,23 +644,20 @@ async function handleUploadSubmit(event) {
     const formData = new FormData(form);
 
     ProgressModal.show('Uploading and analyzing dump...');
+    
+    // Connect to SSE FIRST to catch all progress events
+    ProgressModal.connectToEvents();
 
-    try {
-        // Submit the form via fetch
-        const response = await fetch('/upload', {
-            method: 'POST',
-            body: formData
-        });
-
-        // Connect to SSE endpoint to track progress
-        ProgressModal.connectToEvents();
-
-    } catch (error) {
+    // Then submit the form (don't await - let it run in background)
+    fetch('/upload', {
+        method: 'POST',
+        body: formData
+    }).catch(error => {
         ProgressModal.showError('Failed to upload: ' + error.message);
         setTimeout(() => {
             ProgressModal.hide();
         }, 3000);
-    }
+    });
 }
 
 // Initialize on DOM ready

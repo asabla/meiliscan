@@ -558,18 +558,28 @@ def register_routes(app: FastAPI) -> None:
                     ),
                 }
 
-                # If analysis is not running, just return current status
+                # If analysis is not running, wait a bit for it to start
+                # This handles the race condition where SSE connects before
+                # the form submission triggers analysis
                 if state.analysis_status != "running":
-                    yield {
-                        "event": "done",
-                        "data": json.dumps(
-                            {
-                                "status": state.analysis_status,
-                                "has_report": state.report is not None,
-                            }
-                        ),
-                    }
-                    return
+                    # Wait up to 5 seconds for analysis to start
+                    for _ in range(50):
+                        await asyncio.sleep(0.1)
+                        if state.analysis_status == "running":
+                            break
+
+                    # If still not running, return current status
+                    if state.analysis_status != "running":
+                        yield {
+                            "event": "done",
+                            "data": json.dumps(
+                                {
+                                    "status": state.analysis_status,
+                                    "has_report": state.report is not None,
+                                }
+                            ),
+                        }
+                        return
 
                 # Stream progress events
                 while True:
