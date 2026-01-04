@@ -60,15 +60,15 @@
 <div class="grid stats-tasks-grid mb-2">
     <!-- Indexes & Documents Combined -->
     <div class="card">
-        <div class="stat-row">
-            <div class="stat">
-                <div class="stat-value">{{ report.summary.total_indexes }}</div>
-                <div class="stat-label">Indexes</div>
+        <div class="stat-stack">
+            <div class="stat-stack-item">
+                <div class="stat-stack-value">{{ report.summary.total_indexes }}</div>
+                <div class="stat-stack-label">Indexes</div>
             </div>
-            <div class="stat-divider"></div>
-            <div class="stat">
-                <div class="stat-value">{{ report.summary.total_documents|format_number }}</div>
-                <div class="stat-label">Documents</div>
+            <div class="stat-stack-divider"></div>
+            <div class="stat-stack-item">
+                <div class="stat-stack-value">{{ report.summary.total_documents|format_number }}</div>
+                <div class="stat-stack-label">Documents</div>
             </div>
         </div>
     </div>
