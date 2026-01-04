@@ -26,12 +26,13 @@ class DumpParser(BaseCollector):
             └── documents.jsonl # All documents (NDJSON format)
     """
 
-    def __init__(self, dump_path: str | Path, max_sample_docs: int = 100):
+    def __init__(self, dump_path: str | Path, max_sample_docs: int | None = 100):
         """Initialize the dump parser.
 
         Args:
             dump_path: Path to the .dump file
-            max_sample_docs: Maximum number of sample documents to load per index
+            max_sample_docs: Maximum number of sample documents to load per index.
+                            If None, load all documents.
         """
         self.dump_path = Path(dump_path)
         self.max_sample_docs = max_sample_docs
@@ -114,7 +115,7 @@ class DumpParser(BaseCollector):
             if settings_path.exists():
                 settings_data = json.loads(settings_path.read_text())
 
-            # Load documents (sample only)
+            # Load documents (sample or all based on max_sample_docs)
             documents_path = index_dir / "documents.jsonl"
             sample_docs: list[dict[str, Any]] = []
             field_distribution: dict[str, int] = {}
@@ -132,8 +133,11 @@ class DumpParser(BaseCollector):
                                 field_distribution.get(field, 0) + 1
                             )
 
-                        # Collect sample documents
-                        if i < self.max_sample_docs:
+                        # Collect sample documents (all if max_sample_docs is None)
+                        should_collect = (
+                            self.max_sample_docs is None or i < self.max_sample_docs
+                        )
+                        if should_collect:
                             sample_docs.append(doc)
 
             # Create index data

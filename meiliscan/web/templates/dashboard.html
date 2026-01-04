@@ -23,7 +23,7 @@
         {% endif %}
         <!-- Analysis Options Badges -->
         <span class="status-options" style="margin-left: 1rem;">
-            <span class="badge badge-gray" title="Sample documents per index">{{ sample_documents }} samples</span>
+            <span class="badge badge-gray" title="Sample documents per index">{% if sample_documents is none %}all{% else %}{{ sample_documents }}{% endif %} samples</span>
             {% if probe_search %}
             <span class="badge badge-blue" title="Search probes enabled">probes</span>
             {% endif %}
@@ -369,8 +369,14 @@
                             </label>
                         </div>
                         <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="sample_all" value="true" id="sample_all_live" onchange="toggleSampleInput(this, 'sample_documents_live')">
+                                <span>Sample all documents <span class="text-secondary">(may be slow for large indexes)</span></span>
+                            </label>
+                        </div>
+                        <div class="form-group" id="sample_count_group_live">
                             <label for="sample_documents_live">Sample documents per index</label>
-                            <input type="number" id="sample_documents_live" name="sample_documents" value="20" min="1" max="1000" style="width: 100%;">
+                            <input type="number" id="sample_documents_live" name="sample_documents" value="20" min="1" max="10000" style="width: 100%;">
                         </div>
                         <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -400,8 +406,14 @@
                     <summary style="cursor: pointer; color: var(--color-text-secondary); font-size: 0.875rem;">Advanced Options</summary>
                     <div style="padding: 0.75rem 0;">
                         <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="sample_all" value="true" id="sample_all_dump" onchange="toggleSampleInput(this, 'sample_documents_dump')">
+                                <span>Sample all documents <span class="text-secondary">(may be slow for large dumps)</span></span>
+                            </label>
+                        </div>
+                        <div class="form-group" id="sample_count_group_dump">
                             <label for="sample_documents_dump">Sample documents per index</label>
-                            <input type="number" id="sample_documents_dump" name="sample_documents" value="20" min="1" max="1000" style="width: 100%;">
+                            <input type="number" id="sample_documents_dump" name="sample_documents" value="20" min="1" max="10000" style="width: 100%;">
                         </div>
                         <div class="form-group">
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
@@ -416,5 +428,19 @@
         </div>
     </div>
 </div>
+
+<script>
+function toggleSampleInput(checkbox, inputId) {
+    const input = document.getElementById(inputId);
+    const group = input.parentElement;
+    if (checkbox.checked) {
+        group.style.display = 'none';
+        input.disabled = true;
+    } else {
+        group.style.display = 'block';
+        input.disabled = false;
+    }
+}
+</script>
 {% endif %}
 {% endblock %}

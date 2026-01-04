@@ -29,7 +29,7 @@ class DataCollector:
         url: str,
         api_key: str | None = None,
         timeout: float = 30.0,
-        sample_docs: int = 20,
+        sample_docs: int | None = 20,
     ) -> "DataCollector":
         """Create a collector for a live MeiliSearch instance.
 
@@ -37,7 +37,7 @@ class DataCollector:
             url: MeiliSearch instance URL
             api_key: Optional API key
             timeout: Request timeout in seconds
-            sample_docs: Number of sample documents to fetch per index
+            sample_docs: Number of sample documents to fetch per index (None = all)
 
         Returns:
             Configured DataCollector
@@ -51,13 +51,13 @@ class DataCollector:
     def from_dump(
         cls,
         dump_path: str | Path,
-        max_sample_docs: int = 100,
+        max_sample_docs: int | None = 100,
     ) -> "DataCollector":
         """Create a collector for a MeiliSearch dump file.
 
         Args:
             dump_path: Path to the .dump file
-            max_sample_docs: Maximum sample documents to load per index
+            max_sample_docs: Maximum sample documents to load per index (None = all)
 
         Returns:
             Configured DataCollector

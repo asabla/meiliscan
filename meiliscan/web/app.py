@@ -23,7 +23,7 @@ class AppState:
         self.dump_path: Path | None = None
         # Analysis options
         self.probe_search: bool = False
-        self.sample_documents: int = 20
+        self.sample_documents: int | None = 20  # None means "all"
         self.detect_sensitive: bool = False
 
 
@@ -108,7 +108,7 @@ def create_app(
     meili_api_key: str | None = None,
     dump_path: Path | None = None,
     probe_search: bool = False,
-    sample_documents: int = 20,
+    sample_documents: int | None = 20,
     detect_sensitive: bool = False,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
@@ -118,7 +118,7 @@ def create_app(
         meili_api_key: MeiliSearch API key
         dump_path: Path to dump file for offline analysis
         probe_search: Run read-only search probes to validate sort/filter configuration
-        sample_documents: Number of sample documents to fetch per index
+        sample_documents: Number of sample documents to fetch per index (None = all)
         detect_sensitive: Enable detection of potential PII/sensitive fields
 
     Returns:

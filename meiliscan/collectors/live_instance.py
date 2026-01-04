@@ -17,7 +17,7 @@ class LiveInstanceCollector(BaseCollector):
         url: str,
         api_key: str | None = None,
         timeout: float = 30.0,
-        sample_docs: int = 20,
+        sample_docs: int | None = 20,
     ):
         """Initialize the collector.
 
@@ -25,7 +25,8 @@ class LiveInstanceCollector(BaseCollector):
             url: MeiliSearch instance URL
             api_key: Optional API key for authentication
             timeout: Request timeout in seconds
-            sample_docs: Number of sample documents to fetch per index
+            sample_docs: Number of sample documents to fetch per index.
+                        If None, fetch all documents.
         """
         self.url = url.rstrip("/")
         self.api_key = api_key
@@ -112,19 +113,49 @@ class LiveInstanceCollector(BaseCollector):
             stats_response.raise_for_status()
             stats_data = stats_response.json()
 
-            # Get sample documents
+            # Get sample documents (or all if sample_docs is None)
             sample_docs: list[dict[str, Any]] = []
             try:
-                docs_response = await self._client.get(
-                    f"/indexes/{uid}/documents",
-                    params={"limit": self.sample_docs},
-                )
-                docs_response.raise_for_status()
-                docs_data = docs_response.json()
-                if isinstance(docs_data, dict) and "results" in docs_data:
-                    sample_docs = cast(list[dict[str, Any]], docs_data["results"])
-                elif isinstance(docs_data, list):
-                    sample_docs = cast(list[dict[str, Any]], docs_data)
+                if self.sample_docs is None:
+                    # Fetch all documents with pagination
+                    offset = 0
+                    batch_size = 1000  # MeiliSearch default max limit
+                    while True:
+                        docs_response = await self._client.get(
+                            f"/indexes/{uid}/documents",
+                            params={"limit": batch_size, "offset": offset},
+                        )
+                        docs_response.raise_for_status()
+                        docs_data = docs_response.json()
+
+                        if isinstance(docs_data, dict) and "results" in docs_data:
+                            batch = cast(list[dict[str, Any]], docs_data["results"])
+                        elif isinstance(docs_data, list):
+                            batch = cast(list[dict[str, Any]], docs_data)
+                        else:
+                            break
+
+                        if not batch:
+                            break
+
+                        sample_docs.extend(batch)
+                        offset += len(batch)
+
+                        # Check if we've fetched all documents
+                        if len(batch) < batch_size:
+                            break
+                else:
+                    # Fetch limited sample
+                    docs_response = await self._client.get(
+                        f"/indexes/{uid}/documents",
+                        params={"limit": self.sample_docs},
+                    )
+                    docs_response.raise_for_status()
+                    docs_data = docs_response.json()
+                    if isinstance(docs_data, dict) and "results" in docs_data:
+                        sample_docs = cast(list[dict[str, Any]], docs_data["results"])
+                    elif isinstance(docs_data, list):
+                        sample_docs = cast(list[dict[str, Any]], docs_data)
             except httpx.HTTPError:
                 pass
 
