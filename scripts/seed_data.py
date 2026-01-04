@@ -15,11 +15,20 @@ Usage:
     # Create a minimal dump file for quick testing
     python scripts/seed_data.py dump --output test-dump.dump --size small
 
+    # Scale all indexes to a total document count (distributed proportionally)
+    python scripts/seed_data.py dump --output test-dump.dump --documents 100000
+
+    # Seed only a specific index with a custom document count
+    python scripts/seed_data.py dump --output test-dump.dump --index products --documents 50000
+
     # Seed a live MeiliSearch instance
     python scripts/seed_data.py seed --url http://localhost:7700
 
     # Seed with API key
     python scripts/seed_data.py seed --url http://localhost:7700 --api-key your-key
+
+    # Seed a specific index on live instance
+    python scripts/seed_data.py seed --url http://localhost:7700 --index products --documents 100000
 
     # Clean up (delete all indexes from instance)
     python scripts/seed_data.py clean --url http://localhost:7700
@@ -1724,20 +1733,74 @@ INDEX_CONFIGS = {
 }
 
 
-def create_dump_file(output_path: str | Path, size: str = "medium") -> None:
+def _calculate_proportional_counts(total_documents: int) -> dict[str, int]:
+    """Calculate document counts for each index proportionally based on their default weights.
+
+    Args:
+        total_documents: Target total number of documents across all indexes
+
+    Returns:
+        Dictionary mapping index_uid to document count
+    """
+    # Use medium preset as the base for proportions
+    base_counts = SIZE_PRESETS["medium"]
+    base_total = sum(base_counts.values())
+
+    # Calculate proportional counts
+    counts: dict[str, int] = {}
+    for index_uid in INDEX_CONFIGS:
+        base = base_counts.get(index_uid) or INDEX_CONFIGS[index_uid]["doc_count"]
+        proportion = float(base) / float(base_total)
+        counts[index_uid] = max(1, int(total_documents * proportion))
+
+    return counts
+
+
+def create_dump_file(
+    output_path: str | Path,
+    size: str = "medium",
+    total_documents: int | None = None,
+    single_index: str | None = None,
+) -> None:
     """Create a mock MeiliSearch dump file.
 
     Args:
         output_path: Path to write the dump file to
         size: Size preset - "small", "medium", or "large"
+        total_documents: If specified, scale document counts to reach this total
+        single_index: If specified, only create this index with total_documents count
     """
     output_path = Path(output_path)
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     dump_name = f"dump-{timestamp}"
 
-    # Get document counts from size preset
-    size_config = SIZE_PRESETS.get(size, SIZE_PRESETS["medium"])
-    print(f"Using size preset: {size}")
+    # Determine which indexes to create and their document counts
+    if single_index:
+        # Single index mode
+        if single_index not in INDEX_CONFIGS:
+            available = ", ".join(INDEX_CONFIGS.keys())
+            print(f"Error: Unknown index '{single_index}'")
+            print(f"Available indexes: {available}")
+            sys.exit(1)
+
+        doc_count = total_documents or INDEX_CONFIGS[single_index]["doc_count"]
+        index_doc_counts = {single_index: doc_count}
+        print(f"Creating single index '{single_index}' with {doc_count:,} documents")
+    elif total_documents:
+        # Scale all indexes proportionally to reach total_documents
+        index_doc_counts = _calculate_proportional_counts(total_documents)
+        actual_total = sum(index_doc_counts.values())
+        print(
+            f"Scaling all indexes to ~{total_documents:,} total documents (actual: {actual_total:,})"
+        )
+    else:
+        # Use size preset
+        size_config = SIZE_PRESETS.get(size, SIZE_PRESETS["medium"])
+        index_doc_counts = {
+            uid: size_config.get(uid, config["doc_count"])
+            for uid, config in INDEX_CONFIGS.items()
+        }
+        print(f"Using size preset: {size}")
 
     with tempfile.TemporaryDirectory() as temp_dir:
         dump_dir = Path(temp_dir) / dump_name
@@ -1764,7 +1827,7 @@ def create_dump_file(output_path: str | Path, size: str = "medium") -> None:
         base_time = datetime.now() - timedelta(hours=24)
         task_id = 0
 
-        for index_uid in INDEX_CONFIGS:
+        for index_uid in index_doc_counts:
             # Document addition task (earlier)
             tasks.append(
                 {
@@ -1830,7 +1893,8 @@ def create_dump_file(output_path: str | Path, size: str = "medium") -> None:
         indexes_dir.mkdir()
 
         total_docs = 0
-        for index_uid, config in INDEX_CONFIGS.items():
+        for index_uid in index_doc_counts:
+            config = INDEX_CONFIGS[index_uid]
             index_dir = indexes_dir / index_uid
             index_dir.mkdir()
 
@@ -1850,14 +1914,14 @@ def create_dump_file(output_path: str | Path, size: str = "medium") -> None:
                 json.dumps(config["settings"], indent=2)
             )
 
-            # Documents (JSONL format) - use size preset count
-            doc_count = size_config.get(index_uid, config["doc_count"])
+            # Documents (JSONL format)
+            doc_count = index_doc_counts[index_uid]
             docs = config["documents"](doc_count)
             with open(index_dir / "documents.jsonl", "w") as f:
                 for doc in docs:
                     f.write(json.dumps(doc) + "\n")
 
-            print(f"  Created index '{index_uid}' with {len(docs)} documents")
+            print(f"  Created index '{index_uid}' with {len(docs):,} documents")
             total_docs += len(docs)
 
         # Create tar.gz archive
@@ -1865,13 +1929,25 @@ def create_dump_file(output_path: str | Path, size: str = "medium") -> None:
             tar.add(dump_dir, arcname=dump_name)
 
     print(f"\nDump file created: {output_path}")
-    print(f"  Total indexes: {len(INDEX_CONFIGS)}")
-    print(f"  Total documents: {total_docs}")
+    print(f"  Total indexes: {len(index_doc_counts)}")
+    print(f"  Total documents: {total_docs:,}")
     print(f"  File size: {Path(output_path).stat().st_size / 1024:.1f} KB")
 
 
-def seed_instance(url: str, api_key: str | None = None) -> None:
-    """Seed a live MeiliSearch instance with test data."""
+def seed_instance(
+    url: str,
+    api_key: str | None = None,
+    total_documents: int | None = None,
+    single_index: str | None = None,
+) -> None:
+    """Seed a live MeiliSearch instance with test data.
+
+    Args:
+        url: MeiliSearch instance URL
+        api_key: Optional API key for authentication
+        total_documents: If specified, scale document counts to reach this total
+        single_index: If specified, only create this index with total_documents count
+    """
     try:
         import httpx
     except ImportError:
@@ -1903,10 +1979,33 @@ def seed_instance(url: str, api_key: str | None = None) -> None:
     except Exception:
         pass
 
-    print("\nCreating indexes and seeding data...")
+    # Determine which indexes to create and their document counts
+    if single_index:
+        if single_index not in INDEX_CONFIGS:
+            available = ", ".join(INDEX_CONFIGS.keys())
+            print(f"Error: Unknown index '{single_index}'")
+            print(f"Available indexes: {available}")
+            sys.exit(1)
 
-    for index_uid, config in INDEX_CONFIGS.items():
-        print(f"\n  Processing '{index_uid}'...")
+        doc_count = total_documents or INDEX_CONFIGS[single_index]["doc_count"]
+        index_doc_counts = {single_index: doc_count}
+        print(f"\nSeeding single index '{single_index}' with {doc_count:,} documents")
+    elif total_documents:
+        index_doc_counts = _calculate_proportional_counts(total_documents)
+        actual_total = sum(index_doc_counts.values())
+        print(
+            f"\nScaling all indexes to ~{total_documents:,} total documents (actual: {actual_total:,})"
+        )
+    else:
+        # Default counts from INDEX_CONFIGS
+        index_doc_counts = {
+            uid: config["doc_count"] for uid, config in INDEX_CONFIGS.items()
+        }
+        print("\nCreating indexes and seeding data...")
+
+    for index_uid, doc_count in index_doc_counts.items():
+        config = INDEX_CONFIGS[index_uid]
+        print(f"\n  Processing '{index_uid}' ({doc_count:,} documents)...")
 
         # Create/update index
         response = client.post(
@@ -1936,16 +2035,35 @@ def seed_instance(url: str, api_key: str | None = None) -> None:
         print(f"    Settings update task: {task_info.get('taskUid', 'N/A')}")
         _wait_for_task(client, response)
 
-        # Add documents
-        docs = config["documents"](config["doc_count"])
-        response = client.post(
-            f"/indexes/{index_uid}/documents",
-            json=docs,
-        )
-        task_info = response.json()
-        print(f"    Document addition task: {task_info.get('taskUid', 'N/A')}")
-        print(f"    Adding {len(docs)} documents...")
-        _wait_for_task(client, response)
+        # Add documents (in batches for large counts)
+        docs = config["documents"](doc_count)
+        batch_size = 10000  # MeiliSearch handles this well
+
+        if len(docs) <= batch_size:
+            # Single batch
+            response = client.post(
+                f"/indexes/{index_uid}/documents",
+                json=docs,
+            )
+            task_info = response.json()
+            print(f"    Document addition task: {task_info.get('taskUid', 'N/A')}")
+            print(f"    Adding {len(docs):,} documents...")
+            _wait_for_task(client, response)
+        else:
+            # Multiple batches
+            total_batches = (len(docs) + batch_size - 1) // batch_size
+            print(f"    Adding {len(docs):,} documents in {total_batches} batches...")
+            for batch_num, i in enumerate(range(0, len(docs), batch_size), 1):
+                batch = docs[i : i + batch_size]
+                response = client.post(
+                    f"/indexes/{index_uid}/documents",
+                    json=batch,
+                )
+                task_info = response.json()
+                print(
+                    f"    Batch {batch_num}/{total_batches}: {len(batch):,} docs (task {task_info.get('taskUid', 'N/A')})"
+                )
+                _wait_for_task(client, response)
 
         print("    Done!")
 
@@ -2043,7 +2161,19 @@ def main():
         "-s",
         choices=["small", "medium", "large"],
         default="medium",
-        help="Size preset for document counts (default: medium)",
+        help="Size preset for document counts (default: medium). Ignored if --documents is specified.",
+    )
+    dump_parser.add_argument(
+        "--documents",
+        "-d",
+        type=int,
+        help="Total number of documents to generate. Distributes proportionally across all indexes, "
+        "or sets exact count when used with --index.",
+    )
+    dump_parser.add_argument(
+        "--index",
+        "-i",
+        help="Generate only this specific index. Use with --documents to set count.",
     )
 
     # Seed command
@@ -2058,6 +2188,18 @@ def main():
         "--api-key",
         "-k",
         help="MeiliSearch API key",
+    )
+    seed_parser.add_argument(
+        "--documents",
+        "-d",
+        type=int,
+        help="Total number of documents to generate. Distributes proportionally across all indexes, "
+        "or sets exact count when used with --index.",
+    )
+    seed_parser.add_argument(
+        "--index",
+        "-i",
+        help="Seed only this specific index. Use with --documents to set count.",
     )
 
     # Clean command
@@ -2080,9 +2222,19 @@ def main():
 
     if args.command == "dump":
         print("Creating mock dump file...")
-        create_dump_file(args.output, args.size)
+        create_dump_file(
+            args.output,
+            args.size,
+            total_documents=args.documents,
+            single_index=args.index,
+        )
     elif args.command == "seed":
-        seed_instance(args.url, args.api_key)
+        seed_instance(
+            args.url,
+            args.api_key,
+            total_documents=args.documents,
+            single_index=args.index,
+        )
     elif args.command == "clean":
         clean_instance(args.url, args.api_key)
 
