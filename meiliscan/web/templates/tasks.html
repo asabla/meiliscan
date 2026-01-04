@@ -7,9 +7,12 @@
     <h1 style="font-size: 1.75rem;">Tasks Queue</h1>
     {% if is_live %}
     <div class="flex items-center gap-1">
-        <span id="poll-status" class="badge badge-green">Live</span>
+        <span id="poll-status" class="badge badge-yellow">Paused</span>
         <button id="toggle-polling" class="btn btn-secondary btn-sm" onclick="togglePolling()">
-            Pause
+            Live
+        </button>
+        <button class="btn btn-secondary btn-sm" onclick="refreshTasks()">
+            Refresh
         </button>
     </div>
     {% else %}
@@ -113,7 +116,7 @@
     
     <div id="tasks-list"
          hx-get="/tasks/list?status={{ current_status or '' }}&task_type={{ current_type or '' }}&index={{ current_index or '' }}"
-         hx-trigger="load{% if is_live %}, every 5s{% endif %}"
+         hx-trigger="load"
          hx-swap="innerHTML">
         <!-- Tasks will be loaded here -->
         <div class="text-center text-muted" style="padding: 2rem;">
@@ -123,25 +126,46 @@
 </div>
 
 <script>
-let pollingEnabled = {{ 'true' if is_live else 'false' }};
+let pollingEnabled = false;  // Default to paused
+let pollingInterval = null;
+let currentSortColumn = 'enqueued';
+let currentSortDirection = 'desc';
 
 function togglePolling() {
     pollingEnabled = !pollingEnabled;
     const btn = document.getElementById('toggle-polling');
     const status = document.getElementById('poll-status');
-    const tasksList = document.getElementById('tasks-list');
     
     if (pollingEnabled) {
         btn.textContent = 'Pause';
         status.textContent = 'Live';
         status.className = 'badge badge-green';
-        // Re-enable polling
-        htmx.trigger(tasksList, 'htmx:load');
+        // Start polling
+        startPolling();
     } else {
-        btn.textContent = 'Resume';
+        btn.textContent = 'Live';
         status.textContent = 'Paused';
         status.className = 'badge badge-yellow';
+        // Stop polling
+        stopPolling();
     }
+}
+
+function startPolling() {
+    if (pollingInterval) clearInterval(pollingInterval);
+    pollingInterval = setInterval(refreshTasks, 5000);
+}
+
+function stopPolling() {
+    if (pollingInterval) {
+        clearInterval(pollingInterval);
+        pollingInterval = null;
+    }
+}
+
+function refreshTasks() {
+    const tasksList = document.getElementById('tasks-list');
+    htmx.ajax('GET', tasksList.getAttribute('hx-get'), {target: '#tasks-list', swap: 'innerHTML'});
 }
 
 function applyFilters() {
@@ -154,17 +178,17 @@ function applyFilters() {
     if (taskType) params.set('task_type', taskType);
     if (index) params.set('index', index);
     
-    // Update URL
+    // Update URL without reloading
     const newUrl = '/tasks' + (params.toString() ? '?' + params.toString() : '');
     window.history.pushState({}, '', newUrl);
     
-    // Update HTMX endpoint
-    const tasksList = document.getElementById('tasks-list');
+    // Build HTMX endpoint URL
     const htmxUrl = '/tasks/list' + (params.toString() ? '?' + params.toString() : '');
+    const tasksList = document.getElementById('tasks-list');
     tasksList.setAttribute('hx-get', htmxUrl);
     
-    // Trigger refresh
-    htmx.trigger(tasksList, 'htmx:load');
+    // Trigger HTMX request
+    htmx.ajax('GET', htmxUrl, {target: '#tasks-list', swap: 'innerHTML'});
 }
 
 function clearFilters() {
@@ -173,6 +197,56 @@ function clearFilters() {
     const indexFilter = document.getElementById('index-filter');
     if (indexFilter) indexFilter.value = '';
     applyFilters();
+}
+
+function sortTable(column, type) {
+    const table = document.getElementById('tasks-table');
+    if (!table) return;
+    
+    const tbody = table.querySelector('tbody');
+    const rows = Array.from(tbody.querySelectorAll('tr'));
+    const headers = table.querySelectorAll('th.sortable');
+    
+    // Determine sort direction
+    let direction = 'asc';
+    if (currentSortColumn === column) {
+        direction = currentSortDirection === 'asc' ? 'desc' : 'asc';
+    } else if (column === 'uid' || column === 'enqueued' || column === 'duration') {
+        // Default to descending for numeric/date columns
+        direction = 'desc';
+    }
+    
+    currentSortColumn = column;
+    currentSortDirection = direction;
+    
+    // Update header classes
+    headers.forEach(th => {
+        th.classList.remove('sort-asc', 'sort-desc');
+        if (th.dataset.sort === column) {
+            th.classList.add(direction === 'asc' ? 'sort-asc' : 'sort-desc');
+        }
+    });
+    
+    // Sort rows
+    rows.sort((a, b) => {
+        let aVal = a.dataset[column] || '';
+        let bVal = b.dataset[column] || '';
+        
+        let comparison = 0;
+        
+        if (type === 'number' || type === 'duration') {
+            comparison = parseFloat(aVal || 0) - parseFloat(bVal || 0);
+        } else if (type === 'date') {
+            comparison = new Date(aVal) - new Date(bVal);
+        } else {
+            comparison = aVal.localeCompare(bVal);
+        }
+        
+        return direction === 'asc' ? comparison : -comparison;
+    });
+    
+    // Re-append sorted rows
+    rows.forEach(row => tbody.appendChild(row));
 }
 
 // Update timestamp on each refresh
@@ -185,14 +259,7 @@ document.body.addEventListener('htmx:afterSwap', function(evt) {
     }
 });
 
-// Stop polling when paused
-document.body.addEventListener('htmx:beforeRequest', function(evt) {
-    if (evt.detail.target.id === 'tasks-list' && !pollingEnabled) {
-        // Only block polling requests, not manual refreshes
-        if (evt.detail.triggerSpec && evt.detail.triggerSpec.trigger === 'every') {
-            evt.preventDefault();
-        }
-    }
-});
+// Cleanup on page unload
+window.addEventListener('beforeunload', stopPolling);
 </script>
 {% endblock %}
