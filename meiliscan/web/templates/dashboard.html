@@ -57,15 +57,23 @@
 </div>
 
 <!-- Summary Stats & Tasks Queue -->
-<div class="grid grid-3 mb-2">
-    <div class="card stat">
-        <div class="stat-value">{{ report.summary.total_indexes }}</div>
-        <div class="stat-label">Indexes</div>
+<div class="grid stats-tasks-grid mb-2">
+    <!-- Indexes & Documents Combined -->
+    <div class="card">
+        <div class="stat-row">
+            <div class="stat">
+                <div class="stat-value">{{ report.summary.total_indexes }}</div>
+                <div class="stat-label">Indexes</div>
+            </div>
+            <div class="stat-divider"></div>
+            <div class="stat">
+                <div class="stat-value">{{ report.summary.total_documents|format_number }}</div>
+                <div class="stat-label">Documents</div>
+            </div>
+        </div>
     </div>
-    <div class="card stat">
-        <div class="stat-value">{{ report.summary.total_documents|format_number }}</div>
-        <div class="stat-label">Documents</div>
-    </div>
+    
+    <!-- Tasks Queue -->
     {% if tasks_summary %}
     <div class="card">
         <div class="card-header">
