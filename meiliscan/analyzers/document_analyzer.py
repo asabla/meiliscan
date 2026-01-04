@@ -51,6 +51,34 @@ class DocumentAnalyzer(BaseAnalyzer):
         re.compile(r"(?i)(bank|account|routing|iban|swift)"),
     ]
 
+    # Geo coordinate field patterns
+    GEO_FIELD_PATTERNS = [
+        re.compile(r"(?i)^(lat|latitude)$"),
+        re.compile(r"(?i)^(lng|lon|long|longitude)$"),
+        re.compile(r"(?i)(location|coordinates?|position|geo)"),
+    ]
+
+    # Date/timestamp patterns in strings
+    DATE_PATTERNS = [
+        # ISO 8601
+        re.compile(r"^\d{4}-\d{2}-\d{2}(T\d{2}:\d{2}:\d{2})?"),
+        # US format
+        re.compile(r"^\d{2}/\d{2}/\d{4}$"),
+        # European format
+        re.compile(r"^\d{2}-\d{2}-\d{4}$"),
+        # Unix timestamp (10 or 13 digits)
+        re.compile(r"^\d{10}(\d{3})?$"),
+    ]
+
+    # Field names suggesting dates/times
+    DATE_FIELD_PATTERNS = [
+        re.compile(r"(?i)(created|updated|modified|deleted)_?(at|on|date|time)?$"),
+        re.compile(r"(?i)^(date|time|timestamp|datetime)"),
+        re.compile(r"(?i)(start|end|begin|finish)_?(date|time)?$"),
+        re.compile(r"(?i)(published|posted|submitted)_?(at|on|date)?$"),
+        re.compile(r"(?i)_?(date|time|at)$"),
+    ]
+
     @property
     def name(self) -> str:
         return "documents"
@@ -86,6 +114,11 @@ class DocumentAnalyzer(BaseAnalyzer):
         if detect_sensitive:
             findings.extend(self._check_sensitive_fields(index))
             findings.extend(self._check_pii_content(index))
+
+        # New document checks (D011-D013)
+        findings.extend(self._check_arrays_of_objects(index))
+        findings.extend(self._check_geo_coordinates(index))
+        findings.extend(self._check_date_strings(index))
 
         return findings
 
@@ -591,3 +624,302 @@ class DocumentAnalyzer(BaseAnalyzer):
                         detections[prefix] = []
                     if pii_type not in detections[prefix]:
                         detections[prefix].append(pii_type)
+
+    def _check_arrays_of_objects(self, index: IndexData) -> list[Finding]:
+        """Check for arrays of objects that may cause filter/facet issues (D011)."""
+        findings: list[Finding] = []
+
+        array_of_objects_fields: dict[str, int] = {}
+
+        for doc in index.sample_documents:
+            self._find_arrays_of_objects(doc, "", array_of_objects_fields)
+
+        # D011: Arrays of objects detected
+        if array_of_objects_fields:
+            # Check if any of these fields are in filterableAttributes
+            filterable = set(index.settings.filterable_attributes)
+            problematic_fields = []
+            info_fields = []
+
+            for field, count in array_of_objects_fields.items():
+                # Check if field or parent is filterable
+                field_parts = field.split(".")
+                is_filterable = any(
+                    ".".join(field_parts[: i + 1]) in filterable
+                    for i in range(len(field_parts))
+                )
+                if is_filterable:
+                    problematic_fields.append((field, count))
+                else:
+                    info_fields.append((field, count))
+
+            if problematic_fields:
+                findings.append(
+                    Finding(
+                        id="MEILI-D011",
+                        category=FindingCategory.DOCUMENTS,
+                        severity=FindingSeverity.WARNING,
+                        title="Arrays of objects in filterable fields",
+                        description=(
+                            f"Filterable fields contain arrays of objects: "
+                            f"{[f for f, _ in problematic_fields[:5]]}. "
+                            f"MeiliSearch flattens nested arrays, which can cause "
+                            f"unexpected filter behavior. Consider restructuring data."
+                        ),
+                        impact="Filters may not work as expected on nested array fields",
+                        index_uid=index.uid,
+                        current_value={f: c for f, c in problematic_fields[:5]},
+                        references=[
+                            "https://www.meilisearch.com/docs/learn/indexing/indexing_best_practices"
+                        ],
+                    )
+                )
+            elif info_fields:
+                # Only report as info if not filterable
+                findings.append(
+                    Finding(
+                        id="MEILI-D011",
+                        category=FindingCategory.DOCUMENTS,
+                        severity=FindingSeverity.INFO,
+                        title="Arrays of objects detected",
+                        description=(
+                            f"Fields contain arrays of objects: "
+                            f"{[f for f, _ in info_fields[:5]]}. "
+                            f"MeiliSearch flattens these structures. If you plan to "
+                            f"filter on these fields, consider restructuring."
+                        ),
+                        impact="Nested structure is flattened during indexing",
+                        index_uid=index.uid,
+                        current_value={f: c for f, c in info_fields[:5]},
+                    )
+                )
+
+        return findings
+
+    def _find_arrays_of_objects(
+        self, obj: Any, prefix: str, results: dict[str, int]
+    ) -> None:
+        """Find fields that are arrays containing objects."""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                new_prefix = f"{prefix}.{key}" if prefix else key
+                self._find_arrays_of_objects(value, new_prefix, results)
+        elif isinstance(obj, list) and obj:
+            # Check if array contains objects
+            has_objects = any(isinstance(item, dict) for item in obj)
+            if has_objects:
+                results[prefix] = results.get(prefix, 0) + 1
+            # Recurse into array items
+            for item in obj:
+                if isinstance(item, dict):
+                    self._find_arrays_of_objects(item, prefix, results)
+
+    def _check_geo_coordinates(self, index: IndexData) -> list[Finding]:
+        """Check for geo coordinates that should use _geo format (D012)."""
+        findings: list[Finding] = []
+
+        geo_candidates: list[dict[str, Any]] = []
+
+        for doc in index.sample_documents:
+            candidates = self._find_geo_candidates(doc)
+            if candidates:
+                geo_candidates.extend(candidates)
+
+        # Check if _geo field already exists
+        has_geo_field = any(
+            "_geo" in doc for doc in index.sample_documents if isinstance(doc, dict)
+        )
+
+        # D012: Geo coordinates without _geo format
+        if geo_candidates and not has_geo_field:
+            # Deduplicate by field pattern
+            unique_patterns = {}
+            for candidate in geo_candidates:
+                pattern = candidate.get("pattern", "")
+                if pattern not in unique_patterns:
+                    unique_patterns[pattern] = candidate
+
+            findings.append(
+                Finding(
+                    id="MEILI-D012",
+                    category=FindingCategory.DOCUMENTS,
+                    severity=FindingSeverity.SUGGESTION,
+                    title="Potential geo coordinates not using _geo format",
+                    description=(
+                        f"Fields appear to contain geographic coordinates but "
+                        f"are not using the MeiliSearch _geo format: "
+                        f"{list(unique_patterns.keys())[:3]}. "
+                        f"To enable geo search, restructure to use _geo.lat and _geo.lng."
+                    ),
+                    impact="Geo search functionality unavailable without _geo format",
+                    index_uid=index.uid,
+                    current_value=list(unique_patterns.values())[:3],
+                    recommended_value={"_geo": {"lat": 45.4773, "lng": -73.6102}},
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/filtering_and_sorting/geosearch"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _find_geo_candidates(self, doc: dict, prefix: str = "") -> list[dict[str, Any]]:
+        """Find fields that look like geo coordinates."""
+        candidates = []
+
+        if not isinstance(doc, dict):
+            return candidates
+
+        # Look for lat/lng pair patterns
+        lat_fields = []
+        lng_fields = []
+
+        for key, value in doc.items():
+            full_key = f"{prefix}.{key}" if prefix else key
+
+            # Check if field name suggests lat (pattern index 0)
+            if self.GEO_FIELD_PATTERNS[0].search(key):
+                if isinstance(value, (int, float)) and -90 <= value <= 90:
+                    lat_fields.append((full_key, value))
+
+            # Check if field name suggests lng (pattern index 1)
+            if self.GEO_FIELD_PATTERNS[1].search(key):
+                if isinstance(value, (int, float)) and -180 <= value <= 180:
+                    lng_fields.append((full_key, value))
+
+            # Check for nested location objects
+            if isinstance(value, dict):
+                # Check if this object looks like coordinates
+                nested_keys = set(value.keys())
+                if {"lat", "lng"}.issubset(nested_keys) or {
+                    "latitude",
+                    "longitude",
+                }.issubset(nested_keys):
+                    candidates.append(
+                        {
+                            "pattern": full_key,
+                            "type": "nested_object",
+                            "sample": value,
+                        }
+                    )
+                else:
+                    # Recurse
+                    candidates.extend(self._find_geo_candidates(value, full_key))
+
+        # If we found lat/lng pairs at the same level
+        if lat_fields and lng_fields:
+            candidates.append(
+                {
+                    "pattern": f"{lat_fields[0][0]}/{lng_fields[0][0]}",
+                    "type": "separate_fields",
+                    "lat_field": lat_fields[0][0],
+                    "lng_field": lng_fields[0][0],
+                }
+            )
+
+        return candidates
+
+    def _check_date_strings(self, index: IndexData) -> list[Finding]:
+        """Check for date strings that could be sortable numbers (D013)."""
+        findings: list[Finding] = []
+
+        date_string_fields: dict[str, list[str]] = {}
+
+        for doc in index.sample_documents:
+            self._find_date_strings(doc, "", date_string_fields)
+
+        if not date_string_fields:
+            return findings
+
+        # Check which date fields are sortable
+        sortable = set(index.settings.sortable_attributes)
+        non_sortable_dates = []
+        sortable_string_dates = []
+
+        for field, sample_values in date_string_fields.items():
+            field_parts = field.split(".")
+            is_sortable = any(
+                ".".join(field_parts[: i + 1]) in sortable
+                for i in range(len(field_parts))
+            )
+
+            if is_sortable:
+                sortable_string_dates.append((field, sample_values[0]))
+            else:
+                non_sortable_dates.append((field, sample_values[0]))
+
+        # D013: Date strings that could be numeric for sorting
+        if sortable_string_dates:
+            findings.append(
+                Finding(
+                    id="MEILI-D013",
+                    category=FindingCategory.DOCUMENTS,
+                    severity=FindingSeverity.SUGGESTION,
+                    title="Date strings in sortable attributes",
+                    description=(
+                        f"Sortable fields contain date strings: "
+                        f"{[f for f, _ in sortable_string_dates[:3]]}. "
+                        f"String dates sort lexicographically, not chronologically. "
+                        f"Consider converting to Unix timestamps for proper sorting."
+                    ),
+                    impact="Date sorting may not work correctly with string formats",
+                    index_uid=index.uid,
+                    current_value={f: v for f, v in sortable_string_dates[:5]},
+                    recommended_value="Unix timestamp (e.g., 1704412800)",
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/filtering_and_sorting/sort_search_results"
+                    ],
+                )
+            )
+        elif non_sortable_dates and len(non_sortable_dates) >= 2:
+            # Only suggest if there are multiple date fields not being used
+            findings.append(
+                Finding(
+                    id="MEILI-D013",
+                    category=FindingCategory.DOCUMENTS,
+                    severity=FindingSeverity.INFO,
+                    title="Date fields detected",
+                    description=(
+                        f"Fields appear to contain dates: "
+                        f"{[f for f, _ in non_sortable_dates[:3]]}. "
+                        f"If you need to sort by these fields, add them to "
+                        f"sortableAttributes and consider using numeric timestamps."
+                    ),
+                    impact="Date fields not available for sorting",
+                    index_uid=index.uid,
+                    current_value={f: v for f, v in non_sortable_dates[:5]},
+                )
+            )
+
+        return findings
+
+    def _find_date_strings(
+        self, obj: Any, prefix: str, results: dict[str, list[str]]
+    ) -> None:
+        """Find string fields that contain date-like values."""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                new_prefix = f"{prefix}.{key}" if prefix else key
+
+                if isinstance(value, str) and 8 <= len(value) <= 30:
+                    # Check if field name suggests date
+                    is_date_field = any(
+                        pattern.search(key) for pattern in self.DATE_FIELD_PATTERNS
+                    )
+                    # Check if value looks like a date
+                    is_date_value = any(
+                        pattern.match(value) for pattern in self.DATE_PATTERNS
+                    )
+
+                    if is_date_field or is_date_value:
+                        if new_prefix not in results:
+                            results[new_prefix] = []
+                        if len(results[new_prefix]) < 2:  # Keep up to 2 samples
+                            results[new_prefix].append(value)
+
+                elif isinstance(value, dict):
+                    self._find_date_strings(value, new_prefix, results)
+                elif isinstance(value, list):
+                    for item in value:
+                        if isinstance(item, dict):
+                            self._find_date_strings(item, new_prefix, results)

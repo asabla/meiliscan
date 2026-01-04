@@ -294,3 +294,225 @@ class TestDocumentAnalyzer:
         assert "MEILI-D004" in finding_ids  # Large array
         assert "MEILI-D005" in finding_ids  # HTML content
         assert "MEILI-D008" in finding_ids  # Long text
+
+    # D011: Arrays of objects tests
+
+    def test_arrays_of_objects_filterable_d011(self, analyzer):
+        """Test detection of arrays of objects in filterable fields (D011)."""
+        index = IndexData(
+            uid="test",
+            settings=IndexSettings(filterableAttributes=["tags"]),
+            sample_documents=[
+                {
+                    "id": 1,
+                    "tags": [
+                        {"name": "python", "score": 5},
+                        {"name": "javascript", "score": 3},
+                    ],
+                },
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d011_findings = [f for f in findings if f.id == "MEILI-D011"]
+
+        assert len(d011_findings) == 1
+        assert d011_findings[0].severity == FindingSeverity.WARNING
+        assert "filterable" in d011_findings[0].title.lower()
+
+    def test_arrays_of_objects_info_d011(self, analyzer):
+        """Test detection of arrays of objects not in filterable (D011)."""
+        index = IndexData(
+            uid="test",
+            settings=IndexSettings(filterableAttributes=[]),  # Not filterable
+            sample_documents=[
+                {
+                    "id": 1,
+                    "variants": [
+                        {"color": "red", "size": "M"},
+                        {"color": "blue", "size": "L"},
+                    ],
+                },
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d011_findings = [f for f in findings if f.id == "MEILI-D011"]
+
+        assert len(d011_findings) == 1
+        assert d011_findings[0].severity == FindingSeverity.INFO
+
+    def test_no_d011_without_arrays_of_objects(self, analyzer, basic_index):
+        """Test no D011 finding without arrays of objects."""
+        findings = analyzer.analyze(basic_index)
+        d011_findings = [f for f in findings if f.id == "MEILI-D011"]
+
+        assert len(d011_findings) == 0
+
+    def test_no_d011_with_simple_arrays(self, analyzer):
+        """Test no D011 finding with arrays of primitives."""
+        index = IndexData(
+            uid="test",
+            sample_documents=[
+                {"id": 1, "tags": ["python", "javascript", "rust"]},
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d011_findings = [f for f in findings if f.id == "MEILI-D011"]
+
+        assert len(d011_findings) == 0
+
+    # D012: Geo coordinates tests
+
+    def test_geo_separate_fields_d012(self, analyzer):
+        """Test detection of separate lat/lng fields (D012)."""
+        index = IndexData(
+            uid="test",
+            sample_documents=[
+                {"id": 1, "lat": 45.4773, "lng": -73.6102, "name": "Montreal"},
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d012_findings = [f for f in findings if f.id == "MEILI-D012"]
+
+        assert len(d012_findings) == 1
+        assert d012_findings[0].severity == FindingSeverity.SUGGESTION
+        assert "_geo" in d012_findings[0].description
+
+    def test_geo_nested_object_d012(self, analyzer):
+        """Test detection of nested location object (D012)."""
+        index = IndexData(
+            uid="test",
+            sample_documents=[
+                {
+                    "id": 1,
+                    "location": {"lat": 45.4773, "lng": -73.6102},
+                    "name": "Montreal",
+                },
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d012_findings = [f for f in findings if f.id == "MEILI-D012"]
+
+        assert len(d012_findings) == 1
+
+    def test_no_d012_with_geo_field(self, analyzer):
+        """Test no D012 finding when _geo field already exists."""
+        index = IndexData(
+            uid="test",
+            sample_documents=[
+                {
+                    "id": 1,
+                    "_geo": {"lat": 45.4773, "lng": -73.6102},
+                    "name": "Montreal",
+                },
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d012_findings = [f for f in findings if f.id == "MEILI-D012"]
+
+        assert len(d012_findings) == 0
+
+    def test_no_d012_without_coordinates(self, analyzer, basic_index):
+        """Test no D012 finding without geo coordinates."""
+        findings = analyzer.analyze(basic_index)
+        d012_findings = [f for f in findings if f.id == "MEILI-D012"]
+
+        assert len(d012_findings) == 0
+
+    def test_geo_latitude_longitude_fields_d012(self, analyzer):
+        """Test detection of latitude/longitude named fields (D012)."""
+        index = IndexData(
+            uid="test",
+            sample_documents=[
+                {
+                    "id": 1,
+                    "latitude": 45.4773,
+                    "longitude": -73.6102,
+                },
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d012_findings = [f for f in findings if f.id == "MEILI-D012"]
+
+        assert len(d012_findings) == 1
+
+    # D013: Date strings tests
+
+    def test_date_strings_sortable_d013(self, analyzer):
+        """Test detection of date strings in sortable fields (D013)."""
+        index = IndexData(
+            uid="test",
+            settings=IndexSettings(sortableAttributes=["created_at"]),
+            sample_documents=[
+                {"id": 1, "created_at": "2025-01-04T10:30:00Z", "title": "Test"},
+                {"id": 2, "created_at": "2025-01-03T09:15:00Z", "title": "Another"},
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d013_findings = [f for f in findings if f.id == "MEILI-D013"]
+
+        assert len(d013_findings) == 1
+        assert d013_findings[0].severity == FindingSeverity.SUGGESTION
+        assert "timestamp" in d013_findings[0].description.lower()
+
+    def test_date_strings_info_d013(self, analyzer):
+        """Test detection of date fields not sortable (D013)."""
+        index = IndexData(
+            uid="test",
+            settings=IndexSettings(sortableAttributes=[]),
+            sample_documents=[
+                {"id": 1, "created_at": "2025-01-04", "updated_at": "2025-01-05"},
+                {"id": 2, "created_at": "2025-01-03", "updated_at": "2025-01-04"},
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d013_findings = [f for f in findings if f.id == "MEILI-D013"]
+
+        assert len(d013_findings) == 1
+        assert d013_findings[0].severity == FindingSeverity.INFO
+
+    def test_no_d013_without_date_fields(self, analyzer, basic_index):
+        """Test no D013 finding without date fields."""
+        findings = analyzer.analyze(basic_index)
+        d013_findings = [f for f in findings if f.id == "MEILI-D013"]
+
+        assert len(d013_findings) == 0
+
+    def test_date_field_by_value_pattern_d013(self, analyzer):
+        """Test detection of dates by value pattern even without date field name."""
+        index = IndexData(
+            uid="test",
+            settings=IndexSettings(sortableAttributes=["timestamp"]),
+            sample_documents=[
+                {"id": 1, "timestamp": "2025-01-04T10:30:00"},
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d013_findings = [f for f in findings if f.id == "MEILI-D013"]
+
+        assert len(d013_findings) == 1
+
+    def test_no_d013_with_numeric_timestamps(self, analyzer):
+        """Test no D013 finding when timestamps are already numeric."""
+        index = IndexData(
+            uid="test",
+            settings=IndexSettings(sortableAttributes=["created_at"]),
+            sample_documents=[
+                {"id": 1, "created_at": 1704412800},  # Unix timestamp
+                {"id": 2, "created_at": 1704326400},
+            ],
+        )
+
+        findings = analyzer.analyze(index)
+        d013_findings = [f for f in findings if f.id == "MEILI-D013"]
+
+        assert len(d013_findings) == 0
