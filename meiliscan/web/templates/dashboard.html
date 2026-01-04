@@ -21,6 +21,16 @@
             <strong>Dump File:</strong> {{ source_dump.name }}
         </span>
         {% endif %}
+        <!-- Analysis Options Badges -->
+        <span class="status-options" style="margin-left: 1rem;">
+            <span class="badge badge-gray" title="Sample documents per index">{{ sample_documents }} samples</span>
+            {% if probe_search %}
+            <span class="badge badge-blue" title="Search probes enabled">probes</span>
+            {% endif %}
+            {% if detect_sensitive %}
+            <span class="badge badge-yellow" title="PII detection enabled">PII</span>
+            {% endif %}
+        </span>
     </div>
     <div class="status-bar-actions">
         <!-- Export Dropdown -->
@@ -316,6 +326,27 @@
                     <label for="api_key">API Key <span class="text-secondary">(optional)</span></label>
                     <input type="password" id="api_key" name="api_key" placeholder="Master key or API key" style="width: 100%;">
                 </div>
+                <details class="mb-2">
+                    <summary style="cursor: pointer; color: var(--color-text-secondary); font-size: 0.875rem;">Advanced Options</summary>
+                    <div style="padding: 0.75rem 0;">
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="probe_search" value="true">
+                                <span>Run search probes <span class="text-secondary">(validates sort/filter config)</span></span>
+                            </label>
+                        </div>
+                        <div class="form-group">
+                            <label for="sample_documents_live">Sample documents per index</label>
+                            <input type="number" id="sample_documents_live" name="sample_documents" value="20" min="1" max="1000" style="width: 100%;">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="detect_sensitive" value="true">
+                                <span>Detect sensitive/PII fields</span>
+                            </label>
+                        </div>
+                    </div>
+                </details>
                 <button type="submit" class="btn btn-primary" style="width: 100%;">Connect & Analyze</button>
             </form>
         </div>
@@ -332,10 +363,21 @@
                     <label for="file">Select .dump file</label>
                     <input type="file" id="file" name="file" accept=".dump" style="width: 100%;" required>
                 </div>
-                <div class="form-group" style="visibility: hidden;">
-                    <label>&nbsp;</label>
-                    <input type="hidden">
-                </div>
+                <details class="mb-2">
+                    <summary style="cursor: pointer; color: var(--color-text-secondary); font-size: 0.875rem;">Advanced Options</summary>
+                    <div style="padding: 0.75rem 0;">
+                        <div class="form-group">
+                            <label for="sample_documents_dump">Sample documents per index</label>
+                            <input type="number" id="sample_documents_dump" name="sample_documents" value="20" min="1" max="1000" style="width: 100%;">
+                        </div>
+                        <div class="form-group">
+                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                                <input type="checkbox" name="detect_sensitive" value="true">
+                                <span>Detect sensitive/PII fields</span>
+                            </label>
+                        </div>
+                    </div>
+                </details>
                 <button type="submit" class="btn btn-secondary" style="width: 100%;">Upload & Analyze</button>
             </form>
         </div>

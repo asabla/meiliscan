@@ -1175,11 +1175,38 @@ def serve(
             help="Port to bind to",
         ),
     ] = 8080,
+    probe_search: Annotated[
+        bool,
+        typer.Option(
+            "--probe-search",
+            help="Run read-only search probes to validate sort/filter configuration",
+        ),
+    ] = False,
+    sample_documents: Annotated[
+        int,
+        typer.Option(
+            "--sample-documents",
+            help="Number of sample documents to fetch per index (default: 20)",
+        ),
+    ] = 20,
+    detect_sensitive: Annotated[
+        bool,
+        typer.Option(
+            "--detect-sensitive",
+            help="Enable detection of potential PII/sensitive fields in documents",
+        ),
+    ] = False,
 ) -> None:
     """Start the web dashboard server."""
     import uvicorn
 
     from meiliscan.web import create_app
+
+    if probe_search and dump:
+        console.print(
+            "[yellow]Warning:[/yellow] --probe-search is ignored when analyzing dumps."
+        )
+        probe_search = False
 
     console.print(
         Panel.fit(
@@ -1194,6 +1221,9 @@ def serve(
         meili_url=url,
         meili_api_key=api_key,
         dump_path=dump,
+        probe_search=probe_search,
+        sample_documents=sample_documents,
+        detect_sensitive=detect_sensitive,
     )
 
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
