@@ -196,6 +196,7 @@ ARTICLE_CONTENT_SNIPPETS = [
 ]
 
 # Size presets for dump generation
+# Note: "large" preset includes all 40+ indexes for testing pagination
 SIZE_PRESETS = {
     "small": {
         "products": 50,
@@ -236,6 +237,7 @@ SIZE_PRESETS = {
         "knowledge_base": 20,
     },
     "large": {
+        # Original indexes (with increased counts)
         "products": 2000,
         "users": 1000,
         "articles": 500,
@@ -253,6 +255,32 @@ SIZE_PRESETS = {
         "employees": 200,
         "support_tickets": 1000,
         "knowledge_base": 50,
+        # Additional indexes for 40+ total (testing pagination)
+        "projects": 500,
+        "tasks_queue": 1000,
+        "comments": 1500,
+        "files": 800,
+        "messages": 2500,
+        "payments": 2000,
+        "subscriptions": 500,
+        "invoices": 1500,
+        "campaigns": 250,
+        "leads": 1000,
+        "contracts": 400,
+        "vendors": 300,
+        "warehouses": 100,
+        "shipments": 1750,
+        "returns": 500,
+        "coupons": 200,
+        "wishlists": 750,
+        "faqs": 400,
+        "announcements": 150,
+        "audit_logs": 5000,
+        "api_keys": 125,
+        "webhooks": 100,
+        "reports": 250,
+        "templates": 150,
+        "integrations": 75,
     },
 }
 
@@ -1268,6 +1296,695 @@ def generate_knowledge_base(count: int = 20) -> list[dict]:
     return kb_articles
 
 
+# ============================================================================
+# Additional generators for large index count testing (40+ indexes)
+# ============================================================================
+
+
+def generate_projects(count: int = 100) -> list[dict]:
+    """Generate sample project management documents."""
+    statuses = [
+        "planning",
+        "in_progress",
+        "review",
+        "completed",
+        "on_hold",
+        "cancelled",
+    ]
+    priorities = ["critical", "high", "medium", "low"]
+    projects = []
+    for i in range(count):
+        projects.append(
+            {
+                "id": i + 1,
+                "project_id": f"PRJ-{i + 1:05d}",
+                "name": f"Project {random.choice(['Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon'])} {i + 1}",
+                "description": f"A project focusing on {random.choice(['development', 'research', 'marketing', 'infrastructure'])}.",
+                "status": random.choice(statuses),
+                "priority": random.choice(priorities),
+                "budget": round(random.uniform(10000, 500000), 2),
+                "team_size": random.randint(2, 20),
+                "start_date": (
+                    datetime.now() - timedelta(days=random.randint(30, 365))
+                ).isoformat(),
+                "deadline": (
+                    datetime.now() + timedelta(days=random.randint(30, 180))
+                ).isoformat(),
+            }
+        )
+    return projects
+
+
+def generate_tasks(count: int = 200) -> list[dict]:
+    """Generate sample task documents."""
+    statuses = ["todo", "in_progress", "blocked", "done"]
+    projects = []
+    for i in range(count):
+        projects.append(
+            {
+                "id": i + 1,
+                "task_id": f"TASK-{i + 1:05d}",
+                "title": f"Task: {random.choice(['Implement', 'Review', 'Test', 'Deploy', 'Document'])} feature {i + 1}",
+                "description": "Detailed task description with implementation notes.",
+                "status": random.choice(statuses),
+                "assignee": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+                "project_id": f"PRJ-{random.randint(1, 50):05d}",
+                "estimated_hours": random.randint(1, 40),
+                "created_at": (
+                    datetime.now() - timedelta(days=random.randint(1, 60))
+                ).isoformat(),
+            }
+        )
+    return projects
+
+
+def generate_comments(count: int = 300) -> list[dict]:
+    """Generate sample comment documents."""
+    comments = []
+    for i in range(count):
+        comments.append(
+            {
+                "id": i + 1,
+                "content": f"This is a comment about the topic. {random.choice(['Great work!', 'Needs revision.', 'Approved.', 'Please clarify.'])}",
+                "author_id": random.randint(1, 100),
+                "author_name": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+                "entity_type": random.choice(["task", "project", "article", "review"]),
+                "entity_id": random.randint(1, 500),
+                "created_at": (
+                    datetime.now() - timedelta(hours=random.randint(1, 720))
+                ).isoformat(),
+            }
+        )
+    return comments
+
+
+def generate_files(count: int = 150) -> list[dict]:
+    """Generate sample file metadata documents."""
+    extensions = [".pdf", ".docx", ".xlsx", ".png", ".jpg", ".mp4", ".zip"]
+    mime_types = {
+        ".pdf": "application/pdf",
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        ".png": "image/png",
+        ".jpg": "image/jpeg",
+        ".mp4": "video/mp4",
+        ".zip": "application/zip",
+    }
+    files = []
+    for i in range(count):
+        ext = random.choice(extensions)
+        files.append(
+            {
+                "id": i + 1,
+                "filename": f"file_{i + 1}{ext}",
+                "path": f"/uploads/{random.choice(['docs', 'images', 'videos', 'archives'])}/file_{i + 1}{ext}",
+                "size_bytes": random.randint(1024, 100 * 1024 * 1024),
+                "mime_type": mime_types[ext],
+                "uploaded_by": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+                "uploaded_at": (
+                    datetime.now() - timedelta(days=random.randint(1, 180))
+                ).isoformat(),
+            }
+        )
+    return files
+
+
+def generate_messages(count: int = 500) -> list[dict]:
+    """Generate sample message/chat documents."""
+    messages = []
+    channels = ["general", "engineering", "marketing", "support", "random"]
+    for i in range(count):
+        messages.append(
+            {
+                "id": i + 1,
+                "content": f"Message content {i + 1}. "
+                + random.choice(
+                    [
+                        "Let's discuss this in the meeting.",
+                        "I've updated the document.",
+                        "Can someone review this PR?",
+                        "The deployment was successful.",
+                        "We need to address this issue.",
+                    ]
+                ),
+                "sender_id": random.randint(1, 100),
+                "sender_name": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+                "channel": random.choice(channels),
+                "thread_id": f"thread-{random.randint(1, 100)}"
+                if random.random() < 0.3
+                else None,
+                "sent_at": (
+                    datetime.now() - timedelta(minutes=random.randint(1, 10080))
+                ).isoformat(),
+            }
+        )
+    return messages
+
+
+def generate_payments(count: int = 400) -> list[dict]:
+    """Generate sample payment transaction documents."""
+    statuses = ["pending", "completed", "failed", "refunded"]
+    methods = ["credit_card", "debit_card", "paypal", "bank_transfer", "crypto"]
+    payments = []
+    for i in range(count):
+        payments.append(
+            {
+                "id": i + 1,
+                "transaction_id": f"TXN-{i + 1:08d}",
+                "amount": round(random.uniform(5, 5000), 2),
+                "currency": random.choice(["USD", "EUR", "GBP", "JPY"]),
+                "status": random.choice(statuses),
+                "method": random.choice(methods),
+                "customer_id": random.randint(1, 500),
+                "order_id": f"ORD-{random.randint(1, 1000):05d}",
+                "processed_at": (
+                    datetime.now() - timedelta(hours=random.randint(1, 720))
+                ).isoformat(),
+            }
+        )
+    return payments
+
+
+def generate_subscriptions(count: int = 100) -> list[dict]:
+    """Generate sample subscription documents."""
+    plans = ["free", "starter", "professional", "enterprise"]
+    statuses = ["active", "cancelled", "past_due", "trialing"]
+    subscriptions = []
+    for i in range(count):
+        subscriptions.append(
+            {
+                "id": i + 1,
+                "subscription_id": f"SUB-{i + 1:06d}",
+                "customer_id": random.randint(1, 500),
+                "plan": random.choice(plans),
+                "status": random.choice(statuses),
+                "monthly_amount": round(random.uniform(0, 500), 2),
+                "started_at": (
+                    datetime.now() - timedelta(days=random.randint(30, 730))
+                ).isoformat(),
+                "next_billing_date": (
+                    datetime.now() + timedelta(days=random.randint(1, 30))
+                ).isoformat(),
+            }
+        )
+    return subscriptions
+
+
+def generate_invoices(count: int = 300) -> list[dict]:
+    """Generate sample invoice documents."""
+    statuses = ["draft", "sent", "paid", "overdue", "void"]
+    invoices = []
+    for i in range(count):
+        invoices.append(
+            {
+                "id": i + 1,
+                "invoice_number": f"INV-{datetime.now().year}-{i + 1:05d}",
+                "customer_id": random.randint(1, 500),
+                "customer_name": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+                "amount": round(random.uniform(100, 10000), 2),
+                "tax_amount": round(random.uniform(10, 1000), 2),
+                "status": random.choice(statuses),
+                "due_date": (
+                    datetime.now() + timedelta(days=random.randint(-30, 60))
+                ).isoformat(),
+                "created_at": (
+                    datetime.now() - timedelta(days=random.randint(1, 90))
+                ).isoformat(),
+            }
+        )
+    return invoices
+
+
+def generate_campaigns(count: int = 50) -> list[dict]:
+    """Generate sample marketing campaign documents."""
+    types = ["email", "social", "ppc", "content", "influencer"]
+    statuses = ["draft", "scheduled", "active", "paused", "completed"]
+    campaigns = []
+    for i in range(count):
+        campaigns.append(
+            {
+                "id": i + 1,
+                "campaign_name": f"Campaign {random.choice(['Summer', 'Winter', 'Spring', 'Fall', 'Holiday'])} {datetime.now().year} #{i + 1}",
+                "type": random.choice(types),
+                "status": random.choice(statuses),
+                "budget": round(random.uniform(1000, 50000), 2),
+                "spent": round(random.uniform(0, 25000), 2),
+                "impressions": random.randint(1000, 1000000),
+                "clicks": random.randint(100, 50000),
+                "conversions": random.randint(10, 5000),
+                "start_date": (
+                    datetime.now() - timedelta(days=random.randint(0, 60))
+                ).isoformat(),
+                "end_date": (
+                    datetime.now() + timedelta(days=random.randint(1, 90))
+                ).isoformat(),
+            }
+        )
+    return campaigns
+
+
+def generate_leads(count: int = 200) -> list[dict]:
+    """Generate sample sales lead documents."""
+    sources = ["website", "referral", "social", "event", "cold_call", "advertisement"]
+    statuses = [
+        "new",
+        "contacted",
+        "qualified",
+        "proposal",
+        "negotiation",
+        "won",
+        "lost",
+    ]
+    leads = []
+    for i in range(count):
+        leads.append(
+            {
+                "id": i + 1,
+                "lead_id": f"LEAD-{i + 1:05d}",
+                "company_name": f"{random.choice(['Tech', 'Global', 'Prime', 'Nova', 'Apex'])} {random.choice(['Solutions', 'Industries', 'Corp', 'Systems'])}",
+                "contact_name": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+                "email": f"contact{i + 1}@example.com",
+                "source": random.choice(sources),
+                "status": random.choice(statuses),
+                "estimated_value": round(random.uniform(1000, 100000), 2),
+                "created_at": (
+                    datetime.now() - timedelta(days=random.randint(1, 180))
+                ).isoformat(),
+            }
+        )
+    return leads
+
+
+def generate_contracts(count: int = 80) -> list[dict]:
+    """Generate sample contract documents."""
+    types = ["service", "employment", "nda", "partnership", "licensing"]
+    statuses = ["draft", "pending_signature", "active", "expired", "terminated"]
+    contracts = []
+    for i in range(count):
+        contracts.append(
+            {
+                "id": i + 1,
+                "contract_id": f"CTR-{i + 1:05d}",
+                "title": f"{random.choice(types).title()} Agreement #{i + 1}",
+                "type": random.choice(types),
+                "status": random.choice(statuses),
+                "party_a": f"Company A - {i + 1}",
+                "party_b": f"Company B - {random.randint(1, 50)}",
+                "value": round(random.uniform(5000, 500000), 2),
+                "start_date": (
+                    datetime.now() - timedelta(days=random.randint(0, 365))
+                ).isoformat(),
+                "end_date": (
+                    datetime.now() + timedelta(days=random.randint(30, 730))
+                ).isoformat(),
+            }
+        )
+    return contracts
+
+
+def generate_vendors(count: int = 60) -> list[dict]:
+    """Generate sample vendor documents."""
+    categories = ["technology", "supplies", "services", "logistics", "consulting"]
+    vendors = []
+    for i in range(count):
+        vendors.append(
+            {
+                "id": i + 1,
+                "vendor_id": f"VND-{i + 1:04d}",
+                "name": f"{random.choice(['Alpha', 'Beta', 'Gamma', 'Delta'])} {random.choice(['Supplies', 'Tech', 'Services', 'Solutions'])} Inc.",
+                "category": random.choice(categories),
+                "contact_email": f"vendor{i + 1}@example.com",
+                "phone": f"+1-555-{random.randint(100, 999)}-{random.randint(1000, 9999)}",
+                "rating": round(random.uniform(1, 5), 1),
+                "total_orders": random.randint(1, 500),
+                "active": random.choice([True, True, True, False]),
+            }
+        )
+    return vendors
+
+
+def generate_warehouses(count: int = 20) -> list[dict]:
+    """Generate sample warehouse documents."""
+    warehouses = []
+    regions = ["North", "South", "East", "West", "Central"]
+    for i in range(count):
+        warehouses.append(
+            {
+                "id": i + 1,
+                "warehouse_code": f"WH-{random.choice(regions)[:1]}{i + 1:02d}",
+                "name": f"{random.choice(regions)} Distribution Center {i + 1}",
+                "region": random.choice(regions),
+                "capacity_sqft": random.randint(10000, 500000),
+                "current_utilization": round(random.uniform(0.3, 0.95), 2),
+                "address": f"{random.randint(100, 9999)} Industrial Blvd, City {i + 1}",
+                "manager": f"{random.choice(USER_FIRST_NAMES)} {random.choice(USER_LAST_NAMES)}",
+            }
+        )
+    return warehouses
+
+
+def generate_shipments(count: int = 350) -> list[dict]:
+    """Generate sample shipment documents."""
+    statuses = [
+        "pending",
+        "picked",
+        "packed",
+        "shipped",
+        "in_transit",
+        "delivered",
+        "returned",
+    ]
+    carriers = ["FedEx", "UPS", "USPS", "DHL", "Amazon Logistics"]
+    shipments = []
+    for i in range(count):
+        shipments.append(
+            {
+                "id": i + 1,
+                "tracking_number": f"TRK{random.randint(100000000, 999999999)}",
+                "order_id": f"ORD-{random.randint(1, 1000):05d}",
+                "status": random.choice(statuses),
+                "carrier": random.choice(carriers),
+                "weight_kg": round(random.uniform(0.1, 50), 2),
+                "origin_warehouse": f"WH-{random.choice(['N', 'S', 'E', 'W', 'C'])}{random.randint(1, 20):02d}",
+                "destination_city": random.choice(
+                    [
+                        "New York",
+                        "Los Angeles",
+                        "Chicago",
+                        "Houston",
+                        "Phoenix",
+                        "Philadelphia",
+                        "San Antonio",
+                        "San Diego",
+                        "Dallas",
+                        "San Jose",
+                    ]
+                ),
+                "shipped_at": (
+                    datetime.now() - timedelta(days=random.randint(0, 14))
+                ).isoformat()
+                if random.random() > 0.2
+                else None,
+                "estimated_delivery": (
+                    datetime.now() + timedelta(days=random.randint(1, 7))
+                ).isoformat(),
+            }
+        )
+    return shipments
+
+
+def generate_returns(count: int = 100) -> list[dict]:
+    """Generate sample return request documents."""
+    reasons = [
+        "defective",
+        "wrong_item",
+        "not_as_described",
+        "changed_mind",
+        "damaged_shipping",
+    ]
+    statuses = ["requested", "approved", "rejected", "received", "refunded"]
+    returns = []
+    for i in range(count):
+        returns.append(
+            {
+                "id": i + 1,
+                "return_id": f"RET-{i + 1:05d}",
+                "order_id": f"ORD-{random.randint(1, 1000):05d}",
+                "reason": random.choice(reasons),
+                "status": random.choice(statuses),
+                "refund_amount": round(random.uniform(10, 500), 2),
+                "customer_notes": "Return request notes from customer.",
+                "created_at": (
+                    datetime.now() - timedelta(days=random.randint(1, 30))
+                ).isoformat(),
+            }
+        )
+    return returns
+
+
+def generate_coupons(count: int = 40) -> list[dict]:
+    """Generate sample coupon documents."""
+    types = ["percentage", "fixed_amount", "free_shipping", "buy_one_get_one"]
+    coupons = []
+    for i in range(count):
+        coupons.append(
+            {
+                "id": i + 1,
+                "code": f"SAVE{random.randint(10, 50)}-{random.choice(['SUMMER', 'WINTER', 'FALL', 'SPRING', 'HOLIDAY'])}{i + 1}",
+                "type": random.choice(types),
+                "discount_value": random.randint(5, 50),
+                "min_purchase": round(random.uniform(0, 100), 2),
+                "max_uses": random.randint(100, 10000),
+                "current_uses": random.randint(0, 5000),
+                "valid_from": (
+                    datetime.now() - timedelta(days=random.randint(0, 30))
+                ).isoformat(),
+                "valid_until": (
+                    datetime.now() + timedelta(days=random.randint(1, 90))
+                ).isoformat(),
+                "active": random.choice([True, True, True, False]),
+            }
+        )
+    return coupons
+
+
+def generate_wishlists(count: int = 150) -> list[dict]:
+    """Generate sample wishlist documents."""
+    wishlists = []
+    for i in range(count):
+        wishlists.append(
+            {
+                "id": i + 1,
+                "user_id": random.randint(1, 200),
+                "name": random.choice(
+                    [
+                        "My Wishlist",
+                        "Birthday Gifts",
+                        "Holiday Ideas",
+                        "Later",
+                        "Favorites",
+                    ]
+                ),
+                "product_ids": [
+                    random.randint(1, 500) for _ in range(random.randint(1, 20))
+                ],
+                "is_public": random.choice([True, False]),
+                "created_at": (
+                    datetime.now() - timedelta(days=random.randint(1, 365))
+                ).isoformat(),
+                "updated_at": (
+                    datetime.now() - timedelta(days=random.randint(0, 30))
+                ).isoformat(),
+            }
+        )
+    return wishlists
+
+
+def generate_faqs(count: int = 80) -> list[dict]:
+    """Generate sample FAQ documents."""
+    categories = ["billing", "shipping", "returns", "account", "products", "technical"]
+    faqs = []
+    for i in range(count):
+        faqs.append(
+            {
+                "id": i + 1,
+                "question": f"How do I {random.choice(['reset', 'update', 'cancel', 'track', 'contact'])} my {random.choice(['order', 'account', 'subscription', 'payment'])}?",
+                "answer": "Detailed answer with step-by-step instructions for the user.",
+                "category": random.choice(categories),
+                "helpful_count": random.randint(0, 500),
+                "view_count": random.randint(10, 5000),
+                "last_updated": (
+                    datetime.now() - timedelta(days=random.randint(1, 180))
+                ).isoformat(),
+            }
+        )
+    return faqs
+
+
+def generate_announcements(count: int = 30) -> list[dict]:
+    """Generate sample announcement documents."""
+    types = ["feature", "maintenance", "security", "promotion", "general"]
+    announcements = []
+    for i in range(count):
+        announcements.append(
+            {
+                "id": i + 1,
+                "title": f"Important Announcement #{i + 1}",
+                "content": f"We are excited to announce {random.choice(['a new feature', 'scheduled maintenance', 'security updates', 'special promotion'])}.",
+                "type": random.choice(types),
+                "priority": random.choice(["low", "medium", "high", "critical"]),
+                "published_at": (
+                    datetime.now() - timedelta(days=random.randint(0, 90))
+                ).isoformat(),
+                "expires_at": (
+                    datetime.now() + timedelta(days=random.randint(1, 30))
+                ).isoformat()
+                if random.random() > 0.5
+                else None,
+                "is_pinned": random.choice([True, False, False, False]),
+            }
+        )
+    return announcements
+
+
+def generate_audit_logs(count: int = 1000) -> list[dict]:
+    """Generate sample audit log documents."""
+    actions = ["create", "update", "delete", "login", "logout", "export", "import"]
+    resources = ["user", "order", "product", "setting", "report", "api_key"]
+    logs = []
+    for i in range(count):
+        logs.append(
+            {
+                "id": i + 1,
+                "action": random.choice(actions),
+                "resource_type": random.choice(resources),
+                "resource_id": str(random.randint(1, 1000)),
+                "user_id": random.randint(1, 100),
+                "user_email": f"user{random.randint(1, 100)}@example.com",
+                "ip_address": f"192.168.{random.randint(1, 255)}.{random.randint(1, 255)}",
+                "user_agent": "Mozilla/5.0 (compatible)",
+                "timestamp": (
+                    datetime.now() - timedelta(minutes=random.randint(1, 43200))
+                ).isoformat(),
+            }
+        )
+    return logs
+
+
+def generate_api_keys(count: int = 25) -> list[dict]:
+    """Generate sample API key documents."""
+    scopes = ["read", "write", "admin", "analytics", "search"]
+    keys = []
+    for i in range(count):
+        keys.append(
+            {
+                "id": i + 1,
+                "key_prefix": f"ms_{random.choice(['live', 'test'])}_{i + 1:04d}",
+                "name": f"API Key - {random.choice(['Production', 'Development', 'Testing', 'CI/CD'])} {i + 1}",
+                "scopes": random.sample(scopes, k=random.randint(1, 4)),
+                "created_by": random.randint(1, 50),
+                "last_used_at": (
+                    datetime.now() - timedelta(hours=random.randint(0, 720))
+                ).isoformat()
+                if random.random() > 0.3
+                else None,
+                "expires_at": (
+                    datetime.now() + timedelta(days=random.randint(30, 365))
+                ).isoformat()
+                if random.random() > 0.3
+                else None,
+                "is_active": random.choice([True, True, True, False]),
+            }
+        )
+    return keys
+
+
+def generate_webhooks(count: int = 20) -> list[dict]:
+    """Generate sample webhook configuration documents."""
+    events = [
+        "order.created",
+        "order.updated",
+        "user.created",
+        "payment.completed",
+        "inventory.low",
+    ]
+    webhooks = []
+    for i in range(count):
+        webhooks.append(
+            {
+                "id": i + 1,
+                "name": f"Webhook #{i + 1}",
+                "url": f"https://example{i + 1}.com/webhook",
+                "events": random.sample(events, k=random.randint(1, 4)),
+                "secret": f"whsec_{i + 1:08d}",
+                "is_active": random.choice([True, True, False]),
+                "failure_count": random.randint(0, 10),
+                "last_triggered_at": (
+                    datetime.now() - timedelta(hours=random.randint(0, 168))
+                ).isoformat()
+                if random.random() > 0.2
+                else None,
+            }
+        )
+    return webhooks
+
+
+def generate_reports(count: int = 50) -> list[dict]:
+    """Generate sample report documents."""
+    types = ["sales", "inventory", "traffic", "conversion", "financial"]
+    frequencies = ["daily", "weekly", "monthly", "quarterly", "yearly"]
+    reports = []
+    for i in range(count):
+        reports.append(
+            {
+                "id": i + 1,
+                "report_name": f"{random.choice(types).title()} Report - {random.choice(frequencies).title()}",
+                "type": random.choice(types),
+                "frequency": random.choice(frequencies),
+                "created_by": random.randint(1, 50),
+                "last_run_at": (
+                    datetime.now() - timedelta(hours=random.randint(1, 720))
+                ).isoformat(),
+                "next_run_at": (
+                    datetime.now() + timedelta(hours=random.randint(1, 168))
+                ).isoformat(),
+                "recipients": [
+                    f"user{j}@example.com" for j in range(random.randint(1, 5))
+                ],
+                "is_scheduled": random.choice([True, True, False]),
+            }
+        )
+    return reports
+
+
+def generate_templates(count: int = 30) -> list[dict]:
+    """Generate sample template documents."""
+    types = ["email", "notification", "invoice", "report", "contract"]
+    templates = []
+    for i in range(count):
+        templates.append(
+            {
+                "id": i + 1,
+                "name": f"{random.choice(types).title()} Template #{i + 1}",
+                "type": random.choice(types),
+                "subject": f"Template subject line {i + 1}",
+                "body": "Template body content with placeholders like {name} and {date}.",
+                "variables": ["name", "date", "amount", "company"],
+                "created_by": random.randint(1, 50),
+                "is_default": i < 5,
+                "last_modified": (
+                    datetime.now() - timedelta(days=random.randint(1, 180))
+                ).isoformat(),
+            }
+        )
+    return templates
+
+
+def generate_integrations(count: int = 15) -> list[dict]:
+    """Generate sample integration configuration documents."""
+    types = ["crm", "erp", "email", "analytics", "payment", "shipping"]
+    providers = ["Salesforce", "HubSpot", "Mailchimp", "Stripe", "Zapier", "Shopify"]
+    integrations = []
+    for i in range(count):
+        integrations.append(
+            {
+                "id": i + 1,
+                "name": f"{random.choice(providers)} Integration",
+                "type": random.choice(types),
+                "provider": random.choice(providers),
+                "status": random.choice(["active", "active", "inactive", "error"]),
+                "last_sync_at": (
+                    datetime.now() - timedelta(minutes=random.randint(5, 1440))
+                ).isoformat(),
+                "sync_frequency_minutes": random.choice([15, 30, 60, 360, 1440]),
+                "error_message": "Connection timeout"
+                if random.random() < 0.1
+                else None,
+            }
+        )
+    return integrations
+
+
 # Index configurations with intentional issues for the analyzer to detect
 INDEX_CONFIGS = {
     "products": {
@@ -1730,6 +2447,577 @@ INDEX_CONFIGS = {
         "documents": generate_knowledge_base,
         "doc_count": 20,
     },
+    # ============================================================================
+    # Additional indexes for large index count testing (40+ total indexes)
+    # ============================================================================
+    "projects": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "description", "project_id"],
+            "filterableAttributes": ["status", "priority"],
+            "sortableAttributes": ["budget", "start_date", "deadline"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_projects,
+        "doc_count": 100,
+    },
+    "tasks_queue": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["title", "description", "task_id"],
+            "filterableAttributes": ["status", "project_id", "assignee"],
+            "sortableAttributes": ["estimated_hours", "created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_tasks,
+        "doc_count": 200,
+    },
+    "comments": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["content", "author_name"],
+            "filterableAttributes": ["entity_type", "entity_id", "author_id"],
+            "sortableAttributes": ["created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_comments,
+        "doc_count": 300,
+    },
+    "files": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["filename", "path"],
+            "filterableAttributes": ["mime_type", "uploaded_by"],
+            "sortableAttributes": ["size_bytes", "uploaded_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_files,
+        "doc_count": 150,
+    },
+    "messages": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["content", "sender_name"],
+            "filterableAttributes": ["channel", "sender_id", "thread_id"],
+            "sortableAttributes": ["sent_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_messages,
+        "doc_count": 500,
+    },
+    "payments": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["transaction_id"],
+            "filterableAttributes": ["status", "method", "currency", "customer_id"],
+            "sortableAttributes": ["amount", "processed_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_payments,
+        "doc_count": 400,
+    },
+    "subscriptions": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["subscription_id"],
+            "filterableAttributes": ["plan", "status", "customer_id"],
+            "sortableAttributes": ["monthly_amount", "started_at", "next_billing_date"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_subscriptions,
+        "doc_count": 100,
+    },
+    "invoices": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["invoice_number", "customer_name"],
+            "filterableAttributes": ["status", "customer_id"],
+            "sortableAttributes": ["amount", "due_date", "created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_invoices,
+        "doc_count": 300,
+    },
+    "campaigns": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["campaign_name"],
+            "filterableAttributes": ["type", "status"],
+            "sortableAttributes": [
+                "budget",
+                "spent",
+                "impressions",
+                "clicks",
+                "conversions",
+                "start_date",
+            ],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_campaigns,
+        "doc_count": 50,
+    },
+    "leads": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": [
+                "company_name",
+                "contact_name",
+                "email",
+                "lead_id",
+            ],
+            "filterableAttributes": ["source", "status"],
+            "sortableAttributes": ["estimated_value", "created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_leads,
+        "doc_count": 200,
+    },
+    "contracts": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["title", "contract_id", "party_a", "party_b"],
+            "filterableAttributes": ["type", "status"],
+            "sortableAttributes": ["value", "start_date", "end_date"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_contracts,
+        "doc_count": 80,
+    },
+    "vendors": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "vendor_id", "contact_email"],
+            "filterableAttributes": ["category", "active"],
+            "sortableAttributes": ["rating", "total_orders"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_vendors,
+        "doc_count": 60,
+    },
+    "warehouses": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "warehouse_code", "address"],
+            "filterableAttributes": ["region"],
+            "sortableAttributes": ["capacity_sqft", "current_utilization"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_warehouses,
+        "doc_count": 20,
+    },
+    "shipments": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["tracking_number", "order_id"],
+            "filterableAttributes": ["status", "carrier", "origin_warehouse"],
+            "sortableAttributes": ["weight_kg", "shipped_at", "estimated_delivery"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_shipments,
+        "doc_count": 350,
+    },
+    "returns": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["return_id", "order_id", "customer_notes"],
+            "filterableAttributes": ["reason", "status"],
+            "sortableAttributes": ["refund_amount", "created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_returns,
+        "doc_count": 100,
+    },
+    "coupons": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["code"],
+            "filterableAttributes": ["type", "active"],
+            "sortableAttributes": [
+                "discount_value",
+                "valid_from",
+                "valid_until",
+                "current_uses",
+            ],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_coupons,
+        "doc_count": 40,
+    },
+    "wishlists": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name"],
+            "filterableAttributes": ["user_id", "is_public"],
+            "sortableAttributes": ["created_at", "updated_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_wishlists,
+        "doc_count": 150,
+    },
+    "faqs": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["question", "answer"],
+            "filterableAttributes": ["category"],
+            "sortableAttributes": ["helpful_count", "view_count", "last_updated"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_faqs,
+        "doc_count": 80,
+    },
+    "announcements": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["title", "content"],
+            "filterableAttributes": ["type", "priority", "is_pinned"],
+            "sortableAttributes": ["published_at", "expires_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_announcements,
+        "doc_count": 30,
+    },
+    "audit_logs": {
+        "primaryKey": "id",
+        "settings": {
+            # S001: Wildcard searchable for audit logs (not ideal)
+            "searchableAttributes": ["*"],
+            "filterableAttributes": ["action", "resource_type", "user_id"],
+            "sortableAttributes": ["timestamp"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_audit_logs,
+        "doc_count": 1000,
+    },
+    "api_keys": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "key_prefix"],
+            "filterableAttributes": ["scopes", "is_active"],
+            "sortableAttributes": ["last_used_at", "expires_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_api_keys,
+        "doc_count": 25,
+    },
+    "webhooks": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "url"],
+            "filterableAttributes": ["events", "is_active"],
+            "sortableAttributes": ["failure_count", "last_triggered_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_webhooks,
+        "doc_count": 20,
+    },
+    "reports": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["report_name"],
+            "filterableAttributes": ["type", "frequency", "is_scheduled"],
+            "sortableAttributes": ["last_run_at", "next_run_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_reports,
+        "doc_count": 50,
+    },
+    "templates": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "subject", "body"],
+            "filterableAttributes": ["type", "is_default"],
+            "sortableAttributes": ["last_modified"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_templates,
+        "doc_count": 30,
+    },
+    "integrations": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "provider"],
+            "filterableAttributes": ["type", "status"],
+            "sortableAttributes": ["last_sync_at", "sync_frequency_minutes"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_integrations,
+        "doc_count": 15,
+    },
 }
 
 
@@ -1958,7 +3246,7 @@ def seed_instance(
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"
 
-    client = httpx.Client(base_url=url, headers=headers, timeout=60.0)
+    client = httpx.Client(base_url=url, headers=headers, timeout=120.0)
 
     # Check connection
     try:
@@ -2035,9 +3323,18 @@ def seed_instance(
         print(f"    Settings update task: {task_info.get('taskUid', 'N/A')}")
         _wait_for_task(client, response)
 
-        # Add documents (in batches for large counts)
+        # Add documents (in batches for large counts or large documents)
         docs = config["documents"](doc_count)
-        batch_size = 10000  # MeiliSearch handles this well
+
+        # Estimate document size to determine batch size
+        # For very large documents (like knowledge_base), use smaller batches
+        sample_size = len(json.dumps(docs[0])) if docs else 0
+        if sample_size > 50000:  # > 50KB per document
+            batch_size = 50  # Small batches for large docs
+        elif sample_size > 10000:  # > 10KB per document
+            batch_size = 500
+        else:
+            batch_size = 10000  # MeiliSearch handles this well
 
         if len(docs) <= batch_size:
             # Single batch
@@ -2073,10 +3370,17 @@ def seed_instance(
     print(f"  meiliscan serve --url {url}")
 
 
-def _wait_for_task(client, response) -> None:
-    """Wait for a MeiliSearch task to complete."""
+def _wait_for_task(client, response, max_retries: int = 5) -> None:
+    """Wait for a MeiliSearch task to complete.
 
+    Args:
+        client: httpx client
+        response: Response from task-creating request
+        max_retries: Maximum number of retries on connection errors
+    """
     import time
+
+    import httpx
 
     if response.status_code not in [200, 201, 202]:
         return
@@ -2086,21 +3390,35 @@ def _wait_for_task(client, response) -> None:
     if not task_uid:
         return
 
+    retries = 0
     while True:
-        response = client.get(f"/tasks/{task_uid}")
-        if response.status_code != 200:
-            break
+        try:
+            response = client.get(f"/tasks/{task_uid}")
+            if response.status_code != 200:
+                break
 
-        task = response.json()
-        status = task.get("status")
-        if status in ["succeeded", "failed", "canceled"]:
-            if status == "failed":
+            task = response.json()
+            status = task.get("status")
+            if status in ["succeeded", "failed", "canceled"]:
+                if status == "failed":
+                    print(
+                        f"    Task failed: {task.get('error', {}).get('message', 'Unknown error')}"
+                    )
+                break
+
+            # Reset retries on successful poll
+            retries = 0
+            time.sleep(0.5)
+
+        except httpx.ConnectError:
+            retries += 1
+            if retries >= max_retries:
                 print(
-                    f"    Task failed: {task.get('error', {}).get('message', 'Unknown error')}"
+                    f"    Connection lost after {max_retries} retries, task {task_uid} may still be processing"
                 )
-            break
-
-        time.sleep(0.5)
+                break
+            print(f"    Connection error, retrying ({retries}/{max_retries})...")
+            time.sleep(2 * retries)  # Exponential backoff
 
 
 def clean_instance(url: str, api_key: str | None = None) -> None:
