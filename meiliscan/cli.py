@@ -128,12 +128,12 @@ def analyze(
         ),
     ] = False,
     sample_documents: Annotated[
-        int,
+        str,
         typer.Option(
             "--sample-documents",
-            help="Number of sample documents to fetch per index (default: 20)",
+            help="Number of sample documents per index, or 'all' for every document (default: 20)",
         ),
-    ] = 20,
+    ] = "20",
     detect_sensitive: Annotated[
         bool,
         typer.Option(
@@ -157,6 +157,23 @@ def analyze(
             f"Use one of: {', '.join(VALID_FORMATS)}."
         )
         raise typer.Exit(1)
+
+    # Parse sample_documents option
+    if sample_documents.lower() == "all":
+        sample_docs_value: int | None = None
+    else:
+        try:
+            sample_docs_value = int(sample_documents)
+            if sample_docs_value < 1:
+                console.print(
+                    "[red]Error:[/red] --sample-documents must be a positive integer or 'all'."
+                )
+                raise typer.Exit(1)
+        except ValueError:
+            console.print(
+                "[red]Error:[/red] --sample-documents must be a positive integer or 'all'."
+            )
+            raise typer.Exit(1)
 
     if probe_search and dump:
         console.print(
@@ -183,7 +200,7 @@ def analyze(
     analysis_options = {
         "config_toml": instance_config,
         "probe_search": probe_search,
-        "sample_documents": sample_documents,
+        "sample_documents": sample_docs_value,
         "detect_sensitive": detect_sensitive,
     }
 
@@ -1183,12 +1200,12 @@ def serve(
         ),
     ] = False,
     sample_documents: Annotated[
-        int,
+        str,
         typer.Option(
             "--sample-documents",
-            help="Number of sample documents to fetch per index (default: 20)",
+            help="Number of sample documents per index, or 'all' for every document (default: 20)",
         ),
-    ] = 20,
+    ] = "20",
     detect_sensitive: Annotated[
         bool,
         typer.Option(
@@ -1208,6 +1225,23 @@ def serve(
         )
         probe_search = False
 
+    # Parse sample_documents option
+    if sample_documents.lower() == "all":
+        sample_docs_value: int | None = None
+    else:
+        try:
+            sample_docs_value = int(sample_documents)
+            if sample_docs_value < 1:
+                console.print(
+                    "[red]Error:[/red] --sample-documents must be a positive integer or 'all'."
+                )
+                raise typer.Exit(1)
+        except ValueError:
+            console.print(
+                "[red]Error:[/red] --sample-documents must be a positive integer or 'all'."
+            )
+            raise typer.Exit(1)
+
     console.print(
         Panel.fit(
             f"[bold]Meiliscan Dashboard[/bold]\n\n"
@@ -1222,7 +1256,7 @@ def serve(
         meili_api_key=api_key,
         dump_path=dump,
         probe_search=probe_search,
-        sample_documents=sample_documents,
+        sample_documents=sample_docs_value,
         detect_sensitive=detect_sensitive,
     )
 

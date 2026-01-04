@@ -190,6 +190,7 @@ def register_routes(app: FastAPI) -> None:
         api_key: str = Form(default=""),
         probe_search: str = Form(default=""),
         sample_documents: int = Form(default=20),
+        sample_all: str = Form(default=""),
         detect_sensitive: str = Form(default=""),
     ):
         """Connect to a MeiliSearch instance."""
@@ -203,8 +204,15 @@ def register_routes(app: FastAPI) -> None:
         # Update analysis options
         # HTML checkboxes submit their value only when checked, empty string otherwise
         state.probe_search = probe_search == "true"
-        state.sample_documents = max(1, min(sample_documents, 1000))  # Validate range
         state.detect_sensitive = detect_sensitive == "true"
+
+        # Handle sample_all checkbox - if checked, set to None (all docs)
+        if sample_all == "true":
+            state.sample_documents = None
+        else:
+            state.sample_documents = max(
+                1, min(sample_documents, 10000)
+            )  # Validate range
 
         # Close existing collector
         if state.collector:
@@ -220,6 +228,7 @@ def register_routes(app: FastAPI) -> None:
         request: Request,
         file: UploadFile = File(...),
         sample_documents: int = Form(default=20),
+        sample_all: str = Form(default=""),
         detect_sensitive: str = Form(default=""),
     ):
         """Upload and analyze a dump file."""
@@ -240,8 +249,15 @@ def register_routes(app: FastAPI) -> None:
 
         # Update analysis options (probe_search not applicable for dumps)
         state.probe_search = False
-        state.sample_documents = max(1, min(sample_documents, 1000))  # Validate range
         state.detect_sensitive = detect_sensitive == "true"
+
+        # Handle sample_all checkbox - if checked, set to None (all docs)
+        if sample_all == "true":
+            state.sample_documents = None
+        else:
+            state.sample_documents = max(
+                1, min(sample_documents, 10000)
+            )  # Validate range
 
         # Close existing collector
         if state.collector:
