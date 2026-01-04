@@ -455,37 +455,46 @@ const ProgressModal = {
     overlay: null,
     spinner: null,
     title: null,
-    phase: null,
-    message: null,
-    barFill: null,
-    count: null,
+    phaseStatus: null,
+    phaseBar: null,
+    indexLevel: null,
+    indexCount: null,
     indexName: null,
+    indexBar: null,
+    message: null,
     errorEl: null,
     eventSource: null,
+    currentPhase: null,
 
     init() {
         this.overlay = document.getElementById('progress-overlay');
         this.spinner = document.getElementById('progress-spinner');
         this.title = document.getElementById('progress-title');
-        this.phase = document.getElementById('progress-phase');
+        this.phaseStatus = document.getElementById('progress-phase-status');
+        this.phaseBar = document.getElementById('progress-phase-bar');
+        this.indexLevel = document.getElementById('progress-index-level');
+        this.indexCount = document.getElementById('progress-index-count');
+        this.indexName = document.getElementById('progress-index-name');
+        this.indexBar = document.getElementById('progress-index-bar');
         this.message = document.getElementById('progress-message');
-        this.barFill = document.getElementById('progress-bar-fill');
-        this.count = document.getElementById('progress-count');
-        this.indexName = document.getElementById('progress-index');
         this.errorEl = document.getElementById('progress-error');
     },
 
     show(titleText = 'Analyzing...') {
         if (!this.overlay) this.init();
         this.title.textContent = titleText;
-        this.phase.textContent = 'Initializing...';
-        this.message.textContent = '';
-        this.barFill.style.width = '0%';
-        this.barFill.classList.add('indeterminate');
-        this.count.textContent = '';
+        this.phaseStatus.textContent = 'Initializing';
+        this.phaseBar.style.width = '0%';
+        this.phaseBar.classList.add('indeterminate');
+        this.indexLevel.style.display = 'none';
+        this.indexCount.textContent = '';
         this.indexName.textContent = '';
+        this.indexBar.style.width = '0%';
+        this.message.textContent = '';
         this.errorEl.style.display = 'none';
         this.errorEl.textContent = '';
+        this.spinner.style.display = 'block';
+        this.currentPhase = null;
         this.overlay.classList.add('active');
     },
 
@@ -501,20 +510,26 @@ const ProgressModal = {
         this.errorEl.textContent = errorText;
         this.errorEl.style.display = 'block';
         this.spinner.style.display = 'none';
-        this.barFill.classList.remove('indeterminate');
+        this.phaseBar.classList.remove('indeterminate');
     },
 
     updateProgress(event) {
         if (!this.overlay) this.init();
 
-        // Update phase label
-        const phaseLabels = {
-            'collect': 'Collecting data...',
-            'parse': 'Parsing dump file...',
-            'analyze': 'Analyzing indexes...'
+        // Phase labels and progress percentages
+        const phaseConfig = {
+            'collect': { label: 'Collecting Data', percent: 33 },
+            'parse': { label: 'Parsing Dump', percent: 33 },
+            'analyze': { label: 'Analyzing Indexes', percent: 66 }
         };
-        if (event.phase) {
-            this.phase.textContent = phaseLabels[event.phase] || event.phase;
+
+        // Update phase if changed
+        if (event.phase && event.phase !== this.currentPhase) {
+            this.currentPhase = event.phase;
+            const config = phaseConfig[event.phase] || { label: event.phase, percent: 50 };
+            this.phaseStatus.textContent = config.label;
+            this.phaseBar.classList.remove('indeterminate');
+            this.phaseBar.style.width = config.percent + '%';
         }
 
         // Update message
@@ -522,22 +537,26 @@ const ProgressModal = {
             this.message.textContent = event.message;
         }
 
-        // Update progress bar
-        if (event.total && event.current !== undefined) {
-            const percent = Math.round((event.current / event.total) * 100);
-            this.barFill.classList.remove('indeterminate');
-            this.barFill.style.width = percent + '%';
-            this.count.textContent = `${event.current} / ${event.total}`;
-        } else {
-            this.barFill.classList.add('indeterminate');
-            this.count.textContent = '';
+        // Show/update index level when we have index info
+        if (event.index_uid || (event.total && event.current !== undefined)) {
+            this.indexLevel.style.display = 'block';
+            
+            // Update index name
+            if (event.index_uid) {
+                this.indexName.textContent = event.index_uid;
+            }
+            
+            // Update index progress bar and count
+            if (event.total && event.current !== undefined) {
+                const percent = Math.round((event.current / event.total) * 100);
+                this.indexBar.style.width = percent + '%';
+                this.indexCount.textContent = `${event.current} / ${event.total}`;
+            }
         }
 
-        // Update index name
-        if (event.index_uid) {
-            this.indexName.textContent = event.index_uid;
-        } else {
-            this.indexName.textContent = '';
+        // When analysis is complete, show 100%
+        if (event.phase === 'analyze' && event.current === event.total && event.total > 0) {
+            this.phaseBar.style.width = '100%';
         }
     },
 
@@ -555,7 +574,7 @@ const ProgressModal = {
         this.eventSource.addEventListener('status', (e) => {
             const data = JSON.parse(e.data);
             if (data.status === 'running') {
-                this.phase.textContent = 'Starting analysis...';
+                this.phaseStatus.textContent = 'Starting';
             }
         });
 
@@ -671,13 +690,33 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="progress-modal">
         <div id="progress-spinner" class="progress-spinner"></div>
         <div id="progress-title" class="progress-title">Analyzing...</div>
-        <div id="progress-phase" class="progress-phase">Initializing...</div>
-        <div id="progress-message" class="progress-message"></div>
-        <div class="progress-bar-container">
-            <div id="progress-bar-fill" class="progress-bar-fill indeterminate"></div>
+        
+        <div class="progress-levels">
+            <!-- Phase Level -->
+            <div class="progress-level">
+                <div class="progress-level-header">
+                    <span class="progress-level-label">Phase</span>
+                    <span id="progress-phase-status" class="progress-level-status">Initializing</span>
+                </div>
+                <div class="progress-bar-container">
+                    <div id="progress-phase-bar" class="progress-bar-fill phase-bar indeterminate"></div>
+                </div>
+            </div>
+            
+            <!-- Index Level -->
+            <div class="progress-level" id="progress-index-level" style="display: none;">
+                <div class="progress-level-header">
+                    <span class="progress-level-label">Current Index</span>
+                    <span id="progress-index-count" class="progress-level-status"></span>
+                </div>
+                <div id="progress-index-name" class="progress-level-detail"></div>
+                <div class="progress-bar-container">
+                    <div id="progress-index-bar" class="progress-bar-fill"></div>
+                </div>
+            </div>
         </div>
-        <div id="progress-count" class="progress-count"></div>
-        <div id="progress-index" class="progress-index"></div>
+        
+        <div id="progress-message" class="progress-message"></div>
         <div id="progress-error" class="progress-error" style="display: none;"></div>
     </div>
 </div>
