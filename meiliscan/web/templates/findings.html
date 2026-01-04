@@ -7,6 +7,37 @@
 
 {% if report %}
 
+<!-- Severity Summary -->
+<div class="card mb-2">
+    <div class="card-header">
+        <h2 class="card-title">Issues by Severity</h2>
+    </div>
+    <div class="flex gap-2 flex-wrap">
+        <a href="/findings?severity=critical{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
+           class="badge badge-red{% if current_severity == 'critical' %} badge-active{% endif %}" style="text-decoration: none;">
+            {{ severity_counts.critical }} Critical
+        </a>
+        <a href="/findings?severity=warning{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
+           class="badge badge-yellow{% if current_severity == 'warning' %} badge-active{% endif %}" style="text-decoration: none;">
+            {{ severity_counts.warning }} Warnings
+        </a>
+        <a href="/findings?severity=suggestion{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
+           class="badge badge-blue{% if current_severity == 'suggestion' %} badge-active{% endif %}" style="text-decoration: none;">
+            {{ severity_counts.suggestion }} Suggestions
+        </a>
+        <a href="/findings?severity=info{% if current_category %}&category={{ current_category }}{% endif %}{% if current_index %}&index={{ current_index }}{% endif %}" 
+           class="badge badge-gray{% if current_severity == 'info' %} badge-active{% endif %}" style="text-decoration: none;">
+            {{ severity_counts.info }} Info
+        </a>
+        {% if current_severity %}
+        <a href="/findings{% if current_category %}?category={{ current_category }}{% endif %}{% if current_index %}{% if current_category %}&{% else %}?{% endif %}index={{ current_index }}{% endif %}" 
+           class="badge badge-outline" style="text-decoration: none;">
+            Clear severity filter
+        </a>
+        {% endif %}
+    </div>
+</div>
+
 <!-- Filters -->
 <div class="card mb-2">
     <div class="card-header">

@@ -17,6 +17,22 @@ from meiliscan.web.app import AppState, run_analysis
 # Valid export formats
 EXPORT_FORMATS = ("json", "markdown", "sarif", "agent")
 
+# Severity order for sorting (lower number = higher priority)
+SEVERITY_ORDER = {
+    "critical": 0,
+    "warning": 1,
+    "suggestion": 2,
+    "info": 3,
+}
+
+
+def sort_findings_by_severity(findings: list) -> list:
+    """Sort findings by severity (critical first, then warning, suggestion, info)."""
+    return sorted(
+        findings,
+        key=lambda f: SEVERITY_ORDER.get(f.severity.value.lower(), 4),
+    )
+
 
 def register_routes(app: FastAPI) -> None:
     """Register all routes for the application."""
@@ -112,9 +128,26 @@ def register_routes(app: FastAPI) -> None:
         if index:
             filtered = [f for f in filtered if f.index_uid == index]
 
+        # Sort by severity (critical first)
+        filtered = sort_findings_by_severity(filtered)
+
         # Get unique categories and indexes for filters
         categories = sorted(set(f.category.value for f in all_findings))
         indexes = sorted(set(f.index_uid for f in all_findings if f.index_uid))
+
+        # Count findings by severity for display
+        severity_counts = {
+            "critical": sum(
+                1 for f in all_findings if f.severity.value.lower() == "critical"
+            ),
+            "warning": sum(
+                1 for f in all_findings if f.severity.value.lower() == "warning"
+            ),
+            "suggestion": sum(
+                1 for f in all_findings if f.severity.value.lower() == "suggestion"
+            ),
+            "info": sum(1 for f in all_findings if f.severity.value.lower() == "info"),
+        }
 
         return templates.TemplateResponse(
             "findings.html",
@@ -127,6 +160,7 @@ def register_routes(app: FastAPI) -> None:
                 "current_severity": severity,
                 "current_category": category,
                 "current_index": index,
+                "severity_counts": severity_counts,
             },
         )
 

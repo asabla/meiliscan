@@ -14,7 +14,7 @@
 {% if index_analysis %}
 
 <!-- Index Stats -->
-<div class="grid grid-4 mb-2">
+<div class="grid grid-2 mb-2">
     <div class="card stat">
         <div class="stat-value">{{ index_analysis.metadata.get('document_count', 0)|format_number }}</div>
         <div class="stat-label">Documents</div>
@@ -22,16 +22,6 @@
     <div class="card stat">
         <div class="stat-value">{{ index_analysis.statistics.get('field_count', 0) }}</div>
         <div class="stat-label">Fields</div>
-    </div>
-    <div class="card stat">
-        {% set critical = index_analysis.findings|selectattr('severity.value', 'equalto', 'critical')|list|length %}
-        <div class="stat-value text-red">{{ critical }}</div>
-        <div class="stat-label">Critical Issues</div>
-    </div>
-    <div class="card stat">
-        {% set warnings = index_analysis.findings|selectattr('severity.value', 'equalto', 'warning')|list|length %}
-        <div class="stat-value text-yellow">{{ warnings }}</div>
-        <div class="stat-label">Warnings</div>
     </div>
 </div>
 
@@ -186,13 +176,23 @@
 </div>
 
 <!-- Findings -->
+{% set critical = index_analysis.findings|selectattr('severity.value', 'equalto', 'critical')|list|length %}
+{% set warnings = index_analysis.findings|selectattr('severity.value', 'equalto', 'warning')|list|length %}
+{% set suggestions = index_analysis.findings|selectattr('severity.value', 'equalto', 'suggestion')|list|length %}
+{% set info = index_analysis.findings|selectattr('severity.value', 'equalto', 'info')|list|length %}
 <div class="card">
     <div class="card-header">
         <h2 class="card-title">Findings ({{ index_analysis.findings|length }})</h2>
+        <div class="flex gap-1 flex-wrap">
+            <a href="/findings?index={{ index_uid }}&severity=critical" class="badge badge-red" style="text-decoration: none;">{{ critical }} Critical</a>
+            <a href="/findings?index={{ index_uid }}&severity=warning" class="badge badge-yellow" style="text-decoration: none;">{{ warnings }} Warning</a>
+            <a href="/findings?index={{ index_uid }}&severity=suggestion" class="badge badge-blue" style="text-decoration: none;">{{ suggestions }} Suggestion</a>
+            <a href="/findings?index={{ index_uid }}&severity=info" class="badge badge-gray" style="text-decoration: none;">{{ info }} Info</a>
+        </div>
     </div>
 
     {% if index_analysis.findings %}
-    {% for finding in index_analysis.findings|sort(attribute='severity.value') %}
+    {% for finding in index_analysis.findings|sort_by_severity %}
     <div class="finding finding-{{ finding.severity.value|lower }}">
         <div class="finding-header">
             <div class="finding-title">
