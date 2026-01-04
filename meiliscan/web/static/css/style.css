@@ -497,18 +497,35 @@ tr:hover {
     color: var(--text-secondary);
 }
 
-/* Stat Row - for combined stat cards */
-.stat-row {
+/* Stat Stack - for combined stat cards (vertical layout) */
+.stat-stack {
     display: flex;
-    align-items: center;
+    flex-direction: column;
     justify-content: center;
-    gap: 2rem;
-    padding: 0.5rem 0;
+    gap: 0.75rem;
+    min-height: 100px;
 }
 
-.stat-divider {
-    width: 1px;
-    height: 3rem;
+.stat-stack-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+}
+
+.stat-stack-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.stat-stack-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+}
+
+.stat-stack-divider {
+    height: 1px;
     background-color: var(--border);
 }
 
