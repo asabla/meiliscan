@@ -76,8 +76,10 @@
     </div>
 </div>
 
+<!-- Health Score & Tasks Queue -->
+<div class="grid grid-2 mb-2">
 <!-- Health Score -->
-<div class="card mb-2">
+<div class="card">
     <div class="card-header">
         <h2 class="card-title">Health Score</h2>
     </div>
@@ -149,8 +151,8 @@
 </div>
 
 {% if tasks_summary %}
-<!-- Tasks Summary -->
-<div class="card mb-2">
+<!-- Tasks Queue -->
+<div class="card">
     <div class="card-header">
         <h2 class="card-title">Tasks Queue</h2>
         <a href="/tasks" class="btn btn-secondary btn-sm">View All →</a>
@@ -184,6 +186,7 @@
     {% endif %}
 </div>
 {% endif %}
+</div>
 
 <!-- Issues Overview -->
 <div class="grid grid-2 mb-2">
