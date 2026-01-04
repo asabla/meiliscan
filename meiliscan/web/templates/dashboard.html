@@ -625,10 +625,13 @@ async function handleConnectSubmit(event) {
     // Connect to SSE FIRST to catch all progress events
     ProgressModal.connectToEvents();
 
-    // Then submit the form (don't await - let it run in background)
+    // Then submit the form with JSON accept header to trigger background processing
     fetch('/connect', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: {
+            'Accept': 'application/json'
+        }
     }).catch(error => {
         ProgressModal.showError('Failed to connect: ' + error.message);
         setTimeout(() => {
@@ -648,10 +651,13 @@ async function handleUploadSubmit(event) {
     // Connect to SSE FIRST to catch all progress events
     ProgressModal.connectToEvents();
 
-    // Then submit the form (don't await - let it run in background)
+    // Then submit the form with JSON accept header to trigger background processing
     fetch('/upload', {
         method: 'POST',
-        body: formData
+        body: formData,
+        headers: {
+            'Accept': 'application/json'
+        }
     }).catch(error => {
         ProgressModal.showError('Failed to upload: ' + error.message);
         setTimeout(() => {
