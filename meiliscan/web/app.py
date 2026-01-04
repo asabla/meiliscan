@@ -21,6 +21,10 @@ class AppState:
         self.meili_url: str | None = None
         self.meili_api_key: str | None = None
         self.dump_path: Path | None = None
+        # Analysis options
+        self.probe_search: bool = False
+        self.sample_documents: int = 20
+        self.detect_sensitive: bool = False
 
 
 # Template filters - defined before create_app so they're available at registration time
@@ -81,6 +85,9 @@ def create_app(
     meili_url: str | None = None,
     meili_api_key: str | None = None,
     dump_path: Path | None = None,
+    probe_search: bool = False,
+    sample_documents: int = 20,
+    detect_sensitive: bool = False,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -88,6 +95,9 @@ def create_app(
         meili_url: MeiliSearch instance URL
         meili_api_key: MeiliSearch API key
         dump_path: Path to dump file for offline analysis
+        probe_search: Run read-only search probes to validate sort/filter configuration
+        sample_documents: Number of sample documents to fetch per index
+        detect_sensitive: Enable detection of potential PII/sensitive fields
 
     Returns:
         Configured FastAPI application
@@ -96,6 +106,9 @@ def create_app(
     state.meili_url = meili_url
     state.meili_api_key = meili_api_key
     state.dump_path = dump_path
+    state.probe_search = probe_search
+    state.sample_documents = sample_documents
+    state.detect_sensitive = detect_sensitive
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -150,14 +163,24 @@ def create_app(
 
 
 async def run_analysis(state: AppState) -> None:
-    """Run analysis and store results in state."""
+    """Run analysis and store results in state.
+
+    Uses the analysis options stored in state:
+    - sample_documents: Number of sample documents to fetch per index
+    - probe_search: Run search probes (live instance only)
+    - detect_sensitive: Enable PII/sensitive field detection
+    """
     try:
         if state.dump_path:
-            state.collector = DataCollector.from_dump(state.dump_path)
+            state.collector = DataCollector.from_dump(
+                state.dump_path,
+                max_sample_docs=state.sample_documents,
+            )
         elif state.meili_url:
             state.collector = DataCollector.from_url(
                 state.meili_url,
                 api_key=state.meili_api_key,
+                sample_docs=state.sample_documents,
             )
         else:
             return
@@ -167,8 +190,38 @@ async def run_analysis(state: AppState) -> None:
             print("Failed to collect data from source")
             return
 
+        # Build analysis options
+        analysis_options: dict = {
+            "detect_sensitive": state.detect_sensitive,
+            "sample_documents": state.sample_documents,
+        }
+
+        # Run search probes if requested (live instance only)
+        if state.probe_search and state.meili_url:
+            from meiliscan.analyzers.search_probe_analyzer import SearchProbeAnalyzer
+            from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+            probe_analyzer = SearchProbeAnalyzer()
+
+            # Access the underlying LiveInstanceCollector for search
+            live_collector = state.collector._collector
+            if isinstance(live_collector, LiveInstanceCollector):
+
+                async def search_fn(index_uid, query, filter, sort):
+                    return await live_collector.search(
+                        index_uid=index_uid,
+                        query=query,
+                        filter=filter,
+                        sort=sort,
+                    )
+
+                probe_findings, _ = await probe_analyzer.analyze(
+                    state.collector.indexes, search_fn
+                )
+                analysis_options["_probe_findings"] = probe_findings
+
         # Run analysis
-        reporter = Reporter(state.collector)
+        reporter = Reporter(state.collector, analysis_options=analysis_options)
         state.report = reporter.generate_report(source_url=state.meili_url)
     except Exception as e:
         # Log error but don't crash - UI will show "no data" state

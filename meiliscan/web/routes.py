@@ -56,6 +56,10 @@ def register_routes(app: FastAPI) -> None:
                 "source_dump": state.dump_path,
                 "tasks_summary": tasks_summary,
                 "score_breakdown": score_breakdown,
+                # Analysis options
+                "probe_search": state.probe_search,
+                "sample_documents": state.sample_documents,
+                "detect_sensitive": state.detect_sensitive,
             },
         )
 
@@ -150,6 +154,9 @@ def register_routes(app: FastAPI) -> None:
         request: Request,
         url: str = Form(...),
         api_key: str = Form(default=""),
+        probe_search: str = Form(default=""),
+        sample_documents: int = Form(default=20),
+        detect_sensitive: str = Form(default=""),
     ):
         """Connect to a MeiliSearch instance."""
         state: AppState = request.app.state.analyzer_state
@@ -158,6 +165,12 @@ def register_routes(app: FastAPI) -> None:
         state.meili_url = url
         state.meili_api_key = api_key if api_key else None
         state.dump_path = None
+
+        # Update analysis options
+        # HTML checkboxes submit their value only when checked, empty string otherwise
+        state.probe_search = probe_search == "true"
+        state.sample_documents = max(1, min(sample_documents, 1000))  # Validate range
+        state.detect_sensitive = detect_sensitive == "true"
 
         # Close existing collector
         if state.collector:
@@ -169,7 +182,12 @@ def register_routes(app: FastAPI) -> None:
         return RedirectResponse(url="/", status_code=303)
 
     @app.post("/upload", response_class=HTMLResponse)
-    async def upload_dump(request: Request, file: UploadFile = File(...)):
+    async def upload_dump(
+        request: Request,
+        file: UploadFile = File(...),
+        sample_documents: int = Form(default=20),
+        detect_sensitive: str = Form(default=""),
+    ):
         """Upload and analyze a dump file."""
         import tempfile
 
@@ -185,6 +203,11 @@ def register_routes(app: FastAPI) -> None:
         state.dump_path = tmp_path
         state.meili_url = None
         state.meili_api_key = None
+
+        # Update analysis options (probe_search not applicable for dumps)
+        state.probe_search = False
+        state.sample_documents = max(1, min(sample_documents, 1000))  # Validate range
+        state.detect_sensitive = detect_sensitive == "true"
 
         # Close existing collector
         if state.collector:
