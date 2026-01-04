@@ -336,6 +336,184 @@ def generate_events(count: int = 100) -> list[dict]:
     return events
 
 
+def generate_reviews(count: int = 300) -> list[dict]:
+    """Generate sample review documents."""
+    reviews = []
+    sentiments = ["positive", "neutral", "negative"]
+
+    for i in range(count):
+        review = {
+            "id": i + 1,
+            "review_id": f"REV-{i + 1:06d}",
+            "product_id": f"PROD-{random.randint(1, 500):05d}",
+            "user_id": f"USR-{random.randint(1, 200):06d}",
+            "title": f"Review for product {random.randint(1, 500)}",
+            "content": f"This is a {'great' if random.random() > 0.3 else 'disappointing'} product. "
+            * random.randint(1, 5),
+            "rating": random.randint(1, 5),
+            "sentiment": random.choice(sentiments),
+            "helpful_votes": random.randint(0, 100),
+            "verified_purchase": random.choice([True, False]),
+            "created_at": (
+                datetime.now() - timedelta(days=random.randint(1, 365))
+            ).isoformat(),
+        }
+        reviews.append(review)
+
+    return reviews
+
+
+def generate_categories(count: int = 50) -> list[dict]:
+    """Generate sample category documents."""
+    categories = []
+    parent_categories = ["Electronics", "Clothing", "Home", "Sports", "Books", "Food"]
+
+    for i in range(count):
+        category = {
+            "id": i + 1,
+            "category_id": f"CAT-{i + 1:04d}",
+            "name": f"Category {i + 1}",
+            "slug": f"category-{i + 1}",
+            "parent": random.choice(parent_categories)
+            if random.random() > 0.3
+            else None,
+            "level": random.randint(1, 3),
+            "product_count": random.randint(0, 500),
+            "is_active": random.choice([True, True, True, False]),  # 75% active
+        }
+        categories.append(category)
+
+    return categories
+
+
+def generate_tags(count: int = 100) -> list[dict]:
+    """Generate sample tag documents."""
+    tags = []
+    tag_types = ["product", "article", "user", "system"]
+
+    for i in range(count):
+        tag = {
+            "id": i + 1,
+            "tag_id": f"TAG-{i + 1:05d}",
+            "name": f"tag-{i + 1}",
+            "display_name": f"Tag {i + 1}",
+            "type": random.choice(tag_types),
+            "usage_count": random.randint(0, 1000),
+            "created_at": (
+                datetime.now() - timedelta(days=random.randint(1, 500))
+            ).isoformat(),
+        }
+        tags.append(tag)
+
+    return tags
+
+
+def generate_logs(count: int = 500) -> list[dict]:
+    """Generate sample log documents."""
+    logs = []
+    log_levels = ["debug", "info", "warning", "error", "critical"]
+    services = ["api", "worker", "scheduler", "indexer", "search"]
+
+    for i in range(count):
+        log = {
+            "id": i + 1,
+            "log_id": f"LOG-{i + 1:08d}",
+            "timestamp": (
+                datetime.now() - timedelta(hours=random.randint(1, 168))
+            ).isoformat(),
+            "level": random.choice(log_levels),
+            "service": random.choice(services),
+            "message": f"Log message {i + 1}: {'Operation completed successfully' if random.random() > 0.2 else 'Error occurred during processing'}",
+            "request_id": f"req-{random.randint(10000, 99999)}",
+            "user_id": f"USR-{random.randint(1, 200):06d}"
+            if random.random() > 0.3
+            else None,
+            "duration_ms": random.randint(1, 5000),
+        }
+        logs.append(log)
+
+    return logs
+
+
+def generate_notifications(count: int = 200) -> list[dict]:
+    """Generate sample notification documents."""
+    notifications = []
+    notification_types = ["email", "push", "sms", "in_app"]
+    statuses = ["pending", "sent", "delivered", "failed", "read"]
+
+    for i in range(count):
+        notification = {
+            "id": i + 1,
+            "notification_id": f"NOTIF-{i + 1:06d}",
+            "user_id": f"USR-{random.randint(1, 200):06d}",
+            "type": random.choice(notification_types),
+            "title": f"Notification {i + 1}",
+            "message": f"This is notification message {i + 1}",
+            "status": random.choice(statuses),
+            "created_at": (
+                datetime.now() - timedelta(hours=random.randint(1, 72))
+            ).isoformat(),
+            "sent_at": (
+                datetime.now() - timedelta(hours=random.randint(0, 71))
+            ).isoformat()
+            if random.random() > 0.2
+            else None,
+        }
+        notifications.append(notification)
+
+    return notifications
+
+
+def generate_inventory(count: int = 400) -> list[dict]:
+    """Generate sample inventory documents."""
+    inventory = []
+    warehouses = ["WH-EAST", "WH-WEST", "WH-CENTRAL", "WH-SOUTH"]
+
+    for i in range(count):
+        item = {
+            "id": i + 1,
+            "inventory_id": f"INV-{i + 1:06d}",
+            "product_id": f"PROD-{random.randint(1, 500):05d}",
+            "warehouse": random.choice(warehouses),
+            "quantity": random.randint(0, 1000),
+            "reserved": random.randint(0, 50),
+            "reorder_point": random.randint(10, 100),
+            "last_restocked": (
+                datetime.now() - timedelta(days=random.randint(1, 60))
+            ).isoformat(),
+        }
+        inventory.append(item)
+
+    return inventory
+
+
+def generate_analytics(count: int = 1000) -> list[dict]:
+    """Generate sample analytics/metrics documents."""
+    analytics = []
+    metrics = ["page_view", "click", "conversion", "signup", "purchase"]
+    sources = ["organic", "paid", "social", "email", "direct"]
+
+    for i in range(count):
+        record = {
+            "id": i + 1,
+            "event_id": f"EVT-{i + 1:08d}",
+            "metric": random.choice(metrics),
+            "source": random.choice(sources),
+            "value": random.randint(1, 100),
+            "session_id": f"sess-{random.randint(100000, 999999)}",
+            "user_id": f"USR-{random.randint(1, 200):06d}"
+            if random.random() > 0.4
+            else None,
+            "timestamp": (
+                datetime.now() - timedelta(hours=random.randint(1, 168))
+            ).isoformat(),
+            "page": f"/page-{random.randint(1, 50)}",
+        }
+        analytics.append(record)
+
+    return analytics
+
+
 # Index configurations with intentional issues for the analyzer to detect
 INDEX_CONFIGS = {
     "products": {
@@ -493,6 +671,168 @@ INDEX_CONFIGS = {
         },
         "documents": generate_events,
         "doc_count": 100,
+    },
+    "reviews": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["title", "content"],
+            "filterableAttributes": [
+                "rating",
+                "sentiment",
+                "verified_purchase",
+                "product_id",
+            ],
+            "sortableAttributes": ["rating", "helpful_votes", "created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_reviews,
+        "doc_count": 300,
+    },
+    "categories": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "slug"],
+            "filterableAttributes": ["parent", "level", "is_active"],
+            "sortableAttributes": ["product_count", "level"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_categories,
+        "doc_count": 50,
+    },
+    "tags": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["name", "display_name"],
+            "filterableAttributes": ["type"],
+            "sortableAttributes": ["usage_count", "created_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_tags,
+        "doc_count": 100,
+    },
+    "logs": {
+        "primaryKey": "id",
+        "settings": {
+            # S001: Wildcard searchable (Critical)
+            "searchableAttributes": ["*"],
+            "filterableAttributes": ["level", "service"],
+            "sortableAttributes": ["timestamp", "duration_ms"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_logs,
+        "doc_count": 500,
+    },
+    "notifications": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["title", "message"],
+            "filterableAttributes": ["type", "status", "user_id"],
+            "sortableAttributes": ["created_at", "sent_at"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_notifications,
+        "doc_count": 200,
+    },
+    "inventory": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["product_id", "warehouse"],
+            "filterableAttributes": ["warehouse", "quantity"],
+            "sortableAttributes": ["quantity", "last_restocked"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+        },
+        "documents": generate_inventory,
+        "doc_count": 400,
+    },
+    "analytics": {
+        "primaryKey": "id",
+        "settings": {
+            "searchableAttributes": ["page"],
+            "filterableAttributes": ["metric", "source"],
+            "sortableAttributes": ["timestamp", "value"],
+            "displayedAttributes": ["*"],
+            "rankingRules": [
+                "words",
+                "typo",
+                "proximity",
+                "attribute",
+                "sort",
+                "exactness",
+            ],
+            "stopWords": [],
+            "synonyms": {},
+            "distinctAttribute": None,
+            # S010: High pagination limit
+            "pagination": {"maxTotalHits": 100000},
+        },
+        "documents": generate_analytics,
+        "doc_count": 1000,
     },
 }
 
