@@ -93,7 +93,7 @@ class TestDumpParser:
 
     @pytest.fixture
     def mock_dump_file(self, mock_dump_dir: Path) -> Path:
-        """Create a mock .dump file (tar.gz)."""
+        """Create a mock .dump file (tar.gz) with a top-level dir."""
         dump_file = mock_dump_dir / "test.dump"
 
         # Find the dump directory
@@ -104,6 +104,21 @@ class TestDumpParser:
         # Create tar.gz archive
         with tarfile.open(dump_file, "w:gz") as tar:
             tar.add(dump_root, arcname=dump_root.name)
+
+        return dump_file
+
+    @pytest.fixture
+    def mock_dump_file_root_content(self, mock_dump_dir: Path) -> Path:
+        """Create a mock .dump file where content is at archive root."""
+        dump_file = mock_dump_dir / "root_content.dump"
+
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+
+        with tarfile.open(dump_file, "w:gz") as tar:
+            for entry in dump_root.iterdir():
+                tar.add(entry, arcname=entry.name)
 
         return dump_file
 
@@ -143,6 +158,84 @@ class TestDumpParser:
 
         version = await parser.get_version()
         assert version == "V6"
+
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_connect_root_content_archive(
+        self, mock_dump_file_root_content: Path
+    ):
+        """Test .dump archives with content stored at root."""
+        parser = DumpParser(mock_dump_file_root_content)
+        result = await parser.connect()
+
+        assert result is True
+        assert parser._extracted_path is not None
+        assert (parser._extracted_path / "metadata.json").exists()
+
+        version = await parser.get_version()
+        assert version == "V6"
+
+        indexes = await parser.get_indexes()
+        assert len(indexes) == 1
+        assert indexes[0].uid == "products"
+
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_connect_multiple_dump_roots_fails(self, mock_dump_dir: Path):
+        """Test that archives with multiple dump roots are rejected."""
+        dump_root_1 = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+
+        dump_root_2 = mock_dump_dir / "dump-20260102-120000"
+        dump_root_2.mkdir()
+        (dump_root_2 / "metadata.json").write_text(
+            json.dumps({"dumpVersion": "V6", "dbVersion": "1.7.0"})
+        )
+        (dump_root_2 / "indexes").mkdir()
+
+        dump_file = mock_dump_dir / "multi_roots.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root_1, arcname=dump_root_1.name)
+            tar.add(dump_root_2, arcname=dump_root_2.name)
+
+        parser = DumpParser(dump_file)
+        result = await parser.connect()
+
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_connect_root_content_with_extra_entries(self, mock_dump_dir: Path):
+        """Test root-content dumps with unrelated extra entries."""
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+
+        junk_dir = mock_dump_dir / "junk"
+        junk_dir.mkdir()
+        (junk_dir / "note.txt").write_text("hello")
+
+        junk_file = mock_dump_dir / "README.txt"
+        junk_file.write_text("junk")
+
+        dump_file = mock_dump_dir / "root_plus_extra.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            for entry in dump_root.iterdir():
+                tar.add(entry, arcname=entry.name)
+
+            tar.add(junk_dir, arcname=junk_dir.name)
+            tar.add(junk_file, arcname=junk_file.name)
+
+        parser = DumpParser(dump_file)
+        result = await parser.connect()
+
+        assert result is True
+
+        indexes = await parser.get_indexes()
+        assert len(indexes) == 1
+        assert indexes[0].uid == "products"
 
         await parser.close()
 

@@ -67,12 +67,30 @@ class DumpParser(BaseCollector):
             with tarfile.open(self.dump_path, "r:gz") as tar:
                 tar.extractall(temp_path)
 
-            # Find the extracted directory (should be dump-{timestamp})
-            extracted_dirs = list(temp_path.iterdir())
-            if not extracted_dirs:
+            # Determine dump root.
+            # Some dumps are packaged as:
+            #   dump-{timestamp}/metadata.json, indexes/, tasks/
+            # while others have the content directly at the archive root.
+            extracted_entries = list(temp_path.iterdir())
+            if not extracted_entries:
                 return False
 
-            self._extracted_path = extracted_dirs[0]
+            def looks_like_dump_root(path: Path) -> bool:
+                return (path / "metadata.json").exists() or (path / "indexes").is_dir()
+
+            if looks_like_dump_root(temp_path):
+                self._extracted_path = temp_path
+            else:
+                extracted_dirs = [p for p in extracted_entries if p.is_dir()]
+
+                if len(extracted_dirs) == 1 and looks_like_dump_root(extracted_dirs[0]):
+                    self._extracted_path = extracted_dirs[0]
+                else:
+                    candidates = [d for d in extracted_dirs if looks_like_dump_root(d)]
+                    if len(candidates) != 1:
+                        # Multiple dump roots are not supported.
+                        return False
+                    self._extracted_path = candidates[0]
 
             emit_parse(progress_cb, "Reading dump metadata...")
 
