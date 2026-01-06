@@ -228,6 +228,151 @@ def register_routes(app: FastAPI) -> None:
             },
         )
 
+    @app.get("/search", response_class=HTMLResponse)
+    async def search_playground(request: Request, index: str | None = None):
+        """Render search playground page (live instances only)."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        is_live = bool(state.meili_url)
+        meili_url = state.meili_url
+        indexes: list[str] = []
+        selected_index: str | None = None
+        index_settings: dict | None = None
+
+        if is_live and meili_url:
+            from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+            collector = LiveInstanceCollector(
+                url=meili_url,
+                api_key=state.meili_api_key,
+            )
+            try:
+                if await collector.connect():
+                    indexes = [idx.uid for idx in await collector.get_indexes()]
+                    indexes.sort()
+
+                    selected_index = index or (indexes[0] if indexes else None)
+                    if selected_index:
+                        if not collector._client:
+                            raise RuntimeError("Collector client not initialized")
+
+                        settings_response = await collector._client.get(
+                            f"/indexes/{selected_index}/settings"
+                        )
+                        settings_response.raise_for_status()
+                        index_settings = settings_response.json()
+            finally:
+                await collector.close()
+
+        return templates.TemplateResponse(
+            "search.html",
+            {
+                "request": request,
+                "is_live": is_live,
+                "indexes": indexes,
+                "selected_index": selected_index,
+                "index_settings": index_settings,
+            },
+        )
+
+    @app.post("/search/{index_uid}/results", response_class=HTMLResponse)
+    async def search_results(
+        request: Request,
+        index_uid: str,
+        q: str = Form(default=""),
+        filter: str = Form(default=""),
+        sort_field: str = Form(default=""),
+        sort_direction: str = Form(default="asc"),
+        distinct: str = Form(default=""),
+        hitsPerPage: int = Form(default=20),
+        page: int = Form(default=1),
+    ):
+        """Perform a live search and return results partial (HTMX)."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        if not state.meili_url:
+            return templates.TemplateResponse(
+                "components/search_results.html",
+                {
+                    "request": request,
+                    "error": "Live connection required for search",
+                    "results": None,
+                    "search_params": {},
+                },
+            )
+
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+        error: str | None = None
+        results: dict | None = None
+
+        hits_per_page = max(1, min(int(hitsPerPage), 1000))
+        page_num = max(1, int(page))
+
+        filter_expr: str | None = filter.strip() or None
+        sort: list[str] | None = (
+            [f"{sort_field.strip()}:{sort_direction}"] if sort_field.strip() else None
+        )
+        distinct_attr: str | None = distinct.strip() or None
+
+        search_params: dict[str, object] = {
+            "q": q,
+            "hitsPerPage": hits_per_page,
+            "page": page_num,
+        }
+        if filter_expr:
+            search_params["filter"] = filter_expr
+        if sort:
+            search_params["sort"] = sort
+        if distinct_attr:
+            search_params["distinct"] = distinct_attr
+
+        meili_url = state.meili_url
+        if not meili_url:
+            return templates.TemplateResponse(
+                "components/search_results.html",
+                {
+                    "request": request,
+                    "error": "Live connection required for search",
+                    "results": None,
+                    "search_params": {},
+                },
+            )
+
+        collector = LiveInstanceCollector(
+            url=meili_url,
+            api_key=state.meili_api_key,
+        )
+        try:
+            if not await collector.connect():
+                error = "Failed to connect to MeiliSearch instance"
+            else:
+                results = await collector.search(
+                    index_uid=index_uid,
+                    query=q,
+                    filter=filter_expr,
+                    sort=sort,
+                    page=page_num,
+                    hits_per_page=hits_per_page,
+                    distinct=distinct_attr,
+                )
+        except Exception as e:
+            error = str(e)
+        finally:
+            await collector.close()
+
+        return templates.TemplateResponse(
+            "components/search_results.html",
+            {
+                "request": request,
+                "error": error,
+                "results": results,
+                "search_params": search_params,
+            },
+        )
+
     @app.get("/tasks", response_class=HTMLResponse)
     async def tasks_page(
         request: Request,

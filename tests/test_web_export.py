@@ -161,14 +161,20 @@ class TestExportEndpoint:
 
 
 class TestTasksRoutes:
-    """Smoke tests for tasks pages."""
-
-    def test_tasks_page_exists(self):
-        """Test /tasks returns an HTML page."""
-        app = create_app()
-        client = TestClient(app)
-
+    def test_tasks_page_exists(self, client):
         response = client.get("/tasks")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_tasks_list_exists(self, client):
+        response = client.get("/tasks/list")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+
+class TestSearchRoutes:
+    def test_search_page_exists(self, client):
+        response = client.get("/search")
         assert response.status_code == 200
         assert "text/html" in response.headers["content-type"]
 
