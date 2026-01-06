@@ -125,10 +125,38 @@ class TestDumpParser:
     @pytest.mark.asyncio
     async def test_connect_success(self, mock_dump_file: Path):
         """Test successful connection to dump file."""
+        from meiliscan.core.progress import ProgressEvent
+
+        events: list[ProgressEvent] = []
+
+        def progress_cb(event: ProgressEvent) -> None:
+            events.append(event)
+
         parser = DumpParser(mock_dump_file)
-        result = await parser.connect()
+        result = await parser.connect(progress_cb)
 
         assert result is True
+
+        assert any(e.phase == "parse" for e in events)
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_progress_callback_called_many_times(self, mock_dump_file: Path):
+        """Test that large document reads trigger repeated progress yields."""
+        from meiliscan.core.progress import ProgressEvent
+
+        events: list[ProgressEvent] = []
+
+        def progress_cb(event: ProgressEvent) -> None:
+            events.append(event)
+
+        parser = DumpParser(mock_dump_file, max_sample_docs=None)
+        result = await parser.connect(progress_cb)
+        assert result is True
+
+        parse_events = [e for e in events if e.phase == "parse"]
+        assert len(parse_events) >= 3
+
         await parser.close()
 
     @pytest.mark.asyncio
