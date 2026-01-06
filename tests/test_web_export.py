@@ -160,6 +160,28 @@ class TestExportEndpoint:
         assert "20240101" in disposition
 
 
+class TestTasksRoutes:
+    """Smoke tests for tasks pages."""
+
+    def test_tasks_page_exists(self):
+        """Test /tasks returns an HTML page."""
+        app = create_app()
+        client = TestClient(app)
+
+        response = client.get("/tasks")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+    def test_tasks_list_exists(self):
+        """Test /tasks/list returns an HTML fragment."""
+        app = create_app()
+        client = TestClient(app)
+
+        response = client.get("/tasks/list")
+        assert response.status_code == 200
+        assert "text/html" in response.headers["content-type"]
+
+
 class TestExportWithoutReport:
     """Tests for export when no report is available."""
 
