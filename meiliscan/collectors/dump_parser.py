@@ -1,5 +1,6 @@
 """Dump file parser for MeiliSearch dumps."""
 
+import asyncio
 import json
 import tarfile
 import tempfile
@@ -66,6 +67,10 @@ class DumpParser(BaseCollector):
             # Extract the dump
             with tarfile.open(self.dump_path, "r:gz") as tar:
                 tar.extractall(temp_path)
+
+            # Dump extraction and parsing are mostly synchronous and can block the
+            # event loop. Yield once so any scheduled progress callbacks flush.
+            await asyncio.sleep(0)
 
             # Determine dump root.
             # Some dumps are packaged as:
@@ -180,6 +185,9 @@ class DumpParser(BaseCollector):
             if documents_path.exists():
                 with open(documents_path, "r") as f:
                     for i, line in enumerate(f):
+                        if i % 2000 == 0:
+                            await asyncio.sleep(0)
+
                         doc_count += 1
                         doc = json.loads(line)
 
