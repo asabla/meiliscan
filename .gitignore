@@ -31,7 +31,7 @@ Thumbs.db
 
 # Archive directory Python artifacts (optional, for development)
 archive/python-v1/.venv/
-archive/python-v1/__pycache__/
+archive/python-v1/**/__pycache__/
 archive/python-v1/*.py[oc]
 archive/python-v1/.pytest_cache/
 archive/python-v1/.ruff_cache/
