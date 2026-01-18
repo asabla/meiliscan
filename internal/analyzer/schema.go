@@ -99,9 +99,24 @@ func (a *SchemaAnalyzer) Analyze(data *collector.CollectedData) []*finding.Findi
 			findings = append(findings, f)
 		}
 
+		// S010: High pagination limit (separate from S009)
+		if f := a.checkHighPaginationLimit(idx); f != nil {
+			findings = append(findings, f)
+		}
+
 		// S011: Primary key issues
 		if ff := a.checkPrimaryKey(idx); len(ff) > 0 {
 			findings = append(findings, ff...)
+		}
+
+		// S005: Wildcard displayedAttributes with many fields
+		if f := a.checkWildcardDisplayed(idx); f != nil {
+			findings = append(findings, f)
+		}
+
+		// S008: No distinct attribute
+		if f := a.checkDistinctAttribute(idx); f != nil {
+			findings = append(findings, f)
 		}
 	}
 
@@ -318,6 +333,99 @@ func (a *SchemaAnalyzer) checkPaginationSettings(idx collector.IndexData) *findi
 				"current_value":     maxHits,
 				"recommended_value": 1000,
 			})
+	}
+
+	return nil
+}
+
+// S010: High pagination limit
+func (a *SchemaAnalyzer) checkHighPaginationLimit(idx collector.IndexData) *finding.Finding {
+	if idx.Settings == nil || idx.Settings.Pagination == nil {
+		return nil
+	}
+
+	maxHits := idx.Settings.Pagination.MaxTotalHits
+
+	// Very high pagination limit
+	if maxHits > 10000 {
+		return finding.New(
+			"MEILI-S010",
+			"High pagination limit",
+			fmt.Sprintf("Index '%s' has maxTotalHits set to %d. Very high limits can impact performance on deep pagination.", idx.UID, maxHits),
+			finding.SeveritySuggestion,
+			finding.CategorySchema,
+		).WithIndex(idx.UID).
+			WithRecommendation("Consider if users really need to paginate that far. Lower limits improve performance.").
+			WithDetails(map[string]interface{}{
+				"current_value": maxHits,
+			})
+	}
+
+	return nil
+}
+
+// S005: Wildcard displayedAttributes with many fields
+func (a *SchemaAnalyzer) checkWildcardDisplayed(idx collector.IndexData) *finding.Finding {
+	if idx.Settings == nil {
+		return nil
+	}
+
+	// Check for wildcard displayedAttributes
+	displayed := idx.Settings.DisplayedAttributes
+	if len(displayed) != 1 || displayed[0] != "*" {
+		return nil
+	}
+
+	// Count fields from field distribution
+	fieldCount := len(idx.FieldDistribution)
+	if fieldCount == 0 {
+		// Estimate from sample documents
+		fields := make(map[string]struct{})
+		for _, doc := range idx.SampleDocuments {
+			for k := range doc {
+				fields[k] = struct{}{}
+			}
+		}
+		fieldCount = len(fields)
+	}
+
+	if fieldCount > 20 {
+		return finding.New(
+			"MEILI-S005",
+			"Wildcard displayedAttributes with many fields",
+			fmt.Sprintf("Index '%s' has wildcard (*) displayedAttributes but contains %d fields. Consider specifying only needed fields to reduce response size.", idx.UID, fieldCount),
+			finding.SeveritySuggestion,
+			finding.CategorySchema,
+		).WithIndex(idx.UID).
+			WithRecommendation("Specify only the fields you need to return in search results to reduce bandwidth and improve performance.").
+			WithDetails(map[string]interface{}{
+				"field_count": fieldCount,
+			})
+	}
+
+	return nil
+}
+
+// S008: No distinct attribute
+func (a *SchemaAnalyzer) checkDistinctAttribute(idx collector.IndexData) *finding.Finding {
+	if idx.Settings == nil {
+		return nil
+	}
+
+	// Only suggest for larger indexes
+	if idx.NumberOfDocuments < 1000 {
+		return nil
+	}
+
+	if idx.Settings.DistinctAttribute == nil || *idx.Settings.DistinctAttribute == "" {
+		return finding.New(
+			"MEILI-S008",
+			"No distinct attribute configured",
+			fmt.Sprintf("Index '%s' has no distinct attribute configured. If documents may have near-duplicates, setting a distinct attribute can improve result quality.", idx.UID),
+			finding.SeveritySuggestion,
+			finding.CategorySchema,
+		).WithIndex(idx.UID).
+			WithRecommendation("Consider setting a distinct attribute if your index may return very similar results (e.g., same product in different colors).")
 	}
 
 	return nil
