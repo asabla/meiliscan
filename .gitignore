@@ -1,18 +1,39 @@
-# Python-generated files
-__pycache__/
-*.py[oc]
-build/
-dist/
-wheels/
-*.egg-info
+# Go build artifacts (binary at root)
+/meiliscan
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
 
-# Virtual environments
-.venv
+# Test binary
+*.test
 
-# Test artifacts
-test-dump.dump
+# Output of go coverage tool
+*.out
+coverage.html
+
+# Dependency directories
+vendor/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local test files
 *.dump
-htmlcov/
-.coverage
-.pytest_cache/
-.ruff_cache/
+
+# Archive directory Python artifacts (optional, for development)
+archive/python-v1/.venv/
+archive/python-v1/__pycache__/
+archive/python-v1/*.py[oc]
+archive/python-v1/.pytest_cache/
+archive/python-v1/.ruff_cache/
+archive/python-v1/htmlcov/
+archive/python-v1/.coverage
