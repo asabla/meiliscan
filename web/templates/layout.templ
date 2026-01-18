@@ -1,0 +1,87 @@
+package templates
+
+import "fmt"
+
+templ Layout(title string, currentPath string) {
+	<!DOCTYPE html>
+	<html lang="en">
+		<head>
+			<meta charset="UTF-8"/>
+			<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+			<title>{ title } - Meiliscan</title>
+			<link rel="stylesheet" href="/static/style.css"/>
+			<script src="/static/htmx.min.js"></script>
+		</head>
+		<body>
+			<nav>
+				<div class="container">
+					<a href="/" class="logo">Meiliscan</a>
+					<ul class="nav-links">
+						<li>
+							<a href="/" class={ templ.KV("active", currentPath == "/") }>Dashboard</a>
+						</li>
+						<li>
+							<a href="/findings" class={ templ.KV("active", currentPath == "/findings") }>Findings</a>
+						</li>
+					</ul>
+				</div>
+			</nav>
+			<main>
+				<div class="container">
+					{ children... }
+				</div>
+			</main>
+		</body>
+	</html>
+}
+
+// Helper to render severity icon
+func SeverityIcon(severity string) string {
+	switch severity {
+	case "critical":
+		return "\u26a0\ufe0f" // Warning sign
+	case "warning":
+		return "\u26a0\ufe0f"
+	case "suggestion":
+		return "\u2139\ufe0f" // Info
+	case "info":
+		return "\u2139\ufe0f"
+	default:
+		return "\u2022" // Bullet
+	}
+}
+
+// Helper to render severity color class
+func SeverityColor(severity string) string {
+	switch severity {
+	case "critical":
+		return "red"
+	case "warning":
+		return "yellow"
+	case "suggestion":
+		return "blue"
+	case "info":
+		return "gray"
+	default:
+		return "gray"
+	}
+}
+
+// Helper to format numbers with commas
+func FormatNumber(n int) string {
+	if n < 1000 {
+		return fmt.Sprintf("%d", n)
+	}
+	if n < 1000000 {
+		return fmt.Sprintf("%dk", n/1000)
+	}
+	return fmt.Sprintf("%.1fM", float64(n)/1000000)
+}
+
+// Helper for pluralization
+func plural(count int, singular, plural string) string {
+	if count == 1 {
+		return singular
+	}
+	return plural
+}

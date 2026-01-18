@@ -1,0 +1,429 @@
+package templates
+
+import (
+	"fmt"
+	"github.com/asabla/meiliscan/internal/collector"
+	"github.com/asabla/meiliscan/internal/finding"
+	"github.com/asabla/meiliscan/internal/report"
+)
+
+// DashboardData holds data for rendering the dashboard
+type DashboardData struct {
+	Report       *report.Report
+	Indexes      []collector.IndexData
+	TopFindings  []*finding.Finding
+	IsConnected  bool
+	SourceURL    string
+	ErrorMessage string
+}
+
+templ Dashboard(data DashboardData) {
+	@Layout("Dashboard", "/") {
+		if data.IsConnected && data.Report != nil {
+			@connectedDashboard(data)
+		} else {
+			@welcomeDashboard(data.ErrorMessage)
+		}
+	}
+}
+
+templ welcomeDashboard(errorMsg string) {
+	<div class="welcome-container">
+		<div class="welcome-header mb-2">
+			<h1>Welcome to Meiliscan</h1>
+			<p class="text-secondary">Analyze your Meilisearch instance for optimization opportunities</p>
+		</div>
+		if errorMsg != "" {
+			<div class="alert alert-error mb-2">
+				{ errorMsg }
+			</div>
+		}
+		<div class="grid grid-2">
+			<!-- Connection Form -->
+			<div class="card">
+				<div class="card-header">
+					<h2 class="card-title">Connect to Instance</h2>
+					<span class="badge badge-green">Live</span>
+				</div>
+				<p class="text-secondary mb-2">Connect to a running Meilisearch instance for real-time analysis</p>
+				<form id="connect-form" action="/connect" method="post">
+					<div class="form-group">
+						<label for="url">Instance URL</label>
+						<input type="url" id="url" name="url" value="http://localhost:7700" required/>
+					</div>
+					<div class="form-group">
+						<label for="api_key">API Key <span class="text-secondary">(optional)</span></label>
+						<input type="password" id="api_key" name="api_key" placeholder="Master key or API key"/>
+					</div>
+					<button type="submit" class="btn btn-primary" style="width: 100%;">Connect & Analyze</button>
+				</form>
+			</div>
+			<!-- Upload Form -->
+			<div class="card">
+				<div class="card-header">
+					<h2 class="card-title">Analyze Dump File</h2>
+					<span class="badge badge-blue">Offline</span>
+				</div>
+				<p class="text-secondary mb-2">Upload a Meilisearch dump file for offline analysis</p>
+				<form id="upload-form" action="/upload" method="post" enctype="multipart/form-data">
+					<div class="form-group">
+						<label for="file">Select .dump file</label>
+						<input type="file" id="file" name="file" accept=".dump" required/>
+					</div>
+					<button type="submit" class="btn btn-secondary" style="width: 100%;">Upload & Analyze</button>
+				</form>
+			</div>
+		</div>
+	</div>
+	@progressModal()
+}
+
+templ connectedDashboard(data DashboardData) {
+	<!-- Status Bar -->
+	<div class="status-bar mb-2">
+		<div class="status-bar-info">
+			<span class="status-indicator status-live"></span>
+			<span class="status-text">
+				<strong>Live Instance:</strong> { data.SourceURL }
+				if data.Report.Instance.Version != "" {
+					<span class="text-secondary">(v{ data.Report.Instance.Version })</span>
+				}
+			</span>
+		</div>
+		<div class="status-bar-actions">
+			<a href="/api/export?format=json" class="btn btn-secondary btn-sm">Export JSON</a>
+			<form action="/disconnect" method="post" style="margin: 0;">
+				<button type="submit" class="btn btn-outline btn-sm">Disconnect</button>
+			</form>
+		</div>
+	</div>
+	<!-- Summary Stats -->
+	<div class="grid stats-tasks-grid mb-2">
+		<div class="card">
+			<div class="stat-stack">
+				<div class="stat-stack-item">
+					<div class="stat-stack-value">{ fmt.Sprintf("%d", data.Report.Instance.IndexCount) }</div>
+					<div class="stat-stack-label">Indexes</div>
+				</div>
+				<div class="stat-stack-divider"></div>
+				<div class="stat-stack-item">
+					<div class="stat-stack-value">{ FormatNumber(int(data.Report.Instance.TotalDocuments)) }</div>
+					<div class="stat-stack-label">Documents</div>
+				</div>
+			</div>
+		</div>
+		<div class="card stat">
+			<div class="stat-value">{ fmt.Sprintf("%d", data.Report.Summary.TotalFindings) }</div>
+			<div class="stat-label">Total Findings</div>
+		</div>
+	</div>
+	<!-- Health Score & Indexes -->
+	<div class="grid grid-2 mb-2">
+		@healthScoreCard(data.Report.Summary)
+		@indexesCard(data.Indexes, data.Report.Findings)
+	</div>
+	<!-- Issues by Severity -->
+	<div class="grid grid-2 mb-2">
+		@severitySummaryCard(data.Report.Summary, data.TopFindings)
+	</div>
+}
+
+templ healthScoreCard(summary report.Summary) {
+	<div class="card">
+		<div class="card-header">
+			<h2 class="card-title">Health Score</h2>
+		</div>
+		<div class="health-score-container">
+			<div class="health-score-display">
+				<div class={ "health-score-value", templ.KV("text-green", summary.HealthScore >= 80), templ.KV("text-yellow", summary.HealthScore >= 50 && summary.HealthScore < 80), templ.KV("text-red", summary.HealthScore < 50) }>
+					{ fmt.Sprintf("%d", summary.HealthScore) }
+				</div>
+				<div class="health-score-label">out of 100</div>
+				<span class={ "badge", templ.KV("badge-green", summary.HealthStatus == "healthy"), templ.KV("badge-yellow", summary.HealthStatus == "warning"), templ.KV("badge-red", summary.HealthStatus == "critical") }>
+					{ summary.HealthStatus }
+				</span>
+				<div class="health-bar" style="margin-top: 1rem;">
+					<div
+						class={ "health-bar-fill", templ.KV("good", summary.HealthScore >= 80), templ.KV("warning", summary.HealthScore >= 50 && summary.HealthScore < 80), templ.KV("critical", summary.HealthScore < 50) }
+						style={ fmt.Sprintf("width: %d%%;", summary.HealthScore) }
+					></div>
+				</div>
+			</div>
+			<div class="health-score-calculation">
+				<table class="score-table">
+					<thead>
+						<tr>
+							<th>Severity</th>
+							<th>Count</th>
+							<th>Weight</th>
+							<th>Penalty</th>
+						</tr>
+					</thead>
+					<tbody>
+						<tr>
+							<td><span class="text-red">Critical</span></td>
+							<td>{ fmt.Sprintf("%d", summary.CriticalCount) }</td>
+							<td>x 25</td>
+							<td class="text-red">{ fmt.Sprintf("-%d", summary.CriticalCount * 25) }</td>
+						</tr>
+						<tr>
+							<td><span class="text-yellow">Warnings</span></td>
+							<td>{ fmt.Sprintf("%d", summary.WarningCount) }</td>
+							<td>x 10</td>
+							<td class="text-yellow">{ fmt.Sprintf("-%d", summary.WarningCount * 10) }</td>
+						</tr>
+						<tr>
+							<td><span class="text-blue">Suggestions</span></td>
+							<td>{ fmt.Sprintf("%d", summary.SuggestionCount) }</td>
+							<td>x 3</td>
+							<td class="text-blue">{ fmt.Sprintf("-%d", summary.SuggestionCount * 3) }</td>
+						</tr>
+					</tbody>
+					<tfoot>
+						<tr class="score-table-final">
+							<td colspan="3">Final Score</td>
+							<td class={ templ.KV("text-green", summary.HealthScore >= 80), templ.KV("text-yellow", summary.HealthScore >= 50 && summary.HealthScore < 80), templ.KV("text-red", summary.HealthScore < 50) }>
+								{ fmt.Sprintf("%d", summary.HealthScore) }
+							</td>
+						</tr>
+					</tfoot>
+				</table>
+			</div>
+		</div>
+	</div>
+}
+
+templ indexesCard(indexes []collector.IndexData, findings []*finding.Finding) {
+	<div class="card">
+		<div class="card-header">
+			<h2 class="card-title">Indexes</h2>
+		</div>
+		if len(indexes) > 0 {
+			<div class="table-wrapper">
+				<table>
+					<thead>
+						<tr>
+							<th>Index</th>
+							<th>Documents</th>
+							<th>Findings</th>
+						</tr>
+					</thead>
+					<tbody>
+						for _, idx := range indexes {
+							<tr>
+								<td><a href={ templ.SafeURL("/index/" + idx.UID) }>{ idx.UID }</a></td>
+								<td>{ FormatNumber(int(idx.NumberOfDocuments)) }</td>
+								<td>
+									{ countFindingsForIndex(findings, idx.UID) }
+								</td>
+							</tr>
+						}
+					</tbody>
+				</table>
+			</div>
+		} else {
+			<p class="text-muted">No indexes found</p>
+		}
+	</div>
+}
+
+templ severitySummaryCard(summary report.Summary, topFindings []*finding.Finding) {
+	<div class="card">
+		<div class="card-header">
+			<h2 class="card-title">Issues by Severity</h2>
+			<a href="/findings" class="btn btn-secondary btn-sm">View All</a>
+		</div>
+		<div class="flex gap-2 flex-wrap">
+			<a href="/findings?severity=critical" class="badge badge-red" style="text-decoration: none;">{ fmt.Sprintf("%d Critical", summary.CriticalCount) }</a>
+			<a href="/findings?severity=warning" class="badge badge-yellow" style="text-decoration: none;">{ fmt.Sprintf("%d Warnings", summary.WarningCount) }</a>
+			<a href="/findings?severity=suggestion" class="badge badge-blue" style="text-decoration: none;">{ fmt.Sprintf("%d Suggestions", summary.SuggestionCount) }</a>
+			<a href="/findings?severity=info" class="badge badge-gray" style="text-decoration: none;">{ fmt.Sprintf("%d Info", summary.InfoCount) }</a>
+		</div>
+		if len(topFindings) > 0 {
+			<div class="mt-2">
+				<h3 class="text-secondary mb-1" style="font-size: 0.875rem;">Top Issues</h3>
+				for _, f := range topFindings {
+					<div class={ "finding", "finding-" + string(f.Severity) }>
+						<div class="finding-header">
+							<div class="finding-title">
+								{ f.Title }
+							</div>
+							<span class="finding-id">{ f.ID }</span>
+						</div>
+						<div class="finding-description">{ truncate(f.Description, 100) }</div>
+						if f.IndexUID != "" {
+							<div class="mt-1">
+								<a href={ templ.SafeURL("/index/" + f.IndexUID) }>Index: { f.IndexUID }</a>
+							</div>
+						}
+					</div>
+				}
+			</div>
+		}
+	</div>
+}
+
+templ progressModal() {
+	<div id="progress-overlay" class="progress-overlay">
+		<div class="progress-modal">
+			<div id="progress-spinner" class="progress-spinner"></div>
+			<div id="progress-title" class="progress-title">Analyzing...</div>
+			<div class="progress-levels">
+				<div class="progress-level">
+					<div class="progress-level-header">
+						<span class="progress-level-label">Progress</span>
+						<span id="progress-status" class="progress-level-status">Connecting...</span>
+					</div>
+					<div class="progress-bar-container">
+						<div id="progress-bar" class="progress-bar-fill" style="width: 0%;"></div>
+					</div>
+				</div>
+			</div>
+			<div id="progress-message" class="progress-message"></div>
+			<div id="progress-error" class="progress-error" style="display: none;"></div>
+		</div>
+	</div>
+	<script>
+		// Progress Modal Management
+		const ProgressModal = {
+			overlay: null,
+			spinner: null,
+			title: null,
+			status: null,
+			bar: null,
+			message: null,
+			errorEl: null,
+
+			init() {
+				this.overlay = document.getElementById('progress-overlay');
+				this.spinner = document.getElementById('progress-spinner');
+				this.title = document.getElementById('progress-title');
+				this.status = document.getElementById('progress-status');
+				this.bar = document.getElementById('progress-bar');
+				this.message = document.getElementById('progress-message');
+				this.errorEl = document.getElementById('progress-error');
+			},
+
+			show(titleText = 'Analyzing...') {
+				if (!this.overlay) this.init();
+				this.title.textContent = titleText;
+				this.status.textContent = 'Connecting...';
+				this.bar.style.width = '0%';
+				this.message.textContent = '';
+				this.errorEl.style.display = 'none';
+				this.spinner.style.display = 'block';
+				this.overlay.classList.add('active');
+			},
+
+			hide() {
+				if (this.overlay) {
+					this.overlay.classList.remove('active');
+				}
+			},
+
+			showError(errorText) {
+				if (!this.errorEl) this.init();
+				this.errorEl.textContent = errorText;
+				this.errorEl.style.display = 'block';
+				this.spinner.style.display = 'none';
+			},
+
+			updateProgress(data) {
+				if (!this.overlay) this.init();
+				if (data.message) {
+					this.status.textContent = data.message;
+				}
+				if (data.progress !== undefined) {
+					this.bar.style.width = data.progress + '%';
+				}
+			}
+		};
+
+		// Handle Connect form submission with SSE
+		document.getElementById('connect-form')?.addEventListener('submit', async function(event) {
+			event.preventDefault();
+			const form = event.target;
+			const formData = new FormData(form);
+
+			ProgressModal.show('Connecting to Meilisearch...');
+
+			try {
+				const response = await fetch('/api/analyze/stream', {
+					method: 'POST',
+					headers: {
+						'Content-Type': 'application/json',
+					},
+					body: JSON.stringify({
+						url: formData.get('url'),
+						api_key: formData.get('api_key')
+					})
+				});
+
+				const reader = response.body.getReader();
+				const decoder = new TextDecoder();
+
+				while (true) {
+					const { done, value } = await reader.read();
+					if (done) break;
+
+					const text = decoder.decode(value);
+					const lines = text.split('\n');
+
+					for (const line of lines) {
+						if (line.startsWith('data: ')) {
+							try {
+								const data = JSON.parse(line.slice(6));
+								ProgressModal.updateProgress(data);
+
+								if (data.type === 'complete') {
+									// Store report and reload
+									window.location.reload();
+								} else if (data.type === 'error') {
+									ProgressModal.showError(data.message);
+									setTimeout(() => {
+										ProgressModal.hide();
+									}, 3000);
+								}
+							} catch (e) {
+								console.error('Failed to parse SSE data:', e);
+							}
+						}
+					}
+				}
+			} catch (error) {
+				ProgressModal.showError('Failed to connect: ' + error.message);
+				setTimeout(() => {
+					ProgressModal.hide();
+				}, 3000);
+			}
+		});
+
+		// Initialize on DOM ready
+		document.addEventListener('DOMContentLoaded', function() {
+			ProgressModal.init();
+		});
+	</script>
+}
+
+// Helper function to count findings for an index
+func countFindingsForIndex(findings []*finding.Finding, indexUID string) string {
+	var critical, warning int
+	for _, f := range findings {
+		if f.IndexUID == indexUID {
+			if f.Severity == finding.SeverityCritical {
+				critical++
+			} else if f.Severity == finding.SeverityWarning {
+				warning++
+			}
+		}
+	}
+	return fmt.Sprintf("%d critical, %d warnings", critical, warning)
+}
+
+// Helper function to truncate strings
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen] + "..."
+}

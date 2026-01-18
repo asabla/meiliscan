@@ -1,0 +1,292 @@
+package templates
+
+import (
+	"fmt"
+	"strings"
+	"github.com/asabla/meiliscan/internal/collector"
+	"github.com/asabla/meiliscan/internal/finding"
+)
+
+// IndexDetailData holds data for the index detail page
+type IndexDetailData struct {
+	Index    collector.IndexData
+	Findings []*finding.Finding
+}
+
+templ IndexDetail(data IndexDetailData) {
+	@Layout(data.Index.UID, "/index/"+data.Index.UID) {
+		<div class="mb-2">
+			<a href="/" class="text-secondary">Back to Dashboard</a>
+		</div>
+		<h1 style="font-size: 1.75rem; margin-bottom: 1.5rem;">
+			Index: <code>{ data.Index.UID }</code>
+		</h1>
+		<!-- Index Stats -->
+		<div class="grid grid-2 mb-2">
+			<div class="card stat">
+				<div class="stat-value">{ FormatNumber(int(data.Index.NumberOfDocuments)) }</div>
+				<div class="stat-label">Documents</div>
+			</div>
+			<div class="card stat">
+				<div class="stat-value">{ fmt.Sprintf("%d", countFields(data.Index.Settings)) }</div>
+				<div class="stat-label">Searchable Fields</div>
+			</div>
+		</div>
+		<div class="grid grid-2 mb-2">
+			<!-- Metadata -->
+			<div class="card">
+				<div class="card-header">
+					<h2 class="card-title">Metadata</h2>
+				</div>
+				<table>
+					<tbody>
+						<tr>
+							<td class="text-secondary">Primary Key</td>
+							<td>
+								<code>
+									if data.Index.PrimaryKey != "" {
+										{ data.Index.PrimaryKey }
+									} else {
+										Not set
+									}
+								</code>
+							</td>
+						</tr>
+						<tr>
+							<td class="text-secondary">Created At</td>
+							<td>{ data.Index.CreatedAt.Format("2006-01-02 15:04:05") }</td>
+						</tr>
+						<tr>
+							<td class="text-secondary">Updated At</td>
+							<td>{ data.Index.UpdatedAt.Format("2006-01-02 15:04:05") }</td>
+						</tr>
+					</tbody>
+				</table>
+			</div>
+			<!-- Settings Overview -->
+			<div class="card">
+				<div class="card-header">
+					<h2 class="card-title">Settings Overview</h2>
+				</div>
+				if data.Index.Settings != nil {
+					@settingsAccordion(data.Index.Settings)
+				} else {
+					<p class="text-muted">No settings data available</p>
+				}
+			</div>
+		</div>
+		<!-- Findings -->
+		@indexFindingsCard(data.Index.UID, data.Findings)
+	}
+}
+
+templ settingsAccordion(settings *collector.IndexSettings) {
+	<div class="accordion">
+		<!-- Searchable Attributes -->
+		<div class="accordion-item">
+			<div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+				<span class="accordion-title">Searchable Attributes</span>
+				<span class="accordion-value">
+					if len(settings.SearchableAttributes) == 1 && settings.SearchableAttributes[0] == "*" {
+						<span class="badge badge-red">All fields (*)</span>
+					} else {
+						{ fmt.Sprintf("%d fields", len(settings.SearchableAttributes)) }
+					}
+					<span class="accordion-icon">&#9660;</span>
+				</span>
+			</div>
+			<div class="accordion-content">
+				if len(settings.SearchableAttributes) == 1 && settings.SearchableAttributes[0] == "*" {
+					<p class="text-muted">All fields are searchable (wildcard)</p>
+				} else if len(settings.SearchableAttributes) > 0 {
+					<ul class="accordion-list">
+						for _, attr := range settings.SearchableAttributes {
+							<li><code>{ attr }</code></li>
+						}
+					</ul>
+				} else {
+					<p class="text-muted">No searchable attributes configured</p>
+				}
+			</div>
+		</div>
+		<!-- Filterable Attributes -->
+		<div class="accordion-item">
+			<div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+				<span class="accordion-title">Filterable Attributes</span>
+				<span class="accordion-value">
+					{ fmt.Sprintf("%d fields", len(settings.FilterableAttributes)) }
+					<span class="accordion-icon">&#9660;</span>
+				</span>
+			</div>
+			<div class="accordion-content">
+				if len(settings.FilterableAttributes) > 0 {
+					<ul class="accordion-list">
+						for _, attr := range settings.FilterableAttributes {
+							<li><code>{ attr }</code></li>
+						}
+					</ul>
+				} else {
+					<p class="text-muted">No filterable attributes configured</p>
+				}
+			</div>
+		</div>
+		<!-- Sortable Attributes -->
+		<div class="accordion-item">
+			<div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+				<span class="accordion-title">Sortable Attributes</span>
+				<span class="accordion-value">
+					{ fmt.Sprintf("%d fields", len(settings.SortableAttributes)) }
+					<span class="accordion-icon">&#9660;</span>
+				</span>
+			</div>
+			<div class="accordion-content">
+				if len(settings.SortableAttributes) > 0 {
+					<ul class="accordion-list">
+						for _, attr := range settings.SortableAttributes {
+							<li><code>{ attr }</code></li>
+						}
+					</ul>
+				} else {
+					<p class="text-muted">No sortable attributes configured</p>
+				}
+			</div>
+		</div>
+		<!-- Stop Words -->
+		<div class="accordion-item">
+			<div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+				<span class="accordion-title">Stop Words</span>
+				<span class="accordion-value">
+					{ fmt.Sprintf("%d words", len(settings.StopWords)) }
+					<span class="accordion-icon">&#9660;</span>
+				</span>
+			</div>
+			<div class="accordion-content">
+				if len(settings.StopWords) > 0 {
+					<ul class="accordion-list">
+						for _, word := range settings.StopWords {
+							<li><code>{ word }</code></li>
+						}
+					</ul>
+				} else {
+					<p class="text-muted">No stop words configured</p>
+				}
+			</div>
+		</div>
+		<!-- Ranking Rules -->
+		<div class="accordion-item">
+			<div class="accordion-header" onclick="this.parentElement.classList.toggle('open')">
+				<span class="accordion-title">Ranking Rules</span>
+				<span class="accordion-value">
+					{ fmt.Sprintf("%d rules", len(settings.RankingRules)) }
+					<span class="accordion-icon">&#9660;</span>
+				</span>
+			</div>
+			<div class="accordion-content">
+				if len(settings.RankingRules) > 0 {
+					<ol class="accordion-list">
+						for _, rule := range settings.RankingRules {
+							<li><code>{ rule }</code></li>
+						}
+					</ol>
+				} else {
+					<p class="text-muted">Using default ranking rules</p>
+				}
+			</div>
+		</div>
+	</div>
+}
+
+templ indexFindingsCard(indexUID string, findings []*finding.Finding) {
+	<div class="card">
+		<div class="card-header">
+			<h2 class="card-title">Findings ({ fmt.Sprintf("%d", len(findings)) })</h2>
+			<div class="flex gap-1 flex-wrap">
+				<a href={ templ.SafeURL("/findings?index=" + indexUID + "&severity=critical") } class="badge badge-red" style="text-decoration: none;">
+					{ fmt.Sprintf("%d Critical", countBySeverity(findings, finding.SeverityCritical)) }
+				</a>
+				<a href={ templ.SafeURL("/findings?index=" + indexUID + "&severity=warning") } class="badge badge-yellow" style="text-decoration: none;">
+					{ fmt.Sprintf("%d Warning", countBySeverity(findings, finding.SeverityWarning)) }
+				</a>
+				<a href={ templ.SafeURL("/findings?index=" + indexUID + "&severity=suggestion") } class="badge badge-blue" style="text-decoration: none;">
+					{ fmt.Sprintf("%d Suggestion", countBySeverity(findings, finding.SeveritySuggestion)) }
+				</a>
+			</div>
+		</div>
+		if len(findings) > 0 {
+			for _, f := range findings {
+				@indexFindingItem(f)
+			}
+		} else {
+			<p class="text-muted">No findings for this index. Great job!</p>
+		}
+	</div>
+}
+
+templ indexFindingItem(f *finding.Finding) {
+	<div class={ "finding finding-" + string(f.Severity) }>
+		<div class="finding-header">
+			<div class="finding-title">
+				{ f.Title }
+			</div>
+			<div class="flex gap-1 items-center">
+				<span class={ "badge badge-" + SeverityColor(string(f.Severity)) }>{ string(f.Severity) }</span>
+				<span class="finding-id">{ f.ID }</span>
+			</div>
+		</div>
+		<div class="finding-description">{ f.Description }</div>
+		if f.Recommendation != "" {
+			<div class="mt-1">
+				<strong class="text-secondary">Recommendation:</strong> { f.Recommendation }
+			</div>
+		}
+		if f.FixCommand != "" {
+			<div class="mt-1">
+				<strong class="text-secondary">Fix:</strong>
+				<pre><code>{ f.FixCommand }</code></pre>
+			</div>
+		}
+	</div>
+}
+
+templ IndexNotFound(indexUID string) {
+	@Layout("Index Not Found", "/") {
+		<div class="card">
+			<div class="empty-state">
+				<h2>Index Not Found</h2>
+				<p class="text-secondary">The index "{ indexUID }" was not found in the analysis report.</p>
+				<a href="/" class="btn btn-primary mt-2">Back to Dashboard</a>
+			</div>
+		</div>
+	}
+}
+
+func countFields(settings *collector.IndexSettings) int {
+	if settings == nil {
+		return 0
+	}
+	if len(settings.SearchableAttributes) == 1 && settings.SearchableAttributes[0] == "*" {
+		return -1 // Indicate wildcard
+	}
+	return len(settings.SearchableAttributes)
+}
+
+func countBySeverity(findings []*finding.Finding, severity finding.Severity) int {
+	count := 0
+	for _, f := range findings {
+		if f.Severity == severity {
+			count++
+		}
+	}
+	return count
+}
+
+// formatAttributeList formats a list of attributes for display
+func formatAttributeList(attrs []string) string {
+	if len(attrs) == 0 {
+		return "none"
+	}
+	if len(attrs) == 1 && attrs[0] == "*" {
+		return "all (*)"
+	}
+	return strings.Join(attrs, ", ")
+}
