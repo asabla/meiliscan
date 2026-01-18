@@ -27,6 +27,7 @@ func NewRegistry() *Registry {
 	// Register default analyzers
 	r.Register(NewSchemaAnalyzer())
 	r.Register(NewPerformanceAnalyzer())
+	r.Register(NewDocumentAnalyzer())
 
 	return r
 }

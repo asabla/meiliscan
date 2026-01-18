@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"time"
@@ -22,6 +21,7 @@ var (
 	analyzeFormat     string
 	analyzeCI         bool
 	analyzeSampleDocs int
+	analyzePretty     bool
 )
 
 var analyzeCmd = &cobra.Command{
@@ -55,8 +55,8 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&analyzeAPIKey, "api-key", "k", "", "Meilisearch API key (or set MEILI_MASTER_KEY env var)")
 	analyzeCmd.Flags().StringVarP(&analyzeDump, "dump", "d", "", "Path to a Meilisearch dump file")
 	analyzeCmd.Flags().StringVarP(&analyzeOutput, "output", "o", "", "Output file path")
-	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "json", "Output format: json, markdown")
-	analyzeCmd.Flags().BoolVar(&analyzeCI, "ci", false, "CI mode - exit with non-zero code on findings")
+	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "pretty", "Output format: pretty, json, markdown")
+	analyzeCmd.Flags().BoolVar(&analyzeCI, "ci", false, "CI mode - exit with non-zero code on critical findings")
 	analyzeCmd.Flags().IntVar(&analyzeSampleDocs, "sample-documents", 100, "Number of sample documents to load per index (dump mode)")
 }
 
@@ -109,56 +109,53 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	// Build report
 	rpt := report.New(data, findings)
 
-	// Export
-	var exp exporter.Exporter
+	// Handle output format
 	switch analyzeFormat {
-	case "json":
-		exp = exporter.NewJSON()
-	case "markdown":
-		exp = exporter.NewMarkdown()
-	default:
-		return fmt.Errorf("unknown format: %s", analyzeFormat)
-	}
+	case "pretty":
+		// Styled terminal output
+		renderer := NewRenderer()
+		output := renderer.RenderReport(rpt)
 
-	output, err := exp.Export(rpt)
-	if err != nil {
-		return fmt.Errorf("failed to export report: %w", err)
-	}
-
-	// Write output
-	if analyzeOutput != "" {
-		if err := os.WriteFile(analyzeOutput, output, 0644); err != nil {
-			return fmt.Errorf("failed to write output: %w", err)
+		if analyzeOutput != "" {
+			// Strip ANSI codes for file output
+			if err := os.WriteFile(analyzeOutput, []byte(output), 0644); err != nil {
+				return fmt.Errorf("failed to write output: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "Report saved to %s\n", analyzeOutput)
+		} else {
+			fmt.Println(output)
 		}
-		fmt.Fprintf(os.Stderr, "Report saved to %s\n", analyzeOutput)
-	} else {
-		fmt.Println(string(output))
-	}
 
-	// Print summary to stderr
-	printSummary(rpt)
+	case "json", "markdown":
+		var exp exporter.Exporter
+		if analyzeFormat == "json" {
+			exp = exporter.NewJSON()
+		} else {
+			exp = exporter.NewMarkdown()
+		}
+
+		output, err := exp.Export(rpt)
+		if err != nil {
+			return fmt.Errorf("failed to export report: %w", err)
+		}
+
+		if analyzeOutput != "" {
+			if err := os.WriteFile(analyzeOutput, output, 0644); err != nil {
+				return fmt.Errorf("failed to write output: %w", err)
+			}
+			fmt.Fprintf(os.Stderr, "Report saved to %s\n", analyzeOutput)
+		} else {
+			fmt.Println(string(output))
+		}
+
+	default:
+		return fmt.Errorf("unknown format: %s (valid: pretty, json, markdown)", analyzeFormat)
+	}
 
 	// CI mode exit codes
-	if analyzeCI {
-		if rpt.Summary.CriticalCount > 0 {
-			return fmt.Errorf("found %d critical issues", rpt.Summary.CriticalCount)
-		}
+	if analyzeCI && rpt.Summary.CriticalCount > 0 {
+		return fmt.Errorf("found %d critical issues", rpt.Summary.CriticalCount)
 	}
 
 	return nil
-}
-
-func printSummary(rpt *report.Report) {
-	summary := map[string]interface{}{
-		"health_score": rpt.Summary.HealthScore,
-		"findings": map[string]int{
-			"critical":   rpt.Summary.CriticalCount,
-			"warning":    rpt.Summary.WarningCount,
-			"suggestion": rpt.Summary.SuggestionCount,
-			"info":       rpt.Summary.InfoCount,
-		},
-	}
-
-	summaryJSON, _ := json.MarshalIndent(summary, "", "  ")
-	fmt.Fprintf(os.Stderr, "\nSummary:\n%s\n", string(summaryJSON))
 }
