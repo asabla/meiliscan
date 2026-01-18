@@ -295,8 +295,10 @@ func (a *BestPracticesAnalyzer) checkOutdatedVersion(data *collector.CollectedDa
 		})
 }
 
-// parseVersion parses a version string like "1.12.0" into [1, 12, 0].
+// parseVersion parses a version string like "1.12.0" or "v1.12.0" into [1, 12, 0].
 func parseVersion(v string) []int {
+	// Strip "v" prefix if present
+	v = strings.TrimPrefix(v, "v")
 	parts := strings.Split(v, ".")
 	result := make([]int, 0, len(parts))
 	for _, p := range parts {
