@@ -45,7 +45,10 @@ Examples:
   meiliscan analyze --url http://localhost:7700 --output analysis.json
 
   # Export as Markdown
-  meiliscan analyze --dump ./dump.dump --format markdown --output report.md`,
+  meiliscan analyze --dump ./dump.dump --format markdown --output report.md
+
+  # Export as SARIF for CI/CD integration (GitHub, GitLab, etc.)
+  meiliscan analyze --url http://localhost:7700 --format sarif --output results.sarif --ci`,
 	RunE: runAnalyze,
 }
 
@@ -56,7 +59,7 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&analyzeAPIKey, "api-key", "k", "", "Meilisearch API key (or set MEILI_MASTER_KEY env var)")
 	analyzeCmd.Flags().StringVarP(&analyzeDump, "dump", "d", "", "Path to a Meilisearch dump file")
 	analyzeCmd.Flags().StringVarP(&analyzeOutput, "output", "o", "", "Output file path")
-	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "pretty", "Output format: pretty, json, markdown")
+	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "pretty", "Output format: pretty, json, markdown, sarif")
 	analyzeCmd.Flags().BoolVar(&analyzeCI, "ci", false, "CI mode - exit with non-zero code on critical findings")
 	analyzeCmd.Flags().BoolVar(&analyzeFailOnWarning, "fail-on-warning", false, "CI mode - also fail on warnings (requires --ci)")
 	analyzeCmd.Flags().IntVar(&analyzeSampleDocs, "sample-documents", 100, "Number of sample documents to load per index (dump mode)")
@@ -128,12 +131,15 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 			fmt.Println(output)
 		}
 
-	case "json", "markdown":
+	case "json", "markdown", "sarif":
 		var exp exporter.Exporter
-		if analyzeFormat == "json" {
+		switch analyzeFormat {
+		case "json":
 			exp = exporter.NewJSON()
-		} else {
+		case "markdown":
 			exp = exporter.NewMarkdown()
+		case "sarif":
+			exp = exporter.NewSARIF()
 		}
 
 		output, err := exp.Export(rpt)
@@ -151,7 +157,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		}
 
 	default:
-		return fmt.Errorf("unknown format: %s (valid: pretty, json, markdown)", analyzeFormat)
+		return fmt.Errorf("unknown format: %s (valid: pretty, json, markdown, sarif)", analyzeFormat)
 	}
 
 	// CI mode exit codes
