@@ -2,10 +2,14 @@ package analyzer
 
 import (
 	"fmt"
+	"regexp"
 
 	"github.com/asabla/meiliscan/internal/collector"
 	"github.com/asabla/meiliscan/internal/finding"
 )
+
+// durationRegex parses ISO 8601 duration strings like "PT1.234S" or "PT1M30.5S"
+var durationRegex = regexp.MustCompile(`PT(?:(\d+)M)?(\d+\.?\d*)S`)
 
 // PerformanceAnalyzer analyzes performance-related aspects.
 type PerformanceAnalyzer struct{}
@@ -23,6 +27,16 @@ func (a *PerformanceAnalyzer) Name() string {
 // Analyze runs performance analysis on the collected data.
 func (a *PerformanceAnalyzer) Analyze(data *collector.CollectedData) []*finding.Finding {
 	var findings []*finding.Finding
+
+	// P001: High task failure rate
+	if f := a.checkTaskFailures(data); f != nil {
+		findings = append(findings, f)
+	}
+
+	// P002: Slow indexing
+	if f := a.checkSlowIndexing(data); f != nil {
+		findings = append(findings, f)
+	}
 
 	// P003: Database fragmentation
 	if f := a.checkDatabaseFragmentation(data); f != nil {
@@ -44,6 +58,11 @@ func (a *PerformanceAnalyzer) Analyze(data *collector.CollectedData) []*finding.
 		if f := a.checkFieldCount(idx); f != nil {
 			findings = append(findings, f)
 		}
+	}
+
+	// P007: Task queue backlog
+	if f := a.checkTaskBacklog(data); f != nil {
+		findings = append(findings, f)
 	}
 
 	return findings
@@ -167,4 +186,179 @@ func (a *PerformanceAnalyzer) checkFieldCount(idx collector.IndexData) *finding.
 	}
 
 	return nil
+}
+
+// P001: High task failure rate
+func (a *PerformanceAnalyzer) checkTaskFailures(data *collector.CollectedData) *finding.Finding {
+	if len(data.Tasks) < 10 {
+		return nil
+	}
+
+	var failedCount int
+	for _, task := range data.Tasks {
+		if task.Status == "failed" {
+			failedCount++
+		}
+	}
+
+	totalTasks := len(data.Tasks)
+	failureRate := float64(failedCount) / float64(totalTasks)
+
+	// P001: More than 10% failures
+	if failureRate > 0.1 {
+		return finding.New(
+			"MEILI-P001",
+			"High task failure rate",
+			fmt.Sprintf("Task failure rate is %.1f%% (%d failed out of %d). Review failed tasks for recurring issues.", failureRate*100, failedCount, totalTasks),
+			finding.SeverityCritical,
+			finding.CategoryPerformance,
+		).WithRecommendation("Check task error messages for common patterns. Common causes include malformed documents, missing primary keys, or resource constraints.").
+			WithDetails(map[string]interface{}{
+				"failed_tasks":     failedCount,
+				"total_tasks":      totalTasks,
+				"failure_rate_pct": failureRate * 100,
+			})
+	}
+
+	return nil
+}
+
+// P002: Slow indexing
+func (a *PerformanceAnalyzer) checkSlowIndexing(data *collector.CollectedData) *finding.Finding {
+	if len(data.Tasks) == 0 {
+		return nil
+	}
+
+	// Filter for successful indexing tasks with duration
+	var durations []float64
+	for _, task := range data.Tasks {
+		if task.Status != "succeeded" {
+			continue
+		}
+		if task.Type != "documentAdditionOrUpdate" && task.Type != "documentDeletion" {
+			continue
+		}
+		if task.Duration == "" {
+			continue
+		}
+
+		// Parse ISO 8601 duration (e.g., "PT1.234S" or "PT1M30.5S")
+		duration := parseDuration(task.Duration)
+		if duration > 0 {
+			durations = append(durations, duration)
+		}
+	}
+
+	if len(durations) == 0 {
+		return nil
+	}
+
+	// Calculate average duration
+	var totalDuration float64
+	for _, d := range durations {
+		totalDuration += d
+	}
+	avgDuration := totalDuration / float64(len(durations))
+
+	// P002: Average duration > 5 minutes (300 seconds)
+	if avgDuration > 300 {
+		return finding.New(
+			"MEILI-P002",
+			"Slow indexing operations",
+			fmt.Sprintf("Average indexing task duration is %.1f minutes. Consider optimizing document size or batch sizes.", avgDuration/60),
+			finding.SeverityWarning,
+			finding.CategoryPerformance,
+		).WithRecommendation("Consider reducing document size, batching fewer documents per request, or checking for resource constraints.").
+			WithDetails(map[string]interface{}{
+				"avg_duration_seconds": avgDuration,
+				"avg_duration_minutes": avgDuration / 60,
+				"tasks_analyzed":       len(durations),
+			})
+	}
+
+	return nil
+}
+
+// P007: Task queue backlog
+func (a *PerformanceAnalyzer) checkTaskBacklog(data *collector.CollectedData) *finding.Finding {
+	if len(data.Tasks) < 10 {
+		return nil
+	}
+
+	// Calculate queue times for tasks with both enqueued and started timestamps
+	var queueTimes []float64
+	for _, task := range data.Tasks {
+		if task.EnqueuedAt == nil || task.StartedAt == nil {
+			continue
+		}
+		queueTime := task.StartedAt.Sub(*task.EnqueuedAt).Seconds()
+		if queueTime >= 0 {
+			queueTimes = append(queueTimes, queueTime)
+		}
+	}
+
+	if len(queueTimes) < 5 {
+		return nil
+	}
+
+	// Calculate average and max queue time
+	var totalQueueTime float64
+	var maxQueueTime float64
+	for _, qt := range queueTimes {
+		totalQueueTime += qt
+		if qt > maxQueueTime {
+			maxQueueTime = qt
+		}
+	}
+	avgQueueTime := totalQueueTime / float64(len(queueTimes))
+
+	// Count tasks with significant delay (>30s)
+	var delayedCount int
+	for _, qt := range queueTimes {
+		if qt > 30 {
+			delayedCount++
+		}
+	}
+
+	// P007: Average queue time > 60 seconds
+	if avgQueueTime > 60 {
+		return finding.New(
+			"MEILI-P007",
+			"Sustained task queue backlog detected",
+			fmt.Sprintf("Tasks are waiting an average of %.0f seconds in the queue before processing starts (max: %.0fs). %d of %d analyzed tasks had delays > 30s. This suggests the instance may be overloaded.", avgQueueTime, maxQueueTime, delayedCount, len(queueTimes)),
+			finding.SeverityWarning,
+			finding.CategoryPerformance,
+		).WithRecommendation("Consider scaling up the instance, reducing indexing frequency, or batching operations more efficiently.").
+			WithDetails(map[string]interface{}{
+				"avg_queue_time_seconds": avgQueueTime,
+				"max_queue_time_seconds": maxQueueTime,
+				"tasks_analyzed":         len(queueTimes),
+				"tasks_delayed":          delayedCount,
+			})
+	}
+
+	return nil
+}
+
+// parseDuration parses an ISO 8601 duration string and returns seconds
+func parseDuration(s string) float64 {
+	matches := durationRegex.FindStringSubmatch(s)
+	if matches == nil {
+		return 0
+	}
+
+	var seconds float64
+	// Minutes (optional)
+	if matches[1] != "" {
+		var minutes float64
+		fmt.Sscanf(matches[1], "%f", &minutes)
+		seconds += minutes * 60
+	}
+	// Seconds
+	if matches[2] != "" {
+		var secs float64
+		fmt.Sscanf(matches[2], "%f", &secs)
+		seconds += secs
+	}
+	return seconds
 }

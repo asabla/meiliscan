@@ -25,6 +25,48 @@ type CollectedData struct {
 
 	// Indexes with their settings and sample documents
 	Indexes []IndexData `json:"indexes"`
+
+	// Tasks (recent task history for performance analysis)
+	Tasks []Task `json:"tasks,omitempty"`
+
+	// InstanceInfo contains additional instance configuration
+	InstanceInfo *InstanceInfo `json:"instance_info,omitempty"`
+}
+
+// Task represents a Meilisearch task.
+type Task struct {
+	UID        int64       `json:"uid"`
+	IndexUID   string      `json:"indexUid,omitempty"`
+	Status     string      `json:"status"` // enqueued, processing, succeeded, failed, canceled
+	Type       string      `json:"type"`
+	Duration   string      `json:"duration,omitempty"`
+	EnqueuedAt *time.Time  `json:"enqueuedAt,omitempty"`
+	StartedAt  *time.Time  `json:"startedAt,omitempty"`
+	FinishedAt *time.Time  `json:"finishedAt,omitempty"`
+	Error      *TaskError  `json:"error,omitempty"`
+	Details    TaskDetails `json:"details,omitempty"`
+}
+
+// TaskError represents an error in a failed task.
+type TaskError struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+	Type    string `json:"type"`
+	Link    string `json:"link,omitempty"`
+}
+
+// TaskDetails contains task-specific details.
+type TaskDetails struct {
+	ReceivedDocuments int64 `json:"receivedDocuments,omitempty"`
+	IndexedDocuments  int64 `json:"indexedDocuments,omitempty"`
+	DeletedDocuments  int64 `json:"deletedDocuments,omitempty"`
+	ProvidedIds       int64 `json:"providedIds,omitempty"`
+}
+
+// InstanceInfo contains instance-level information.
+type InstanceInfo struct {
+	// HasMasterKey indicates whether authentication is required
+	HasMasterKey bool `json:"has_master_key"`
 }
 
 // Stats represents instance-level statistics.
@@ -148,6 +190,20 @@ func (c *LiveCollector) Collect(ctx context.Context) (*CollectedData, error) {
 
 	data.Indexes = indexes
 
+	// Get recent tasks (for performance analysis)
+	tasks, err := c.getTasks(ctx)
+	if err != nil {
+		// Tasks are optional, log but continue
+		// Could be permission issue or old Meilisearch version
+	} else {
+		data.Tasks = tasks
+	}
+
+	// Check if master key is required (by checking if we're using one)
+	data.InstanceInfo = &InstanceInfo{
+		HasMasterKey: c.apiKey != "",
+	}
+
 	return data, nil
 }
 
@@ -219,6 +275,28 @@ func (c *LiveCollector) getIndexes(ctx context.Context) ([]IndexData, error) {
 
 	var result struct {
 		Results []IndexData `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Results, nil
+}
+
+func (c *LiveCollector) getTasks(ctx context.Context) ([]Task, error) {
+	// Get recent tasks (last 100) for performance analysis
+	resp, err := c.doRequest(ctx, "GET", "/tasks?limit=100", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Results []Task `json:"results"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
 		return nil, err

@@ -28,6 +28,7 @@ func NewRegistry() *Registry {
 	r.Register(NewSchemaAnalyzer())
 	r.Register(NewPerformanceAnalyzer())
 	r.Register(NewDocumentAnalyzer())
+	r.Register(NewInstanceAnalyzer())
 
 	return r
 }

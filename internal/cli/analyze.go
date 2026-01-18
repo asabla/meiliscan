@@ -14,14 +14,15 @@ import (
 )
 
 var (
-	analyzeURL        string
-	analyzeAPIKey     string
-	analyzeDump       string
-	analyzeOutput     string
-	analyzeFormat     string
-	analyzeCI         bool
-	analyzeSampleDocs int
-	analyzePretty     bool
+	analyzeURL           string
+	analyzeAPIKey        string
+	analyzeDump          string
+	analyzeOutput        string
+	analyzeFormat        string
+	analyzeCI            bool
+	analyzeFailOnWarning bool
+	analyzeSampleDocs    int
+	analyzePretty        bool
 )
 
 var analyzeCmd = &cobra.Command{
@@ -57,6 +58,7 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&analyzeOutput, "output", "o", "", "Output file path")
 	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "pretty", "Output format: pretty, json, markdown")
 	analyzeCmd.Flags().BoolVar(&analyzeCI, "ci", false, "CI mode - exit with non-zero code on critical findings")
+	analyzeCmd.Flags().BoolVar(&analyzeFailOnWarning, "fail-on-warning", false, "CI mode - also fail on warnings (requires --ci)")
 	analyzeCmd.Flags().IntVar(&analyzeSampleDocs, "sample-documents", 100, "Number of sample documents to load per index (dump mode)")
 }
 
@@ -153,8 +155,13 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	}
 
 	// CI mode exit codes
-	if analyzeCI && rpt.Summary.CriticalCount > 0 {
-		return fmt.Errorf("found %d critical issues", rpt.Summary.CriticalCount)
+	if analyzeCI {
+		if rpt.Summary.CriticalCount > 0 {
+			os.Exit(1) // Exit code 1 for critical findings
+		}
+		if analyzeFailOnWarning && rpt.Summary.WarningCount > 0 {
+			os.Exit(2) // Exit code 2 for warnings (when --fail-on-warning is set)
+		}
 	}
 
 	return nil
