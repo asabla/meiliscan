@@ -3,7 +3,6 @@ package exporter
 import (
 	"bytes"
 	"fmt"
-	"strings"
 
 	"github.com/asabla/meiliscan/internal/finding"
 	"github.com/asabla/meiliscan/internal/report"
@@ -103,15 +102,4 @@ func formatBytes(b int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(b)/float64(div), "KMGTPE"[exp])
-}
-
-// Escape markdown special characters in text
-func escapeMarkdown(s string) string {
-	replacer := strings.NewReplacer(
-		"*", "\\*",
-		"_", "\\_",
-		"`", "\\`",
-		"#", "\\#",
-	)
-	return replacer.Replace(s)
 }

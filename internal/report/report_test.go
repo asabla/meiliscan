@@ -45,11 +45,11 @@ func TestHealthScoreCalculation(t *testing.T) {
 			expectedStatus: "healthy",
 		},
 		{
-			name: "info does not affect score",
+			name: "info drops score by 1",
 			findings: []*finding.Finding{
 				finding.New("TEST-001", "Test", "Test", finding.SeverityInfo, finding.CategorySchema),
 			},
-			expectedScore:  100,
+			expectedScore:  99,
 			expectedStatus: "healthy",
 		},
 		{

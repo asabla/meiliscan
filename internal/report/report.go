@@ -119,7 +119,7 @@ func calculateSummary(findings []*finding.Finding) Summary {
 	s.HealthScore -= s.CriticalCount * 25  // Critical issues heavily penalize
 	s.HealthScore -= s.WarningCount * 10   // Warnings moderately penalize
 	s.HealthScore -= s.SuggestionCount * 3 // Suggestions slightly penalize
-	// Info doesn't affect score
+	s.HealthScore -= s.InfoCount * 1       // Info minimally penalizes
 
 	if s.HealthScore < 0 {
 		s.HealthScore = 0

@@ -250,7 +250,7 @@ func (c *LiveCollector) getVersion(ctx context.Context) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return "", fmt.Errorf("failed to get version: unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -271,7 +271,7 @@ func (c *LiveCollector) getStats(ctx context.Context) (*Stats, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get stats: unexpected status %d", resp.StatusCode)
 	}
 
 	var result Stats
@@ -290,7 +290,7 @@ func (c *LiveCollector) getIndexes(ctx context.Context) ([]IndexData, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get indexes: unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -312,7 +312,7 @@ func (c *LiveCollector) getTasks(ctx context.Context) ([]Task, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get tasks: unexpected status %d", resp.StatusCode)
 	}
 
 	var result struct {
@@ -333,7 +333,7 @@ func (c *LiveCollector) getIndexSettings(ctx context.Context, uid string) (*Inde
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get settings for index %s: unexpected status %d", uid, resp.StatusCode)
 	}
 
 	var result IndexSettings
@@ -359,7 +359,7 @@ func (c *LiveCollector) getIndexStats(ctx context.Context, uid string) (*IndexSt
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get stats for index %s: unexpected status %d", uid, resp.StatusCode)
 	}
 
 	var result IndexStats
@@ -429,7 +429,7 @@ func (c *LiveCollector) GetSampleDocuments(ctx context.Context, indexUID string,
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+		return nil, fmt.Errorf("failed to get documents for index %s: unexpected status %d", indexUID, resp.StatusCode)
 	}
 
 	var result struct {
