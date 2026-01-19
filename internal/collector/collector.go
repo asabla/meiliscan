@@ -102,6 +102,9 @@ type IndexSettings struct {
 	TypoTolerance        *TypoTolerance      `json:"typoTolerance"`
 	Faceting             *Faceting           `json:"faceting"`
 	Pagination           *Pagination         `json:"pagination"`
+	Dictionary           []string            `json:"dictionary"`
+	SeparatorTokens      []string            `json:"separatorTokens"`
+	NonSeparatorTokens   []string            `json:"nonSeparatorTokens"`
 }
 
 // TypoTolerance settings.

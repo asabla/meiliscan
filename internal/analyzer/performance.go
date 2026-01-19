@@ -65,6 +65,21 @@ func (a *PerformanceAnalyzer) Analyze(data *collector.CollectedData) []*finding.
 		findings = append(findings, f)
 	}
 
+	// P008: Many tiny indexing tasks
+	if f := a.checkTinyIndexingTasks(data); f != nil {
+		findings = append(findings, f)
+	}
+
+	// P009: Oversized indexing tasks
+	if ff := a.checkOversizedIndexingTasks(data); len(ff) > 0 {
+		findings = append(findings, ff...)
+	}
+
+	// P010: Recurring task failures
+	if f := a.checkRecurringFailures(data); f != nil {
+		findings = append(findings, f)
+	}
+
 	return findings
 }
 
@@ -361,4 +376,203 @@ func parseDuration(s string) float64 {
 		seconds += secs
 	}
 	return seconds
+}
+
+// P008: Many tiny indexing tasks
+func (a *PerformanceAnalyzer) checkTinyIndexingTasks(data *collector.CollectedData) *finding.Finding {
+	// Collect document addition tasks that succeeded
+	var docTasks []collector.Task
+	for _, task := range data.Tasks {
+		if task.Type == "documentAdditionOrUpdate" && task.Status == "succeeded" {
+			docTasks = append(docTasks, task)
+		}
+	}
+
+	// Need at least 20 tasks to make this analysis meaningful
+	if len(docTasks) < 20 {
+		return nil
+	}
+
+	// Count tiny tasks (fewer than 10 documents)
+	var tinyTasks []collector.Task
+	for _, task := range docTasks {
+		docCount := getDocumentCount(task)
+		if docCount > 0 && docCount < 10 {
+			tinyTasks = append(tinyTasks, task)
+		}
+	}
+
+	// Trigger if >50% are tiny AND at least 10 tiny tasks
+	tinyRatio := float64(len(tinyTasks)) / float64(len(docTasks))
+	if tinyRatio > 0.5 && len(tinyTasks) >= 10 {
+		return finding.New(
+			"MEILI-P008",
+			"Many tiny indexing tasks detected",
+			fmt.Sprintf("%d of %d document addition tasks (%.0f%%) contain fewer than 10 documents each. This creates unnecessary task overhead.", len(tinyTasks), len(docTasks), tinyRatio*100),
+			finding.SeveritySuggestion,
+			finding.CategoryPerformance,
+		).WithRecommendation("Batch documents together to reduce task overhead. Aim for at least 100-1000 documents per task for better efficiency.").
+			WithDetails(map[string]interface{}{
+				"tiny_task_count":  len(tinyTasks),
+				"total_doc_tasks":  len(docTasks),
+				"tiny_ratio_pct":   tinyRatio * 100,
+				"tiny_threshold":   10,
+				"min_tasks_needed": 20,
+			})
+	}
+
+	return nil
+}
+
+// P009: Oversized indexing tasks
+func (a *PerformanceAnalyzer) checkOversizedIndexingTasks(data *collector.CollectedData) []*finding.Finding {
+	var findings []*finding.Finding
+
+	// Threshold: 10 minutes = 600 seconds
+	const slowThresholdSeconds = 600.0
+
+	var slowTasks []map[string]interface{}
+
+	for _, task := range data.Tasks {
+		if task.Type != "documentAdditionOrUpdate" {
+			continue
+		}
+		if task.Duration == "" {
+			continue
+		}
+
+		duration := parseDuration(task.Duration)
+		if duration > slowThresholdSeconds {
+			slowTasks = append(slowTasks, map[string]interface{}{
+				"uid":              task.UID,
+				"duration_seconds": duration,
+				"duration_minutes": duration / 60,
+				"documents":        getDocumentCount(task),
+				"index":            task.IndexUID,
+			})
+		}
+	}
+
+	if len(slowTasks) > 0 {
+		// Report up to 5 slow tasks
+		reportTasks := slowTasks
+		if len(reportTasks) > 5 {
+			reportTasks = reportTasks[:5]
+		}
+
+		findings = append(findings, finding.New(
+			"MEILI-P009",
+			"Oversized indexing tasks detected",
+			fmt.Sprintf("Found %d indexing tasks taking over 10 minutes each. Very long tasks may indicate overly large batches or resource constraints.", len(slowTasks)),
+			finding.SeveritySuggestion,
+			finding.CategoryPerformance,
+		).WithRecommendation("Consider breaking large document batches into smaller chunks (e.g., 10,000-50,000 documents per batch) for more predictable performance.").
+			WithDetails(map[string]interface{}{
+				"slow_task_count":   len(slowTasks),
+				"threshold_minutes": slowThresholdSeconds / 60,
+				"slow_tasks_sample": reportTasks,
+			}))
+	}
+
+	return findings
+}
+
+// P010: Recurring task failures
+func (a *PerformanceAnalyzer) checkRecurringFailures(data *collector.CollectedData) *finding.Finding {
+	// Collect failed tasks with error info
+	type errorInfo struct {
+		code    string
+		message string
+		count   int
+	}
+
+	errorCounts := make(map[string]*errorInfo)
+
+	for _, task := range data.Tasks {
+		if task.Status != "failed" || task.Error == nil {
+			continue
+		}
+
+		code := task.Error.Code
+		if code == "" {
+			code = "unknown"
+		}
+
+		if existing, ok := errorCounts[code]; ok {
+			existing.count++
+		} else {
+			// Truncate message for grouping (first 100 chars)
+			msg := task.Error.Message
+			if len(msg) > 100 {
+				msg = msg[:100] + "..."
+			}
+			errorCounts[code] = &errorInfo{
+				code:    code,
+				message: msg,
+				count:   1,
+			}
+		}
+	}
+
+	// Find recurring errors (count >= 3)
+	var recurringErrors []map[string]interface{}
+	var totalRecurring int
+
+	for _, info := range errorCounts {
+		if info.count >= 3 {
+			totalRecurring += info.count
+			recurringErrors = append(recurringErrors, map[string]interface{}{
+				"code":    info.code,
+				"count":   info.count,
+				"message": info.message,
+			})
+		}
+	}
+
+	// Need at least 3 failed tasks with same error code to report
+	if len(recurringErrors) == 0 {
+		return nil
+	}
+
+	// Sort by count (most common first) - simple bubble sort for small slice
+	for i := 0; i < len(recurringErrors)-1; i++ {
+		for j := i + 1; j < len(recurringErrors); j++ {
+			if recurringErrors[j]["count"].(int) > recurringErrors[i]["count"].(int) {
+				recurringErrors[i], recurringErrors[j] = recurringErrors[j], recurringErrors[i]
+			}
+		}
+	}
+
+	// Report up to 5 error types
+	reportErrors := recurringErrors
+	if len(reportErrors) > 5 {
+		reportErrors = reportErrors[:5]
+	}
+
+	return finding.New(
+		"MEILI-P010",
+		"Recurring task failures detected",
+		fmt.Sprintf("Found %d failed tasks with %d recurring error patterns. Repeated failures suggest systematic issues that should be addressed.", totalRecurring, len(recurringErrors)),
+		finding.SeverityWarning,
+		finding.CategoryPerformance,
+	).WithRecommendation("Review the error codes and messages to identify root causes. Common issues include malformed documents, invalid primary keys, or payload size limits.").
+		WithDetails(map[string]interface{}{
+			"total_recurring_failures": totalRecurring,
+			"error_pattern_count":      len(recurringErrors),
+			"top_errors":               reportErrors,
+		})
+}
+
+// getDocumentCount extracts document count from task details
+func getDocumentCount(task collector.Task) int64 {
+	if task.Details.ReceivedDocuments > 0 {
+		return task.Details.ReceivedDocuments
+	}
+	if task.Details.IndexedDocuments > 0 {
+		return task.Details.IndexedDocuments
+	}
+	if task.Details.ProvidedIds > 0 {
+		return task.Details.ProvidedIds
+	}
+	return 0
 }
