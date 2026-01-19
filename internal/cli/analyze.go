@@ -78,6 +78,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 	defer cancel()
 
 	var coll collector.Collector
+	var liveCollector *collector.LiveCollector
 	var sourceDesc string
 
 	if analyzeDump != "" {
@@ -94,7 +95,8 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		if apiKey == "" {
 			apiKey = os.Getenv("MEILI_MASTER_KEY")
 		}
-		coll = collector.NewLiveCollector(analyzeURL, apiKey)
+		liveCollector = collector.NewLiveCollector(analyzeURL, apiKey)
+		coll = liveCollector
 		sourceDesc = analyzeURL
 		fmt.Fprintf(os.Stderr, "Connecting to %s...\n", analyzeURL)
 	}
@@ -109,6 +111,13 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 
 	// Run analyzers
 	registry := analyzer.NewRegistry()
+
+	// Add search probe analyzer only for live instances
+	if liveCollector != nil {
+		registry.Register(analyzer.NewSearchProbeAnalyzer(liveCollector))
+		fmt.Fprintf(os.Stderr, "Running search probes...\n")
+	}
+
 	findings := registry.Analyze(data)
 
 	// Build report

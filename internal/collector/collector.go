@@ -2,6 +2,7 @@
 package collector
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -182,13 +183,29 @@ func (c *LiveCollector) Collect(ctx context.Context) (*CollectedData, error) {
 		return nil, fmt.Errorf("failed to get indexes: %w", err)
 	}
 
-	// Fetch settings for each index
+	// Fetch settings and stats for each index
 	for i := range indexes {
 		settings, err := c.getIndexSettings(ctx, indexes[i].UID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get settings for index %s: %w", indexes[i].UID, err)
 		}
 		indexes[i].Settings = settings
+
+		// Fetch index stats (numberOfDocuments, fieldDistribution)
+		stats, err := c.getIndexStats(ctx, indexes[i].UID)
+		if err == nil {
+			indexes[i].NumberOfDocuments = stats.NumberOfDocuments
+			indexes[i].IsIndexing = stats.IsIndexing
+			indexes[i].FieldDistribution = stats.FieldDistribution
+		}
+		// Stats are optional, continue on error
+
+		// Fetch sample documents for analysis
+		sampleDocs, err := c.GetSampleDocuments(ctx, indexes[i].UID, 20)
+		if err == nil {
+			indexes[i].SampleDocuments = sampleDocs
+		}
+		// Sample docs are optional, continue on error
 	}
 
 	data.Indexes = indexes
@@ -325,4 +342,102 @@ func (c *LiveCollector) getIndexSettings(ctx context.Context, uid string) (*Inde
 	}
 
 	return &result, nil
+}
+
+// IndexStats holds statistics for a single index.
+type IndexStats struct {
+	NumberOfDocuments int64            `json:"numberOfDocuments"`
+	IsIndexing        bool             `json:"isIndexing"`
+	FieldDistribution map[string]int64 `json:"fieldDistribution"`
+}
+
+func (c *LiveCollector) getIndexStats(ctx context.Context, uid string) (*IndexStats, error) {
+	resp, err := c.doRequest(ctx, "GET", "/indexes/"+uid+"/stats", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result IndexStats
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
+// SearchRequest represents a search request to Meilisearch.
+type SearchRequest struct {
+	Query  string   `json:"q"`
+	Filter string   `json:"filter,omitempty"`
+	Sort   []string `json:"sort,omitempty"`
+	Limit  int      `json:"limit,omitempty"`
+}
+
+// SearchResponse represents a search response from Meilisearch.
+type SearchResponse struct {
+	Hits               []map[string]interface{} `json:"hits"`
+	Query              string                   `json:"query"`
+	ProcessingTimeMs   int64                    `json:"processingTimeMs"`
+	EstimatedTotalHits int64                    `json:"estimatedTotalHits,omitempty"`
+	RawResponse        []byte                   `json:"-"` // Store raw response for size calculation
+}
+
+// Search executes a search request against an index.
+func (c *LiveCollector) Search(ctx context.Context, indexUID string, req SearchRequest) (*SearchResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := c.doRequest(ctx, "POST", "/indexes/"+indexUID+"/search", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	// Read the raw response body
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response: %w", err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("search failed (status %d): %s", resp.StatusCode, string(rawBody))
+	}
+
+	var result SearchResponse
+	if err := json.Unmarshal(rawBody, &result); err != nil {
+		return nil, err
+	}
+
+	result.RawResponse = rawBody
+	return &result, nil
+}
+
+// GetSampleDocuments fetches sample documents from an index.
+func (c *LiveCollector) GetSampleDocuments(ctx context.Context, indexUID string, limit int) ([]map[string]interface{}, error) {
+	url := fmt.Sprintf("/indexes/%s/documents?limit=%d", indexUID, limit)
+	resp, err := c.doRequest(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	var result struct {
+		Results []map[string]interface{} `json:"results"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return nil, err
+	}
+
+	return result.Results, nil
 }
