@@ -13,6 +13,8 @@ A comprehensive static analysis tool for Meilisearch that identifies configurati
 - **Multiple Export Formats**: Terminal, JSON, Markdown, and SARIF output
 - **CI/CD Integration**: Exit codes and SARIF format for automated pipelines
 - **Search Probes**: Live validation of sort/filter configuration (live instances only)
+- **Web Dashboard**: Browser-based UI with real-time analysis
+- **Terminal UI (TUI)**: Interactive terminal interface built with OpenTUI
 
 ## Installation
 
@@ -87,6 +89,28 @@ Show version information.
 
 ```bash
 meiliscan version
+```
+
+### `serve`
+
+Start the web dashboard and API server.
+
+```bash
+meiliscan serve [flags]
+```
+
+**Flags:**
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--port` | `-p` | Server port (default: 8080) |
+| `--host` | | Host to bind to (default: 127.0.0.1) |
+
+**Example:**
+```bash
+# Start the server
+meiliscan serve --port 8080
+
+# Open http://localhost:8080 in your browser
 ```
 
 ## Health Score
@@ -192,6 +216,53 @@ Meiliscan checks for **51 different findings** across 6 categories:
 | Q002 | Filter probe failed | Warning |
 | Q003 | Large search response payload | Info |
 
+## Terminal UI (TUI)
+
+Meiliscan includes an interactive terminal UI built with [OpenTUI](https://github.com/opentui/opentui).
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) runtime (v1.0+)
+
+### Running the TUI
+
+```bash
+# First, start the API server
+meiliscan serve --port 8080
+
+# In another terminal, run the TUI
+cd tui
+bun install   # First time only
+bun run start
+```
+
+**TUI Features:**
+- Interactive connection form for Meilisearch URL and API key
+- Dashboard with health score, instance info, and findings summary
+- Filterable findings list (by severity)
+- Detailed finding view with recommendations and fix commands
+- Keyboard navigation (arrow keys, Enter, Esc)
+
+**Keyboard Shortcuts:**
+| Key | Action |
+|-----|--------|
+| `Enter` | Connect / Select |
+| `Tab` | Switch input fields |
+| `↑/↓` or `j/k` | Navigate findings |
+| `1-4` | Filter by severity |
+| `A` | Show all findings |
+| `F` | View findings list |
+| `R` | Refresh analysis |
+| `B` | Go back |
+| `Esc` | Go back |
+| `Ctrl+C` | Quit |
+
+**Environment Variables:**
+```bash
+# Custom API URL (default: http://localhost:8080)
+MEILISCAN_API_URL=http://localhost:8080 bun run start
+```
+
 ## CI/CD Integration
 
 ### Exit Codes
@@ -276,8 +347,14 @@ meiliscan/
 │   ├── exporter/           # Output formats
 │   ├── finding/            # Finding model
 │   └── report/             # Report model with health scoring
-├── api/                    # HTTP API (future)
-├── web/                    # Web UI (future)
+├── api/                    # HTTP API server
+├── web/                    # Web dashboard (templ + htmx)
+│   ├── static/             # CSS, JS assets
+│   └── templates/          # templ templates
+├── tui/                    # Terminal UI (TypeScript/Bun)
+│   └── src/
+│       ├── index.ts        # TUI entry point
+│       └── api.ts          # API client
 └── archive/python-v1/      # Archived Python implementation
 ```
 
@@ -290,12 +367,13 @@ meiliscan/
 - JSON, Markdown, SARIF export
 - CI/CD integration
 - Health scoring
+- Web dashboard with HTMX
+- Terminal UI (TUI) with OpenTUI
 
 **Planned:**
-- Web UI with HTMX
-- TUI mode
 - Watch mode for continuous monitoring
 - Diff reports between analyses
+- Instance findings I002-I006 (config.toml parsing)
 
 ## License
 

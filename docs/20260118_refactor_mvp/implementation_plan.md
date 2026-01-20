@@ -213,16 +213,32 @@ Since this is an ongoing/hobby project, we use a **vertical slice approach** whe
 
 ---
 
-### Milestone 6: OpenTUI
+### Milestone 6: OpenTUI ✅ (Partial)
 **Goal**: TUI for terminal users
 
-**Deliverables**:
-- OpenTUI Go bindings
-- Analysis view
-- Findings browser
-- Direct SDK mode for dumps
+**Status**: Basic implementation complete, needs polish
 
-**Exit criteria**: Terminal UI alternative to CLI
+**Deliverables**:
+- ~~OpenTUI Go bindings~~ → TypeScript/Bun implementation instead
+- ✅ Analysis view (connects via API)
+- ✅ Findings browser with filtering
+- ✅ Finding detail view
+- ⏳ Direct SDK mode for dumps (not implemented)
+
+**What exists** (`tui/` directory):
+- TypeScript app using `@opentui/core` (v0.1.74)
+- Connects to Go API server (`POST /api/analyze`)
+- Views: Welcome → Connecting → Dashboard → Findings → Finding Detail
+- Keyboard navigation (vim-style j/k, filters 1-4, Enter/Esc)
+- Severity filtering, preview pane
+
+**Known limitations**:
+- Requires separate API server running (`meiliscan serve`)
+- No direct dump analysis (must go through API)
+- Input handling could be improved
+- Layout doesn't adapt to terminal size
+
+**Exit criteria**: Terminal UI alternative to CLI - **PARTIAL**
 
 ---
 
@@ -273,15 +289,15 @@ The archived Python code remains available for:
 ## Success Criteria
 
 ### MVP Complete When:
-- [ ] `meiliscan analyze --url` produces JSON report with 15 findings
-- [ ] `meiliscan analyze --dump` works with streaming parser
-- [ ] `meiliscan serve` launches web dashboard with dashboard/findings/index views
-- [ ] TUI mode available via OpenTUI
-- [ ] CI mode with appropriate exit codes
+- [x] `meiliscan analyze --url` produces JSON report with 15 findings ✅ (51 findings!)
+- [x] `meiliscan analyze --dump` works with streaming parser ✅
+- [x] `meiliscan serve` launches web dashboard with dashboard/findings/index views ✅
+- [x] TUI mode available via OpenTUI ✅ (partial - needs polish)
+- [x] CI mode with appropriate exit codes ✅
 - [ ] Cross-platform binaries via GoReleaser
 
 ### Quality Gates:
 - All analyzers have unit tests
 - Integration tests for collectors (live + dump)
 - Web UI has basic E2E tests
-- Documentation updated for Go version
+- Documentation updated for Go version ✅
