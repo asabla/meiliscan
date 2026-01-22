@@ -1,6 +1,7 @@
 package analyzer
 
 import (
+	"fmt"
 	"testing"
 
 	"github.com/asabla/meiliscan/internal/collector"
@@ -820,6 +821,488 @@ func TestSchemaAnalyzer_PermissiveTypoTolerance(t *testing.T) {
 
 			if found != tt.expectFound {
 				t.Errorf("expected S019 found=%v, got %v", tt.expectFound, found)
+			}
+		})
+	}
+}
+
+// S009: Pagination settings - very low limit
+func TestSchemaAnalyzer_PaginationSettings(t *testing.T) {
+	analyzer := NewSchemaAnalyzer()
+
+	tests := []struct {
+		name        string
+		settings    *collector.IndexSettings
+		expectFound bool
+	}{
+		{
+			name: "very low maxTotalHits triggers S009",
+			settings: &collector.IndexSettings{
+				Pagination: &collector.Pagination{
+					MaxTotalHits: 50,
+				},
+			},
+			expectFound: true,
+		},
+		{
+			name: "normal maxTotalHits does not trigger S009",
+			settings: &collector.IndexSettings{
+				Pagination: &collector.Pagination{
+					MaxTotalHits: 1000,
+				},
+			},
+			expectFound: false,
+		},
+		{
+			name:        "nil pagination does not trigger S009",
+			settings:    &collector.IndexSettings{},
+			expectFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := &collector.CollectedData{
+				Indexes: []collector.IndexData{
+					{
+						UID:      "test-index",
+						Settings: tt.settings,
+					},
+				},
+			}
+
+			findings := analyzer.Analyze(data)
+
+			var found bool
+			for _, f := range findings {
+				if f.ID == "MEILI-S009" {
+					found = true
+					break
+				}
+			}
+
+			if found != tt.expectFound {
+				t.Errorf("expected S009 found=%v, got %v", tt.expectFound, found)
+			}
+		})
+	}
+}
+
+// S010: High pagination limit
+func TestSchemaAnalyzer_HighPaginationLimit(t *testing.T) {
+	analyzer := NewSchemaAnalyzer()
+
+	tests := []struct {
+		name        string
+		settings    *collector.IndexSettings
+		expectFound bool
+	}{
+		{
+			name: "very high maxTotalHits triggers S010",
+			settings: &collector.IndexSettings{
+				Pagination: &collector.Pagination{
+					MaxTotalHits: 50000,
+				},
+			},
+			expectFound: true,
+		},
+		{
+			name: "high maxTotalHits triggers S010",
+			settings: &collector.IndexSettings{
+				Pagination: &collector.Pagination{
+					MaxTotalHits: 15000,
+				},
+			},
+			expectFound: true,
+		},
+		{
+			name: "normal maxTotalHits does not trigger S010",
+			settings: &collector.IndexSettings{
+				Pagination: &collector.Pagination{
+					MaxTotalHits: 5000,
+				},
+			},
+			expectFound: false,
+		},
+		{
+			name:        "nil pagination does not trigger S010",
+			settings:    &collector.IndexSettings{},
+			expectFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := &collector.CollectedData{
+				Indexes: []collector.IndexData{
+					{
+						UID:      "test-index",
+						Settings: tt.settings,
+					},
+				},
+			}
+
+			findings := analyzer.Analyze(data)
+
+			var found bool
+			for _, f := range findings {
+				if f.ID == "MEILI-S010" {
+					found = true
+					break
+				}
+			}
+
+			if found != tt.expectFound {
+				t.Errorf("expected S010 found=%v, got %v", tt.expectFound, found)
+			}
+		})
+	}
+}
+
+// S005: Wildcard displayedAttributes with many fields
+func TestSchemaAnalyzer_WildcardDisplayed(t *testing.T) {
+	analyzer := NewSchemaAnalyzer()
+
+	tests := []struct {
+		name        string
+		settings    *collector.IndexSettings
+		fieldDist   map[string]int64
+		docs        []map[string]interface{}
+		expectFound bool
+	}{
+		{
+			name: "wildcard with many fields from field distribution triggers S005",
+			settings: &collector.IndexSettings{
+				DisplayedAttributes: []string{"*"},
+			},
+			fieldDist: func() map[string]int64 {
+				m := make(map[string]int64)
+				for i := 0; i < 25; i++ {
+					m[fmt.Sprintf("field%d", i)] = 100
+				}
+				return m
+			}(),
+			expectFound: true,
+		},
+		{
+			name: "wildcard with many fields from sample docs triggers S005",
+			settings: &collector.IndexSettings{
+				DisplayedAttributes: []string{"*"},
+			},
+			fieldDist: map[string]int64{},
+			docs: []map[string]interface{}{
+				func() map[string]interface{} {
+					m := make(map[string]interface{})
+					for i := 0; i < 25; i++ {
+						m[fmt.Sprintf("field%d", i)] = "value"
+					}
+					return m
+				}(),
+			},
+			expectFound: true,
+		},
+		{
+			name: "wildcard with few fields does not trigger S005",
+			settings: &collector.IndexSettings{
+				DisplayedAttributes: []string{"*"},
+			},
+			fieldDist:   map[string]int64{"id": 100, "name": 100, "title": 100},
+			expectFound: false,
+		},
+		{
+			name: "explicit attributes does not trigger S005",
+			settings: &collector.IndexSettings{
+				DisplayedAttributes: []string{"id", "name", "title"},
+			},
+			fieldDist: func() map[string]int64 {
+				m := make(map[string]int64)
+				for i := 0; i < 50; i++ {
+					m[fmt.Sprintf("field%d", i)] = 100
+				}
+				return m
+			}(),
+			expectFound: false,
+		},
+		{
+			name:        "nil settings does not trigger S005",
+			settings:    nil,
+			expectFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := &collector.CollectedData{
+				Indexes: []collector.IndexData{
+					{
+						UID:               "test-index",
+						Settings:          tt.settings,
+						FieldDistribution: tt.fieldDist,
+						SampleDocuments:   tt.docs,
+					},
+				},
+			}
+
+			findings := analyzer.Analyze(data)
+
+			var found bool
+			for _, f := range findings {
+				if f.ID == "MEILI-S005" {
+					found = true
+					break
+				}
+			}
+
+			if found != tt.expectFound {
+				t.Errorf("expected S005 found=%v, got %v", tt.expectFound, found)
+			}
+		})
+	}
+}
+
+// S008: No distinct attribute configured
+func TestSchemaAnalyzer_DistinctAttribute(t *testing.T) {
+	analyzer := NewSchemaAnalyzer()
+
+	tests := []struct {
+		name        string
+		settings    *collector.IndexSettings
+		numDocs     int64
+		expectFound bool
+	}{
+		{
+			name: "large index without distinct attribute triggers S008",
+			settings: &collector.IndexSettings{
+				DistinctAttribute: nil,
+			},
+			numDocs:     5000,
+			expectFound: true,
+		},
+		{
+			name: "large index with empty distinct attribute triggers S008",
+			settings: func() *collector.IndexSettings {
+				empty := ""
+				return &collector.IndexSettings{
+					DistinctAttribute: &empty,
+				}
+			}(),
+			numDocs:     5000,
+			expectFound: true,
+		},
+		{
+			name: "large index with distinct attribute does not trigger S008",
+			settings: func() *collector.IndexSettings {
+				attr := "product_id"
+				return &collector.IndexSettings{
+					DistinctAttribute: &attr,
+				}
+			}(),
+			numDocs:     5000,
+			expectFound: false,
+		},
+		{
+			name: "small index does not trigger S008",
+			settings: &collector.IndexSettings{
+				DistinctAttribute: nil,
+			},
+			numDocs:     500,
+			expectFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := &collector.CollectedData{
+				Indexes: []collector.IndexData{
+					{
+						UID:               "test-index",
+						Settings:          tt.settings,
+						NumberOfDocuments: tt.numDocs,
+					},
+				},
+			}
+
+			findings := analyzer.Analyze(data)
+
+			var found bool
+			for _, f := range findings {
+				if f.ID == "MEILI-S008" {
+					found = true
+					break
+				}
+			}
+
+			if found != tt.expectFound {
+				t.Errorf("expected S008 found=%v, got %v", tt.expectFound, found)
+			}
+		})
+	}
+}
+
+// S016: Faceting settings - maxValuesPerFacet too low
+func TestSchemaAnalyzer_FacetingMaxValuesTooLow(t *testing.T) {
+	analyzer := NewSchemaAnalyzer()
+
+	tests := []struct {
+		name        string
+		settings    *collector.IndexSettings
+		docs        []map[string]interface{}
+		expectFound bool
+	}{
+		{
+			name: "maxValuesPerFacet too low for data triggers S016",
+			settings: &collector.IndexSettings{
+				Faceting: &collector.Faceting{
+					MaxValuesPerFacet: 10,
+				},
+				FilterableAttributes: []string{"category"},
+			},
+			docs: func() []map[string]interface{} {
+				// Need at least 10 sample docs and 10 unique values >= 80% of maxValues(10)
+				docs := make([]map[string]interface{}, 12)
+				for i := 0; i < 12; i++ {
+					docs[i] = map[string]interface{}{
+						"id":       i,
+						"category": fmt.Sprintf("cat%d", i), // 12 unique categories >= 80% of 10 = 8
+					}
+				}
+				return docs
+			}(),
+			expectFound: true,
+		},
+		{
+			name: "maxValuesPerFacet adequate for data does not trigger low S016",
+			settings: &collector.IndexSettings{
+				Faceting: &collector.Faceting{
+					MaxValuesPerFacet: 100,
+				},
+				FilterableAttributes: []string{"category"},
+			},
+			docs: func() []map[string]interface{} {
+				docs := make([]map[string]interface{}, 10)
+				for i := 0; i < 10; i++ {
+					docs[i] = map[string]interface{}{
+						"id":       i,
+						"category": fmt.Sprintf("cat%d", i%3), // only 3 unique
+					}
+				}
+				return docs
+			}(),
+			expectFound: false,
+		},
+		{
+			name: "not enough sample docs",
+			settings: &collector.IndexSettings{
+				Faceting: &collector.Faceting{
+					MaxValuesPerFacet: 5,
+				},
+				FilterableAttributes: []string{"category"},
+			},
+			docs: []map[string]interface{}{
+				{"id": 1, "category": "cat1"},
+				{"id": 2, "category": "cat2"},
+			},
+			expectFound: false, // needs >= 10 docs
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := &collector.CollectedData{
+				Indexes: []collector.IndexData{
+					{
+						UID:             "test-index",
+						Settings:        tt.settings,
+						SampleDocuments: tt.docs,
+					},
+				},
+			}
+
+			findings := analyzer.Analyze(data)
+
+			var found bool
+			for _, f := range findings {
+				// Check for the specific S016 finding about maxValuesPerFacet being too low
+				if f.ID == "MEILI-S016" && (f.Details["current_limit"] != nil || f.Details["unique_count_sample"] != nil) {
+					found = true
+					break
+				}
+			}
+
+			if found != tt.expectFound {
+				// Debug: print all findings
+				for _, f := range findings {
+					t.Logf("Finding: ID=%s, Desc=%s", f.ID, f.Description)
+				}
+				t.Errorf("expected low S016 found=%v, got %v", tt.expectFound, found)
+			}
+		})
+	}
+}
+
+// S006: Stop words configuration issues
+func TestSchemaAnalyzer_StopWords(t *testing.T) {
+	analyzer := NewSchemaAnalyzer()
+
+	tests := []struct {
+		name        string
+		settings    *collector.IndexSettings
+		numDocs     int64
+		expectFound bool
+	}{
+		{
+			name: "no stop words configured triggers S006 for large index",
+			settings: &collector.IndexSettings{
+				SearchableAttributes: []string{"title", "description"},
+				StopWords:            []string{},
+			},
+			numDocs:     1000,
+			expectFound: true,
+		},
+		{
+			name: "stop words configured does not trigger S006",
+			settings: &collector.IndexSettings{
+				SearchableAttributes: []string{"title", "description"},
+				StopWords:            []string{"the", "a", "an", "is"},
+			},
+			numDocs:     1000,
+			expectFound: false,
+		},
+		{
+			name: "small index does not trigger S006",
+			settings: &collector.IndexSettings{
+				SearchableAttributes: []string{"title"},
+				StopWords:            []string{},
+			},
+			numDocs:     50, // < 100 docs
+			expectFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			data := &collector.CollectedData{
+				Indexes: []collector.IndexData{
+					{
+						UID:               "test-index",
+						Settings:          tt.settings,
+						NumberOfDocuments: tt.numDocs,
+					},
+				},
+			}
+
+			findings := analyzer.Analyze(data)
+
+			var found bool
+			for _, f := range findings {
+				if f.ID == "MEILI-S006" {
+					found = true
+					break
+				}
+			}
+
+			if found != tt.expectFound {
+				t.Errorf("expected S006 found=%v, got %v", tt.expectFound, found)
 			}
 		})
 	}
