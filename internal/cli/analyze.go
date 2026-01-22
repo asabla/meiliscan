@@ -14,15 +14,17 @@ import (
 )
 
 var (
-	analyzeURL           string
-	analyzeAPIKey        string
-	analyzeDump          string
-	analyzeOutput        string
-	analyzeFormat        string
-	analyzeCI            bool
-	analyzeFailOnWarning bool
-	analyzeSampleDocs    int
-	analyzePretty        bool
+	analyzeURL              string
+	analyzeAPIKey           string
+	analyzeDump             string
+	analyzeOutput           string
+	analyzeFormat           string
+	analyzeCI               bool
+	analyzeFailOnWarning    bool
+	analyzeSampleDocs       int
+	analyzePretty           bool
+	analyzeAgentIncludeAll  bool
+	analyzeAgentMaxFindings int
 )
 
 var analyzeCmd = &cobra.Command{
@@ -48,7 +50,13 @@ Examples:
   meiliscan analyze --dump ./dump.dump --format markdown --output report.md
 
   # Export as SARIF for CI/CD integration (GitHub, GitLab, etc.)
-  meiliscan analyze --url http://localhost:7700 --format sarif --output results.sarif --ci`,
+  meiliscan analyze --url http://localhost:7700 --format sarif --output results.sarif --ci
+
+  # Export in agent-friendly format (for AI coding agents)
+  meiliscan analyze --url http://localhost:7700 --format agent --output context.md
+
+  # Agent format with only critical/warning findings
+  meiliscan analyze --url http://localhost:7700 --format agent --agent-critical-only`,
 	RunE: runAnalyze,
 }
 
@@ -59,10 +67,12 @@ func init() {
 	analyzeCmd.Flags().StringVarP(&analyzeAPIKey, "api-key", "k", "", "Meilisearch API key (or set MEILI_MASTER_KEY env var)")
 	analyzeCmd.Flags().StringVarP(&analyzeDump, "dump", "d", "", "Path to a Meilisearch dump file")
 	analyzeCmd.Flags().StringVarP(&analyzeOutput, "output", "o", "", "Output file path")
-	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "pretty", "Output format: pretty, json, markdown, sarif")
+	analyzeCmd.Flags().StringVarP(&analyzeFormat, "format", "f", "pretty", "Output format: pretty, json, markdown, sarif, agent")
 	analyzeCmd.Flags().BoolVar(&analyzeCI, "ci", false, "CI mode - exit with non-zero code on critical findings")
 	analyzeCmd.Flags().BoolVar(&analyzeFailOnWarning, "fail-on-warning", false, "CI mode - also fail on warnings (requires --ci)")
 	analyzeCmd.Flags().IntVar(&analyzeSampleDocs, "sample-documents", 100, "Number of sample documents to load per index (dump mode)")
+	analyzeCmd.Flags().BoolVar(&analyzeAgentIncludeAll, "agent-include-all", true, "Agent format: include suggestion and info findings")
+	analyzeCmd.Flags().IntVar(&analyzeAgentMaxFindings, "agent-max-findings", 0, "Agent format: limit number of findings (0 = no limit)")
 }
 
 func runAnalyze(cmd *cobra.Command, args []string) error {
@@ -140,7 +150,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 			fmt.Println(output)
 		}
 
-	case "json", "markdown", "sarif":
+	case "json", "markdown", "sarif", "agent":
 		var exp exporter.Exporter
 		switch analyzeFormat {
 		case "json":
@@ -149,6 +159,8 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 			exp = exporter.NewMarkdown()
 		case "sarif":
 			exp = exporter.NewSARIF()
+		case "agent":
+			exp = exporter.NewAgentWithOptions(analyzeAgentIncludeAll, analyzeAgentMaxFindings)
 		}
 
 		output, err := exp.Export(rpt)
@@ -166,7 +178,7 @@ func runAnalyze(cmd *cobra.Command, args []string) error {
 		}
 
 	default:
-		return fmt.Errorf("unknown format: %s (valid: pretty, json, markdown, sarif)", analyzeFormat)
+		return fmt.Errorf("unknown format: %s (valid: pretty, json, markdown, sarif, agent)", analyzeFormat)
 	}
 
 	// CI mode exit codes
