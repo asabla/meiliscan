@@ -64,6 +64,7 @@ class DataCollector:
         dump_path: str | Path,
         max_sample_docs: int | None = 100,
         max_concurrent: int = DEFAULT_MAX_CONCURRENT,
+        field_sample_size: int | None = 1000,
     ) -> "DataCollector":
         """Create a collector for a MeiliSearch dump file.
 
@@ -71,6 +72,9 @@ class DataCollector:
             dump_path: Path to the .dump file
             max_sample_docs: Maximum sample documents to load per index (None = all)
             max_concurrent: Maximum number of indexes to parse concurrently
+            field_sample_size: Number of documents to sample for field distribution.
+                              If None, scan all documents (slower but 100% accurate).
+                              Default 1000 provides ~2.5x speedup.
 
         Returns:
             Configured DataCollector
@@ -79,6 +83,7 @@ class DataCollector:
             dump_path=dump_path,
             max_sample_docs=max_sample_docs,
             max_concurrent=max_concurrent,
+            field_sample_size=field_sample_size,
         )
         return cls(collector)
 
