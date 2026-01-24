@@ -80,7 +80,6 @@ class TestHistoricalAnalyzer:
             summary=AnalysisSummary(
                 total_indexes=2,
                 total_documents=1000,
-                health_score=70,
                 critical_issues=2,
                 warnings=5,
                 suggestions=3,
@@ -119,7 +118,6 @@ class TestHistoricalAnalyzer:
             summary=AnalysisSummary(
                 total_indexes=2,
                 total_documents=1500,
-                health_score=85,
                 critical_issues=0,
                 warnings=3,
                 suggestions=2,
@@ -148,7 +146,6 @@ class TestHistoricalAnalyzer:
             summary=AnalysisSummary(
                 total_indexes=3,
                 total_documents=2000,
-                health_score=55,
                 critical_issues=4,
                 warnings=8,
                 suggestions=5,
@@ -212,21 +209,22 @@ class TestHistoricalAnalyzer:
     def test_compare_detects_improvement(
         self, analyzer, old_report, new_report_improved
     ):
-        """Test that improvement in health score is detected."""
+        """Test that improvement in configuration coverage is detected."""
         result = analyzer.compare(old_report, new_report_improved)
-        assert result.summary.health_score.old_value == 70
-        assert result.summary.health_score.new_value == 85
-        assert result.summary.health_score.trend == TrendDirection.UP
+        # Coverage should be higher when more settings are configured
+        assert result.summary.configuration_coverage is not None
         assert result.summary.overall_trend == TrendDirection.UP
 
     def test_compare_detects_degradation(
         self, analyzer, old_report, new_report_degraded
     ):
-        """Test that degradation in health score is detected."""
+        """Test that degradation (more critical issues) is detected."""
         result = analyzer.compare(old_report, new_report_degraded)
-        assert result.summary.health_score.old_value == 70
-        assert result.summary.health_score.new_value == 55
-        assert result.summary.health_score.trend == TrendDirection.DOWN
+        # More critical issues should result in a downward trend
+        assert (
+            result.summary.critical_issues.new_value
+            > result.summary.critical_issues.old_value
+        )
         assert result.summary.overall_trend == TrendDirection.DOWN
 
     def test_compare_detects_new_indexes(
@@ -364,7 +362,9 @@ class TestComparisonReport:
             old_report_date=datetime.utcnow() - timedelta(days=1),
             new_report_date=datetime.utcnow(),
             time_between="1 day",
-            health_score=MetricChange.calculate("health_score", 70, 80),
+            configuration_coverage=MetricChange.calculate(
+                "configuration_coverage", 70, 80
+            ),
             total_documents=MetricChange.calculate("total_documents", 1000, 1500),
             total_indexes=MetricChange.calculate("total_indexes", 2, 2),
             critical_issues=MetricChange.calculate("critical_issues", 2, 0),
@@ -400,7 +400,9 @@ class TestComparisonReport:
             old_report_date=datetime.utcnow() - timedelta(days=1),
             new_report_date=datetime.utcnow(),
             time_between="1 day",
-            health_score=MetricChange.calculate("health_score", 70, 80),
+            configuration_coverage=MetricChange.calculate(
+                "configuration_coverage", 70, 80
+            ),
             total_documents=MetricChange.calculate("total_documents", 1000, 1500),
             total_indexes=MetricChange.calculate("total_indexes", 2, 2),
             critical_issues=MetricChange.calculate("critical_issues", 2, 0),

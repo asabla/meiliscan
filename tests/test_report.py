@@ -49,7 +49,6 @@ class TestAnalysisSummary:
         summary = AnalysisSummary()
         assert summary.total_indexes == 0
         assert summary.total_documents == 0
-        assert summary.health_score == 100
         assert summary.critical_issues == 0
         assert summary.warnings == 0
 
@@ -58,13 +57,12 @@ class TestAnalysisSummary:
         summary = AnalysisSummary(
             total_indexes=5,
             total_documents=100000,
-            health_score=75,
             critical_issues=2,
             warnings=5,
             suggestions=10,
         )
         assert summary.total_indexes == 5
-        assert summary.health_score == 75
+        assert summary.critical_issues == 2
 
 
 class TestAnalysisReport:
@@ -84,7 +82,7 @@ class TestAnalysisReport:
     def test_report_creation(self, sample_report):
         """Test creating a report."""
         assert sample_report.source.type == "instance"
-        assert sample_report.version == "1.0.0"
+        assert sample_report.version == "1.1.0"
         assert sample_report.generated_at is not None
 
     def test_add_index(self, sample_report):
@@ -283,7 +281,7 @@ class TestAnalysisReport:
         assert "indexes" in data
         assert "global_findings" in data
         assert "action_plan" in data
-        assert data["version"] == "1.0.0"
+        assert data["version"] == "1.1.0"
 
 
 class TestActionPlan:

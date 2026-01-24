@@ -7,10 +7,11 @@ from typing import Any
 from meiliscan.core.analyzer import Analyzer
 from meiliscan.core.collector import DataCollector
 from meiliscan.core.progress import ProgressCallback, emit_analyze
-from meiliscan.core.scorer import HealthScorer
+from meiliscan.core.statistics import calculate_statistics
 from meiliscan.models.finding import Finding, FindingSeverity
 from meiliscan.models.index import IndexData
 from meiliscan.models.report import ActionPlan, AnalysisReport, SourceInfo
+from meiliscan.models.statistics import CollectionTiming
 
 # Default concurrency for parallel analysis
 DEFAULT_MAX_CONCURRENT = 10
@@ -23,7 +24,6 @@ class Reporter:
         self,
         collector: DataCollector,
         analyzer: Analyzer | None = None,
-        scorer: HealthScorer | None = None,
         analysis_options: dict[str, Any] | None = None,
         max_concurrent: int = DEFAULT_MAX_CONCURRENT,
     ):
@@ -32,7 +32,6 @@ class Reporter:
         Args:
             collector: Data collector with collected data
             analyzer: Optional analyzer instance
-            scorer: Optional health scorer instance
             analysis_options: Optional analysis configuration containing:
                 - config_toml: InstanceLaunchConfig for instance config analysis
                 - probe_search: Whether search probes were run
@@ -42,7 +41,6 @@ class Reporter:
         """
         self._collector = collector
         self._analyzer = analyzer or Analyzer()
-        self._scorer = scorer or HealthScorer()
         self._analysis_options = analysis_options or {}
         self._max_concurrent = max_concurrent
 
@@ -120,15 +118,26 @@ class Reporter:
         for finding in probe_findings:
             report.add_finding(finding)
 
-        # Calculate summary and score
+        # Calculate summary
         emit_analyze(
             progress_cb,
-            "Calculating health score...",
+            "Calculating statistics...",
             current=total_indexes,
             total=total_indexes,
         )
         report.calculate_summary()
-        self._scorer.score_report(report)
+
+        # Calculate statistics (replaces health_score)
+        collection_timing = self._get_collection_timing()
+        database_size = global_stats.get("databaseSize") if global_stats else None
+        used_size = global_stats.get("usedDatabaseSize") if global_stats else None
+
+        report.statistics = calculate_statistics(
+            report,
+            collection_timing=collection_timing,
+            database_size_bytes=database_size,
+            used_size_bytes=used_size,
+        )
 
         # Generate action plan
         report.action_plan = self._generate_action_plan(report)
@@ -141,6 +150,15 @@ class Reporter:
         )
 
         return report
+
+    def _get_collection_timing(self) -> CollectionTiming | None:
+        """Get collection timing from the collector if available."""
+        # Try to get timing from live instance collector
+        if hasattr(self._collector, "_instance_collector"):
+            instance_collector = self._collector._instance_collector
+            if hasattr(instance_collector, "timing"):
+                return instance_collector.timing
+        return None
 
     async def _analyze_indexes_parallel(
         self,

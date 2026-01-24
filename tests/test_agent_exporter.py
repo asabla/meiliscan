@@ -44,7 +44,6 @@ class TestAgentExporter:
                 total_indexes=2,
                 total_documents=5000,
                 database_size_bytes=1024 * 1024 * 500,  # 500MB
-                health_score=75,
                 critical_issues=1,
                 warnings=3,
                 suggestions=2,
@@ -99,12 +98,20 @@ class TestAgentExporter:
         assert "5,000 documents" in result
         assert "500.0MB database" in result
 
-    def test_export_contains_health_score(self, exporter, basic_report):
-        """Test that export contains health score."""
+    def test_export_contains_configuration_coverage(self, exporter, basic_report):
+        """Test that export contains configuration coverage when statistics present."""
+        from meiliscan.models.statistics import InstanceStatistics
+
+        # Add statistics to report
+        basic_report.statistics = InstanceStatistics(
+            total_indexes=2,
+            total_documents=5000,
+            overall_coverage_percent=75,
+        )
+
         result = exporter.export(basic_report)
-        assert "Health Score:" in result
-        assert "75/100" in result
-        assert "good" in result
+        assert "Configuration Coverage:" in result
+        assert "75%" in result
 
     def test_export_contains_issue_counts(self, exporter, basic_report):
         """Test that export contains issue counts."""
@@ -432,30 +439,25 @@ class TestAgentExporter:
         assert "# MeiliSearch Analysis Context" in result
         assert "## Current State Summary" in result
 
-    def test_health_status_excellent(self, exporter):
-        """Test health status for excellent score."""
-        assert exporter._get_health_status(95) == "excellent"
-        assert exporter._get_health_status(90) == "excellent"
+    def test_coverage_status_well_configured(self, exporter):
+        """Test coverage status for high coverage."""
+        assert exporter._get_coverage_status(95) == "well configured"
+        assert exporter._get_coverage_status(80) == "well configured"
 
-    def test_health_status_good(self, exporter):
-        """Test health status for good score."""
-        assert exporter._get_health_status(85) == "good"
-        assert exporter._get_health_status(75) == "good"
+    def test_coverage_status_partially_configured(self, exporter):
+        """Test coverage status for medium coverage."""
+        assert exporter._get_coverage_status(75) == "partially configured"
+        assert exporter._get_coverage_status(50) == "partially configured"
 
-    def test_health_status_needs_attention(self, exporter):
-        """Test health status for needs attention score."""
-        assert exporter._get_health_status(60) == "needs attention"
-        assert exporter._get_health_status(50) == "needs attention"
+    def test_coverage_status_minimal(self, exporter):
+        """Test coverage status for low coverage."""
+        assert exporter._get_coverage_status(40) == "minimal configuration"
+        assert exporter._get_coverage_status(20) == "minimal configuration"
 
-    def test_health_status_poor(self, exporter):
-        """Test health status for poor score."""
-        assert exporter._get_health_status(40) == "poor"
-        assert exporter._get_health_status(25) == "poor"
-
-    def test_health_status_critical(self, exporter):
-        """Test health status for critical score."""
-        assert exporter._get_health_status(20) == "critical"
-        assert exporter._get_health_status(0) == "critical"
+    def test_coverage_status_default(self, exporter):
+        """Test coverage status for very low coverage."""
+        assert exporter._get_coverage_status(15) == "default configuration"
+        assert exporter._get_coverage_status(0) == "default configuration"
 
     def test_export_large_database_gb(self):
         """Test that large database sizes show in GB."""

@@ -60,17 +60,23 @@ class MarkdownExporter(BaseExporter):
         lines.append("|--------|-------|")
         lines.append(f"| Total Indexes | {report.summary.total_indexes} |")
         lines.append(f"| Total Documents | {report.summary.total_documents:,} |")
-        lines.append(f"| Health Score | {report.summary.health_score}/100 |")
+
+        # Use configuration coverage from statistics if available
+        coverage = 0
+        if report.statistics:
+            coverage = report.statistics.overall_coverage_percent
+        lines.append(f"| Configuration Coverage | {coverage}% |")
+
         lines.append(f"| Critical Issues | {report.summary.critical_issues} |")
         lines.append(f"| Warnings | {report.summary.warnings} |")
         lines.append(f"| Suggestions | {report.summary.suggestions} |")
         lines.append("")
 
-        # Health Score Bar
-        filled = int(report.summary.health_score / 5)
+        # Coverage Bar
+        filled = int(coverage / 5)
         empty = 20 - filled
-        score_bar = "█" * filled + "░" * empty
-        lines.append(f"**Health:** `{score_bar}` {report.summary.health_score}/100")
+        coverage_bar = "█" * filled + "░" * empty
+        lines.append(f"**Coverage:** `{coverage_bar}` {coverage}%")
         lines.append("")
 
         # Global Findings

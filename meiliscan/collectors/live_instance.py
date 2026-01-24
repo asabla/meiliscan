@@ -1,12 +1,14 @@
 """Live MeiliSearch instance collector."""
 
 import asyncio
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
+from meiliscan.models.statistics import CollectionTiming
 from meiliscan.models.task import Task, TasksResponse, TasksSummary
 
 if TYPE_CHECKING:
@@ -42,6 +44,9 @@ class LiveInstanceCollector(BaseCollector):
         self._client: httpx.AsyncClient | None = None
         self._version: str | None = None
         self._global_stats: dict | None = None
+        self._timing = CollectionTiming()
+        self._collection_start: float | None = None
+        self._index_fetch_times: list[float] = []
 
     def _get_headers(self) -> dict[str, str]:
         """Get headers for API requests."""
@@ -49,6 +54,11 @@ class LiveInstanceCollector(BaseCollector):
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         return headers
+
+    @property
+    def timing(self) -> CollectionTiming:
+        """Get collection timing metrics."""
+        return self._timing
 
     async def connect(self, progress_cb: "ProgressCallback | None" = None) -> bool:
         """Establish connection to the MeiliSearch instance.
@@ -58,6 +68,9 @@ class LiveInstanceCollector(BaseCollector):
         """
         from meiliscan.core.progress import emit_collect
 
+        # Start overall timing
+        self._collection_start = time.perf_counter()
+
         emit_collect(progress_cb, "Connecting to MeiliSearch...")
         self._client = httpx.AsyncClient(
             base_url=self.url,
@@ -65,16 +78,20 @@ class LiveInstanceCollector(BaseCollector):
             timeout=self.timeout,
         )
         try:
-            # Check health
+            # Check health with timing
+            connect_start = time.perf_counter()
             response = await self._client.get("/health")
             response.raise_for_status()
+            self._timing.connect_ms = (time.perf_counter() - connect_start) * 1000
 
             emit_collect(progress_cb, "Fetching version...")
-            # Get version
+            # Get version with timing
+            version_start = time.perf_counter()
             version_response = await self._client.get("/version")
             version_response.raise_for_status()
             version_data = version_response.json()
             self._version = version_data.get("pkgVersion")
+            self._timing.version_ms = (time.perf_counter() - version_start) * 1000
 
             emit_collect(progress_cb, f"Connected (version {self._version})")
             return True
@@ -93,9 +110,11 @@ class LiveInstanceCollector(BaseCollector):
         if not self._client:
             raise RuntimeError("Collector not connected. Call connect() first.")
 
+        stats_start = time.perf_counter()
         response = await self._client.get("/stats")
         response.raise_for_status()
         self._global_stats = response.json()
+        self._timing.stats_ms = (time.perf_counter() - stats_start) * 1000
         return self._global_stats or {}
 
     async def list_index_uids(self) -> list[str]:
@@ -222,7 +241,7 @@ class LiveInstanceCollector(BaseCollector):
 
     async def _fetch_single_index(
         self, uid: str, idx_info: dict[str, Any]
-    ) -> IndexData | None:
+    ) -> tuple[IndexData | None, float]:
         """Fetch all data for a single index concurrently.
 
         This fetches settings, stats, and documents in parallel for the given index.
@@ -232,11 +251,12 @@ class LiveInstanceCollector(BaseCollector):
             idx_info: The index info from the indexes list
 
         Returns:
-            IndexData object or None if fetching failed
+            Tuple of (IndexData object or None if fetching failed, fetch time in ms)
         """
         if not self._client:
-            return None
+            return None, 0.0
 
+        fetch_start = time.perf_counter()
         try:
             # Fetch settings, stats, and documents concurrently
             settings_task = self._client.get(f"/indexes/{uid}/settings")
@@ -253,6 +273,8 @@ class LiveInstanceCollector(BaseCollector):
             settings_data = settings_response.json()
             stats_data = stats_response.json()
 
+            fetch_time_ms = (time.perf_counter() - fetch_start) * 1000
+
             return IndexData(
                 uid=uid,
                 primaryKey=idx_info.get("primaryKey"),
@@ -261,9 +283,10 @@ class LiveInstanceCollector(BaseCollector):
                 settings=IndexSettings(**settings_data),
                 stats=IndexStats(**stats_data),
                 sample_documents=sample_docs,
-            )
+            ), fetch_time_ms
         except httpx.HTTPError:
-            return None
+            fetch_time_ms = (time.perf_counter() - fetch_start) * 1000
+            return None, fetch_time_ms
 
     async def get_indexes(
         self, progress_cb: "ProgressCallback | None" = None
@@ -283,7 +306,8 @@ class LiveInstanceCollector(BaseCollector):
 
         emit_collect(progress_cb, "Fetching indexes...")
 
-        # Fetch all indexes with pagination
+        # Fetch all indexes with pagination (with timing)
+        indexes_list_start = time.perf_counter()
         indexes_list: list[dict[str, Any]] = []
         offset = 0
         batch_size = 1000  # MeiliSearch max limit for indexes endpoint
@@ -321,6 +345,8 @@ class LiveInstanceCollector(BaseCollector):
                 indexes_list = indexes_data if isinstance(indexes_data, list) else []
                 break
 
+        self._timing.indexes_list_ms = (time.perf_counter() - indexes_list_start) * 1000
+
         total_indexes = len(indexes_list)
         emit_collect(
             progress_cb,
@@ -330,6 +356,7 @@ class LiveInstanceCollector(BaseCollector):
         )
 
         if total_indexes == 0:
+            self._finalize_timing()
             return []
 
         # Use semaphore to limit concurrent index fetches
@@ -339,7 +366,7 @@ class LiveInstanceCollector(BaseCollector):
 
         async def fetch_with_semaphore(
             idx_info: dict[str, Any], index_num: int
-        ) -> IndexData | None:
+        ) -> tuple[IndexData | None, float]:
             nonlocal completed_count
             uid = idx_info["uid"]
 
@@ -351,10 +378,11 @@ class LiveInstanceCollector(BaseCollector):
                     total=total_indexes,
                 )
 
-                result = await self._fetch_single_index(uid, idx_info)
+                result, fetch_time = await self._fetch_single_index(uid, idx_info)
 
                 async with completed_lock:
                     completed_count += 1
+                    self._index_fetch_times.append(fetch_time)
                     emit_collect(
                         progress_cb,
                         f"Completed {uid} ({completed_count}/{total_indexes})",
@@ -362,7 +390,7 @@ class LiveInstanceCollector(BaseCollector):
                         total=total_indexes,
                     )
 
-                return result
+                return result, fetch_time
 
         # Fetch all indexes concurrently with bounded parallelism
         tasks = [
@@ -372,7 +400,7 @@ class LiveInstanceCollector(BaseCollector):
         results = await asyncio.gather(*tasks)
 
         # Filter out None results (failed fetches)
-        indexes = [idx for idx in results if idx is not None]
+        indexes = [idx for idx, _ in results if idx is not None]
 
         emit_collect(
             progress_cb,
@@ -381,7 +409,20 @@ class LiveInstanceCollector(BaseCollector):
             total=total_indexes,
         )
 
+        self._finalize_timing()
         return indexes
+
+    def _finalize_timing(self) -> None:
+        """Finalize timing metrics after collection is complete."""
+        if self._collection_start is not None:
+            self._timing.total_ms = (
+                time.perf_counter() - self._collection_start
+            ) * 1000
+
+        if self._index_fetch_times:
+            self._timing.per_index_avg_ms = sum(self._index_fetch_times) / len(
+                self._index_fetch_times
+            )
 
     async def get_tasks(self, limit: int = 1000) -> list[dict]:
         """Get recent task history.

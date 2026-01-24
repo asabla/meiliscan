@@ -49,7 +49,6 @@ def sample_report() -> AnalysisReport:
             critical_issues=1,
             warnings=0,
             suggestions=0,
-            health_score=75,
         ),
         action_plan=ActionPlan(priority_order=["MEILI-S001"]),
     )
