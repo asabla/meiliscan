@@ -1,6 +1,7 @@
 """Data collector that orchestrates collection from various sources."""
 
 from pathlib import Path
+from typing import Any
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.collectors.dump_parser import DumpParser
@@ -151,3 +152,33 @@ class DataCollector:
     async def close(self) -> None:
         """Close the underlying collector."""
         await self._collector.close()
+
+    async def search(
+        self,
+        index_uid: str,
+        query: str = "",
+        filter: str | None = None,
+        sort: list[str] | None = None,
+    ) -> dict[str, Any]:
+        """Execute a search query (only available for live instances).
+
+        Args:
+            index_uid: Index to search
+            query: Search query
+            filter: Optional filter expression
+            sort: Optional sort parameters
+
+        Returns:
+            Search results
+
+        Raises:
+            NotImplementedError: If the collector doesn't support search
+        """
+        if isinstance(self._collector, LiveInstanceCollector):
+            return await self._collector.search(
+                index_uid=index_uid,
+                query=query,
+                filter=filter,
+                sort=sort,
+            )
+        raise NotImplementedError("Search is only available for live instances")

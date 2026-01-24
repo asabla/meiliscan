@@ -1,15 +1,19 @@
 """Reporter for generating analysis reports."""
 
-from typing import Any
-
+import asyncio
 from datetime import datetime
+from typing import Any
 
 from meiliscan.core.analyzer import Analyzer
 from meiliscan.core.collector import DataCollector
 from meiliscan.core.progress import ProgressCallback, emit_analyze
 from meiliscan.core.scorer import HealthScorer
-from meiliscan.models.finding import FindingSeverity
+from meiliscan.models.finding import Finding, FindingSeverity
+from meiliscan.models.index import IndexData
 from meiliscan.models.report import ActionPlan, AnalysisReport, SourceInfo
+
+# Default concurrency for parallel analysis
+DEFAULT_MAX_CONCURRENT = 10
 
 
 class Reporter:
@@ -21,6 +25,7 @@ class Reporter:
         analyzer: Analyzer | None = None,
         scorer: HealthScorer | None = None,
         analysis_options: dict[str, Any] | None = None,
+        max_concurrent: int = DEFAULT_MAX_CONCURRENT,
     ):
         """Initialize the reporter.
 
@@ -33,13 +38,15 @@ class Reporter:
                 - probe_search: Whether search probes were run
                 - _probe_findings: List of findings from search probes
                 - detect_sensitive: Whether to detect PII fields
+            max_concurrent: Maximum number of indexes to analyze concurrently
         """
         self._collector = collector
         self._analyzer = analyzer or Analyzer()
         self._scorer = scorer or HealthScorer()
         self._analysis_options = analysis_options or {}
+        self._max_concurrent = max_concurrent
 
-    def generate_report(
+    async def generate_report(
         self,
         source_url: str | None = None,
         progress_cb: ProgressCallback | None = None,
@@ -68,7 +75,7 @@ class Reporter:
         if global_stats:
             report.summary.database_size_bytes = global_stats.get("databaseSize")
 
-        # Process each index
+        # Process each index in parallel
         indexes = self._collector.indexes
         total_indexes = len(indexes)
         detect_sensitive = self._analysis_options.get("detect_sensitive", False)
@@ -80,21 +87,14 @@ class Reporter:
             total=total_indexes,
         )
 
-        for i, index in enumerate(indexes, start=1):
-            emit_analyze(
-                progress_cb,
-                f"Analyzing index: {index.uid}",
-                current=i,
-                total=total_indexes,
-                index_uid=index.uid,
-            )
+        # Analyze indexes concurrently
+        index_results = await self._analyze_indexes_parallel(
+            indexes, detect_sensitive, total_indexes, progress_cb
+        )
 
+        # Add results to report (must be done sequentially to maintain order)
+        for index, findings in index_results:
             report.add_index(index)
-
-            # Run analysis
-            findings = self._analyzer.analyze_index(
-                index, detect_sensitive=detect_sensitive
-            )
             for finding in findings:
                 report.add_finding(finding)
 
@@ -105,7 +105,7 @@ class Reporter:
             current=total_indexes,
             total=total_indexes,
         )
-        global_findings = self._analyzer.analyze_global(
+        global_findings = await self._analyzer.analyze_global(
             indexes=self._collector.indexes,
             global_stats=self._collector.global_stats,
             tasks=self._collector.tasks,
@@ -135,12 +135,77 @@ class Reporter:
 
         emit_analyze(
             progress_cb,
-            f"Analysis complete: {len(report.get_all_findings())} findings",
+            f"Analysis complete: {report.finding_count} findings",
             current=total_indexes,
             total=total_indexes,
         )
 
         return report
+
+    async def _analyze_indexes_parallel(
+        self,
+        indexes: list[IndexData],
+        detect_sensitive: bool,
+        total_indexes: int,
+        progress_cb: ProgressCallback | None,
+    ) -> list[tuple[IndexData, list[Finding]]]:
+        """Analyze multiple indexes in parallel.
+
+        Args:
+            indexes: List of indexes to analyze
+            detect_sensitive: Whether to detect PII/sensitive fields
+            total_indexes: Total number of indexes for progress reporting
+            progress_cb: Optional callback for progress updates
+
+        Returns:
+            List of (index, findings) tuples in original order
+        """
+        if not indexes:
+            return []
+
+        # Use semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(self._max_concurrent)
+        completed_count = 0
+        completed_lock = asyncio.Lock()
+
+        async def analyze_single(
+            index: IndexData, index_num: int
+        ) -> tuple[IndexData, list[Finding]]:
+            nonlocal completed_count
+
+            async with semaphore:
+                emit_analyze(
+                    progress_cb,
+                    f"Analyzing index: {index.uid}",
+                    current=completed_count,
+                    total=total_indexes,
+                    index_uid=index.uid,
+                )
+
+                # Run analysis (async)
+                findings = await self._analyzer.analyze_index(
+                    index, detect_sensitive=detect_sensitive
+                )
+
+                async with completed_lock:
+                    completed_count += 1
+                    emit_analyze(
+                        progress_cb,
+                        f"Analyzed {index.uid} ({completed_count}/{total_indexes})",
+                        current=completed_count,
+                        total=total_indexes,
+                        index_uid=index.uid,
+                    )
+
+                return (index, findings)
+
+        # Create tasks for all indexes
+        tasks = [analyze_single(index, i) for i, index in enumerate(indexes, start=1)]
+
+        # Run all tasks concurrently and gather results
+        results = await asyncio.gather(*tasks)
+
+        return list(results)
 
     def _generate_action_plan(self, report: AnalysisReport) -> ActionPlan:
         """Generate prioritized action plan from findings.

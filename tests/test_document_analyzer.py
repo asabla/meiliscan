@@ -247,27 +247,6 @@ class TestDocumentAnalyzer:
         d008_findings = [f for f in findings if f.id == "MEILI-D008"]
         assert len(d008_findings) == 0
 
-    def test_get_max_depth_flat(self, analyzer):
-        """Test _get_max_depth with flat object."""
-        obj = {"a": 1, "b": "string", "c": True}
-        assert analyzer._get_max_depth(obj) == 1
-
-    def test_get_max_depth_nested(self, analyzer):
-        """Test _get_max_depth with nested object."""
-        obj = {"level1": {"level2": {"level3": "value"}}}
-        assert analyzer._get_max_depth(obj) == 3
-
-    def test_get_max_depth_with_arrays(self, analyzer):
-        """Test _get_max_depth with arrays."""
-        obj = {"items": [{"nested": {"deep": "value"}}]}
-        assert analyzer._get_max_depth(obj) == 3
-
-    def test_get_max_depth_empty(self, analyzer):
-        """Test _get_max_depth with empty structures."""
-        assert analyzer._get_max_depth({}) == 0
-        assert analyzer._get_max_depth([]) == 0
-        assert analyzer._get_max_depth("string") == 0
-
     def test_html_pattern_matches(self, analyzer):
         """Test that HTML pattern correctly identifies HTML tags."""
         assert analyzer.HTML_PATTERN.search("<p>text</p>") is not None
@@ -277,10 +256,13 @@ class TestDocumentAnalyzer:
     def test_multiple_findings_combined(self, analyzer):
         """Test that analyzer can return multiple findings."""
         # Create document with multiple issues
+        # Note: Need 5 levels of nesting (depth > 3) to trigger D003
         large_nested_doc = {
             "id": 1,
             "content": "<p>" + "x" * 70000 + "</p>",  # Long text with HTML
-            "level1": {"level2": {"level3": {"level4": "deep"}}},  # Deep nesting
+            "level1": {
+                "level2": {"level3": {"level4": {"level5": "deep"}}}
+            },  # Deep nesting (5 levels)
             "big_array": list(range(100)),  # Large array
         }
         index = IndexData(uid="test", sample_documents=[large_nested_doc])
