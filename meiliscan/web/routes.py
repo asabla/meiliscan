@@ -249,19 +249,15 @@ def register_routes(app: FastAPI) -> None:
             )
             try:
                 if await collector.connect():
-                    indexes = [idx.uid for idx in await collector.get_indexes()]
-                    indexes.sort()
+                    # Use lightweight method - only fetches UIDs, not full index data
+                    indexes = await collector.list_index_uids()
 
                     selected_index = index or (indexes[0] if indexes else None)
                     if selected_index:
-                        if not collector._client:
-                            raise RuntimeError("Collector client not initialized")
-
-                        settings_response = await collector._client.get(
-                            f"/indexes/{selected_index}/settings"
+                        # Fetch settings only for the selected index
+                        index_settings = await collector.get_index_settings(
+                            selected_index
                         )
-                        settings_response.raise_for_status()
-                        index_settings = settings_response.json()
             finally:
                 await collector.close()
 
@@ -273,6 +269,36 @@ def register_routes(app: FastAPI) -> None:
                 "indexes": indexes,
                 "selected_index": selected_index,
                 "index_settings": index_settings,
+            },
+        )
+
+    @app.get("/search/{index_uid}/settings", response_class=HTMLResponse)
+    async def search_index_settings(request: Request, index_uid: str):
+        """Fetch index settings partial for HTMX (lazy loading on index change)."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        index_settings: dict | None = None
+
+        if state.meili_url:
+            from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+            collector = LiveInstanceCollector(
+                url=state.meili_url,
+                api_key=state.meili_api_key,
+            )
+            try:
+                if await collector.connect():
+                    index_settings = await collector.get_index_settings(index_uid)
+            finally:
+                await collector.close()
+
+        return templates.TemplateResponse(
+            "components/search_index_info.html",
+            {
+                "request": request,
+                "index_settings": index_settings,
+                "selected_index": index_uid,
             },
         )
 

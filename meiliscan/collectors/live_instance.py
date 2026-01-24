@@ -98,6 +98,69 @@ class LiveInstanceCollector(BaseCollector):
         self._global_stats = response.json()
         return self._global_stats or {}
 
+    async def list_index_uids(self) -> list[str]:
+        """Fetch just the index UIDs without settings, stats, or documents.
+
+        This is a lightweight alternative to get_indexes() when you only need
+        the list of index names (e.g., for populating a dropdown).
+
+        Returns:
+            Sorted list of index UIDs
+        """
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        index_uids: list[str] = []
+        offset = 0
+        batch_size = 1000  # MeiliSearch max limit for indexes endpoint
+
+        while True:
+            response = await self._client.get(
+                "/indexes", params={"limit": batch_size, "offset": offset}
+            )
+            response.raise_for_status()
+            indexes_data = response.json()
+
+            # Handle paginated response (newer MeiliSearch versions)
+            if isinstance(indexes_data, dict) and "results" in indexes_data:
+                batch = indexes_data["results"]
+                index_uids.extend(idx["uid"] for idx in batch)
+
+                total = indexes_data.get("total")
+                # If we have total info, use it to determine if we're done
+                if total is not None:
+                    if len(index_uids) >= total:
+                        break
+                    offset += len(batch)
+                # Fallback: if batch is smaller than requested, we're done
+                elif len(batch) < batch_size:
+                    break
+                else:
+                    offset += len(batch)
+            else:
+                # Handle non-paginated response (older MeiliSearch versions)
+                if isinstance(indexes_data, list):
+                    index_uids = [idx["uid"] for idx in indexes_data]
+                break
+
+        return sorted(index_uids)
+
+    async def get_index_settings(self, index_uid: str) -> dict[str, Any]:
+        """Fetch settings for a specific index.
+
+        Args:
+            index_uid: The index UID
+
+        Returns:
+            Index settings dictionary
+        """
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        response = await self._client.get(f"/indexes/{index_uid}/settings")
+        response.raise_for_status()
+        return response.json()
+
     async def _fetch_documents(self, uid: str) -> list[dict[str, Any]]:
         """Fetch sample documents for an index.
 
