@@ -34,6 +34,9 @@ class AppState:
         self.max_concurrent: int = 10  # Concurrent index fetching limit
         # Benchmark options
         self.run_benchmark: bool = False  # Run benchmark after analysis
+        self.comprehensive_benchmark: bool = (
+            False  # Use comprehensive mode (3 queries per type)
+        )
         # Analysis progress tracking
         self.analysis_status: AnalysisStatus = "idle"
         self.analysis_error: str | None = None
@@ -451,15 +454,19 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
                     )
                 )
 
-            # Run baseline benchmarks (not comprehensive for auto-benchmark)
+            # Run benchmarks with mode based on settings
             runner = SearchBenchmarkRunner(
                 collector=collector,
-                queries_per_type=1,
+                queries_per_type=3 if state.comprehensive_benchmark else 1,
                 progress_cb=benchmark_progress_cb,
                 index_complete_cb=index_complete_cb,
             )
 
-            benchmark_report = await runner.run_baseline(index_data_list)
+            # Use comprehensive or baseline based on setting
+            if state.comprehensive_benchmark:
+                benchmark_report = await runner.run_comprehensive(index_data_list)
+            else:
+                benchmark_report = await runner.run_baseline(index_data_list)
 
             # Store in report
             if state.report:

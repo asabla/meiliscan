@@ -381,6 +381,23 @@
                     <label for="api_key">API Key <span class="text-secondary">(optional)</span></label>
                     <input type="password" id="api_key" name="api_key" placeholder="Master key or API key" style="width: 100%;">
                 </div>
+                
+                <!-- Benchmark option (outside Advanced Options for visibility) -->
+                <div class="form-group">
+                    <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                        <input type="checkbox" name="run_benchmark" value="true" id="run_benchmark_checkbox" 
+                               onchange="toggleBenchmarkMode(this)">
+                        <span>Run benchmark after analysis <span class="text-secondary">(measures search latency)</span></span>
+                    </label>
+                </div>
+                <div class="form-group" id="benchmark_mode_group" style="display: none; margin-left: 1.5rem;">
+                    <label for="benchmark_mode">Benchmark mode</label>
+                    <select name="benchmark_mode" id="benchmark_mode" style="width: 100%;">
+                        <option value="basic" selected>Basic (1 query per type, faster)</option>
+                        <option value="comprehensive">Comprehensive (3 queries per type, more accurate)</option>
+                    </select>
+                </div>
+                
                 <details class="mb-2">
                     <summary style="cursor: pointer; color: var(--color-text-secondary); font-size: 0.875rem;">Advanced Options</summary>
                     <div style="padding: 0.75rem 0;">
@@ -404,12 +421,6 @@
                             <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
                                 <input type="checkbox" name="detect_sensitive" value="true">
                                 <span>Detect sensitive/PII fields</span>
-                            </label>
-                        </div>
-                        <div class="form-group">
-                            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
-                                <input type="checkbox" name="run_benchmark" value="true">
-                                <span>Run benchmark after analysis <span class="text-secondary">(measures search latency)</span></span>
                             </label>
                         </div>
                     </div>
@@ -467,6 +478,15 @@ function toggleSampleInput(checkbox, inputId) {
     } else {
         group.style.display = 'block';
         input.disabled = false;
+    }
+}
+
+function toggleBenchmarkMode(checkbox) {
+    const modeGroup = document.getElementById('benchmark_mode_group');
+    if (checkbox.checked) {
+        modeGroup.style.display = 'block';
+    } else {
+        modeGroup.style.display = 'none';
     }
 }
 
