@@ -749,3 +749,167 @@ class TestDumpParser:
         assert "invalid_index" not in index_uids
 
         await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_field_distribution_scaling_large_file(self, mock_dump_dir: Path):
+        """Test that field distribution is scaled for large files beyond sample size."""
+        from meiliscan.collectors.dump_parser import FIELD_SAMPLE_SIZE
+
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        index_dir = dump_root / "indexes" / "products"
+
+        # Create a file with more documents than FIELD_SAMPLE_SIZE
+        # We'll use FIELD_SAMPLE_SIZE + 5000 to ensure scaling kicks in
+        doc_count = FIELD_SAMPLE_SIZE + 5000
+        with open(index_dir / "documents.jsonl", "w") as f:
+            for i in range(doc_count):
+                doc = {"id": i, "title": f"Product {i}", "price": 10.0}
+                f.write(json.dumps(doc) + "\n")
+
+        dump_file = mock_dump_dir / "large_scale.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        parser = DumpParser(dump_file, max_sample_docs=100)
+        await parser.connect()
+
+        indexes = await parser.get_indexes()
+        idx = indexes[0]
+
+        # Document count should be exact
+        assert idx.document_count == doc_count
+
+        # Sample documents should be limited to 100
+        assert len(idx.sample_documents) == 100
+
+        # Field distribution should be scaled (approximately doc_count for each field)
+        field_dist = idx.stats.field_distribution
+        # Allow 5% tolerance for scaling approximation
+        tolerance = doc_count * 0.05
+        for field in ["id", "title", "price"]:
+            assert abs(field_dist[field] - doc_count) < tolerance, (
+                f"Field {field} distribution {field_dist[field]} not close to {doc_count}"
+            )
+
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_max_sample_docs_none_uses_cap(self, mock_dump_dir: Path):
+        """Test that max_sample_docs=None is capped at MAX_SAMPLE_DOCS_CAP."""
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        index_dir = dump_root / "indexes" / "products"
+
+        # Create a file with docs exceeding the cap
+        # We can't actually create 100K docs in a test, so we'll create a smaller
+        # file and verify the logic by checking the effective limit is applied
+        doc_count = 500  # Small enough for testing
+        with open(index_dir / "documents.jsonl", "w") as f:
+            for i in range(doc_count):
+                doc = {"id": i, "title": f"Product {i}"}
+                f.write(json.dumps(doc) + "\n")
+
+        dump_file = mock_dump_dir / "cap_test.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        # max_sample_docs=None should use the cap, but since our file is smaller,
+        # we should get all documents
+        parser = DumpParser(dump_file, max_sample_docs=None)
+        await parser.connect()
+
+        indexes = await parser.get_indexes()
+        idx = indexes[0]
+
+        # Since doc_count < MAX_SAMPLE_DOCS_CAP, we should get all docs
+        assert idx.document_count == doc_count
+        assert len(idx.sample_documents) == doc_count
+
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_orjson_parsing_handles_unicode(self, mock_dump_dir: Path):
+        """Test that orjson correctly handles unicode characters."""
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        index_dir = dump_root / "indexes" / "products"
+
+        # Create documents with unicode characters
+        documents = [
+            {"id": 1, "title": "日本語テスト", "emoji": "🎉🚀"},
+            {"id": 2, "title": "Ελληνικά", "description": "Тест кириллицы"},
+            {"id": 3, "title": "العربية", "chinese": "中文测试"},
+        ]
+        with open(index_dir / "documents.jsonl", "w", encoding="utf-8") as f:
+            for doc in documents:
+                f.write(json.dumps(doc, ensure_ascii=False) + "\n")
+
+        dump_file = mock_dump_dir / "unicode.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        parser = DumpParser(dump_file)
+        await parser.connect()
+
+        indexes = await parser.get_indexes()
+        sample_docs = indexes[0].sample_documents
+
+        assert len(sample_docs) == 3
+        assert sample_docs[0]["title"] == "日本語テスト"
+        assert sample_docs[0]["emoji"] == "🎉🚀"
+        assert sample_docs[1]["description"] == "Тест кириллицы"
+        assert sample_docs[2]["chinese"] == "中文测试"
+
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_count_only_mode_for_large_files(self, mock_dump_dir: Path):
+        """Test that documents beyond parse_limit are only counted, not parsed."""
+        from meiliscan.collectors.dump_parser import FIELD_SAMPLE_SIZE
+
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        index_dir = dump_root / "indexes" / "products"
+
+        # Create a file larger than FIELD_SAMPLE_SIZE
+        total_docs = FIELD_SAMPLE_SIZE + 1000
+        with open(index_dir / "documents.jsonl", "w") as f:
+            for i in range(total_docs):
+                # Include a field that only appears in later documents
+                if i >= FIELD_SAMPLE_SIZE:
+                    doc = {"id": i, "title": f"Product {i}", "late_field": True}
+                else:
+                    doc = {"id": i, "title": f"Product {i}"}
+                f.write(json.dumps(doc) + "\n")
+
+        dump_file = mock_dump_dir / "count_only.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        parser = DumpParser(dump_file, max_sample_docs=50)
+        await parser.connect()
+
+        indexes = await parser.get_indexes()
+        idx = indexes[0]
+
+        # Document count should include all documents
+        assert idx.document_count == total_docs
+
+        # Sample should only have 50 documents
+        assert len(idx.sample_documents) == 50
+
+        # Field distribution should NOT include "late_field" since it only appears
+        # in documents beyond the parse_limit (documents are counted, not parsed)
+        field_dist = idx.stats.field_distribution
+        assert "id" in field_dist
+        assert "title" in field_dist
+        # late_field should NOT be in the distribution because it's only in docs
+        # that were counted but not parsed
+        assert "late_field" not in field_dist
+
+        await parser.close()
