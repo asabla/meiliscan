@@ -11,7 +11,7 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 - **Instance Config Analysis**: Optional analysis of `config.toml` for production security/reliability checks
 - **Search Probing**: Opt-in read-only search probes to validate sort/filter configurations
 - **PII Detection**: Optional detection of sensitive/PII fields in documents
-- **42 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, search probes, and best practices
+- **56 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, search probes, and best practices
 - **Health Scoring**: Get an overall health score for your MeiliSearch setup
 - **Web Dashboard**: Interactive web UI for exploring analysis results
 - **Historical Comparison**: Compare two analysis reports to track changes over time
@@ -281,6 +281,7 @@ Options:
 - `--probe-search`: Run read-only search probes to validate sort/filter configuration
 - `--sample-documents`: Number of sample documents to fetch per index (default: 20)
 - `--detect-sensitive`: Enable detection of potential PII/sensitive fields in documents
+- `--max-concurrent, -c`: Maximum concurrent index analysis operations (default: 5)
 
 ### `compare`
 
@@ -305,6 +306,7 @@ meiliscan fix-script --input REPORT_JSON --output SCRIPT_PATH
 Options:
 - `--input, -i`: Path to analysis JSON report
 - `--output, -o`: Output script path
+- `--url, -u`: MeiliSearch URL to use in generated commands (replaces placeholder)
 
 ### `serve`
 
@@ -317,8 +319,12 @@ meiliscan serve [OPTIONS]
 Options:
 - `--url, -u`: MeiliSearch instance URL
 - `--api-key, -k`: MeiliSearch API key
+- `--dump, -d`: Path to a MeiliSearch dump file (alternative to live instance)
 - `--host`: Dashboard host (default: 127.0.0.1)
 - `--port, -p`: Dashboard port (default: 8080)
+- `--probe-search`: Run read-only search probes to validate sort/filter configuration
+- `--sample-documents`: Number of sample documents to fetch per index (default: 20)
+- `--detect-sensitive`: Enable detection of potential PII/sensitive fields in documents
 
 ### `summary`
 
@@ -331,6 +337,24 @@ meiliscan summary [OPTIONS]
 Options:
 - `--url, -u`: MeiliSearch instance URL (required)
 - `--api-key, -k`: MeiliSearch API key
+
+### `tasks`
+
+Display and monitor the MeiliSearch tasks queue.
+
+```bash
+meiliscan tasks [OPTIONS]
+```
+
+Options:
+- `--url, -u`: MeiliSearch instance URL (required)
+- `--api-key, -k`: MeiliSearch API key
+- `--dump, -d`: Path to a MeiliSearch dump file (alternative to live instance)
+- `--limit, -l`: Number of tasks to display (default: 20)
+- `--status, -s`: Filter by task status (e.g., `succeeded`, `failed`, `enqueued`, `processing`)
+- `--type, -t`: Filter by task type (e.g., `documentAdditionOrUpdate`, `settingsUpdate`)
+- `--index, -i`: Filter by index UID
+- `--watch, -w`: Watch mode - continuously refresh task list
 
 ## Export Formats
 
