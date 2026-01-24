@@ -687,6 +687,281 @@ def register_routes(app: FastAPI) -> None:
 
         return state.report.statistics.model_dump()
 
+    # ==================== Benchmark Routes ====================
+
+    @app.get("/api/benchmark")
+    async def api_get_benchmark(request: Request) -> dict:
+        """Get existing benchmark results from the report."""
+        state: AppState = request.app.state.analyzer_state
+
+        if not state.report:
+            return {"error": "No analysis data available"}
+
+        if not state.report.benchmark:
+            return {"error": "No benchmark results available", "available": False}
+
+        return {
+            "available": True,
+            "benchmark": state.report.benchmark.model_dump(),
+        }
+
+    @app.post("/api/benchmark")
+    async def api_run_benchmark(
+        request: Request,
+        comprehensive: bool = False,
+    ) -> dict:
+        """Run benchmarks against the live instance.
+
+        Args:
+            comprehensive: If True, run more queries per type for more accurate results
+
+        Returns:
+            BenchmarkReport with results
+        """
+        state: AppState = request.app.state.analyzer_state
+
+        # Benchmarks only work on live instances
+        if not state.meili_url:
+            return {
+                "error": "Benchmarks require a live MeiliSearch instance",
+                "available": False,
+            }
+
+        if not state.report:
+            return {"error": "No analysis data available. Run analysis first."}
+
+        from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+        # Create a collector for benchmarking
+        collector = LiveInstanceCollector(
+            url=state.meili_url,
+            api_key=state.meili_api_key,
+        )
+
+        try:
+            if not await collector.connect():
+                return {"error": "Failed to connect to MeiliSearch instance"}
+
+            # Fetch index data for benchmarking
+            # We need fresh IndexData objects with settings for query generation
+            all_indexes = await collector.get_indexes()
+
+            # Filter to only the indexes we analyzed
+            index_uids = set(state.report.indexes.keys())
+            index_data_list = [idx for idx in all_indexes if idx.uid in index_uids]
+
+            if not index_data_list:
+                return {"error": "No indexes to benchmark"}
+
+            # Run benchmarks
+            runner = SearchBenchmarkRunner(
+                collector=collector,
+                queries_per_type=3 if comprehensive else 1,
+            )
+
+            if comprehensive:
+                benchmark_report = await runner.run_comprehensive(index_data_list)
+            else:
+                benchmark_report = await runner.run_baseline(index_data_list)
+
+            # Store in report for later retrieval
+            state.report.benchmark = benchmark_report
+
+            return {
+                "success": True,
+                "benchmark": benchmark_report.model_dump(),
+            }
+
+        except Exception as e:
+            return {"error": f"Benchmark failed: {e}"}
+        finally:
+            await collector.close()
+
+    @app.get("/api/benchmark/export")
+    async def api_export_benchmark(
+        request: Request,
+        format: str = "json",
+    ) -> Response:
+        """Download benchmark results separately.
+
+        Args:
+            format: Export format - json or markdown
+
+        Returns:
+            The benchmark results as a downloadable file
+        """
+        state: AppState = request.app.state.analyzer_state
+
+        if not state.report or not state.report.benchmark:
+            return Response(
+                content=json.dumps({"error": "No benchmark results available"}),
+                media_type="application/json",
+                status_code=400,
+            )
+
+        benchmark = state.report.benchmark
+
+        if format.lower() == "markdown":
+            # Generate markdown report
+            lines = [
+                "# MeiliSearch Benchmark Report",
+                "",
+                f"**Run at:** {benchmark.ran_at.isoformat()}",
+                f"**Source:** {benchmark.source_url}",
+                f"**Duration:** {benchmark.duration_ms:.2f}ms",
+                f"**Total Queries:** {benchmark.total_queries}",
+                "",
+                "## Summary",
+                "",
+                "| Metric | Value |",
+                "|--------|-------|",
+                f"| Avg Baseline | {benchmark.avg_baseline_ms:.2f}ms |",
+                f"| Avg Overall | {benchmark.avg_overall_ms:.2f}ms |",
+                f"| P50 Latency | {benchmark.p50_latency_ms:.2f}ms |",
+                f"| P95 Latency | {benchmark.p95_latency_ms:.2f}ms |",
+                f"| P99 Latency | {benchmark.p99_latency_ms:.2f}ms |",
+                f"| Min Latency | {benchmark.min_latency_ms:.2f}ms |",
+                f"| Max Latency | {benchmark.max_latency_ms:.2f}ms |",
+                "",
+                "## Per-Index Results",
+                "",
+            ]
+
+            for idx_bench in benchmark.indexes:
+                lines.extend(
+                    [
+                        f"### {idx_bench.index_uid}",
+                        "",
+                        f"- Documents: {idx_bench.document_count:,}",
+                        f"- Baseline Latency: {idx_bench.baseline_latency_ms:.2f}ms",
+                    ]
+                )
+                if idx_bench.filtered_latency_ms is not None:
+                    lines.append(
+                        f"- Filtered Latency: {idx_bench.filtered_latency_ms:.2f}ms"
+                    )
+                if idx_bench.sorted_latency_ms is not None:
+                    lines.append(
+                        f"- Sorted Latency: {idx_bench.sorted_latency_ms:.2f}ms"
+                    )
+                lines.append("")
+
+            if benchmark.slowest_queries:
+                lines.extend(["## Slowest Queries", ""])
+                for i, q in enumerate(benchmark.slowest_queries[:5], 1):
+                    lines.append(
+                        f"{i}. **{q.index_uid}** - {q.query.query_type}: {q.latency_ms:.2f}ms"
+                    )
+                lines.append("")
+
+            content = "\n".join(lines)
+            media_type = "text/markdown"
+            ext = ".md"
+        else:
+            # JSON format
+            content = json.dumps(benchmark.model_dump(), indent=2, default=str)
+            media_type = "application/json"
+            ext = ".json"
+
+        timestamp = benchmark.ran_at.strftime("%Y%m%d_%H%M%S")
+        filename = f"meilisearch-benchmark_{timestamp}{ext}"
+
+        return Response(
+            content=content,
+            media_type=media_type,
+            headers={
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            },
+        )
+
+    @app.post("/api/benchmark/fix/{finding_id}")
+    async def api_benchmark_fix(
+        request: Request,
+        finding_id: str,
+        apply: bool = False,
+        revert_after: bool = True,
+    ) -> dict:
+        """Benchmark a specific fix, optionally applying it.
+
+        WARNING: If apply=True, this will modify your MeiliSearch instance settings!
+
+        Args:
+            finding_id: The ID of the finding to benchmark (e.g., MEILI-S001)
+            apply: If True, actually apply the fix (MODIFIES YOUR INSTANCE!)
+            revert_after: If True and apply=True, revert settings after benchmarking
+
+        Returns:
+            FixBenchmark with before/after results
+        """
+        state: AppState = request.app.state.analyzer_state
+
+        # Benchmarks only work on live instances
+        if not state.meili_url:
+            return {
+                "error": "Fix benchmarks require a live MeiliSearch instance",
+            }
+
+        if not state.report:
+            return {"error": "No analysis data available. Run analysis first."}
+
+        # Find the finding
+        all_findings = state.report.get_all_findings()
+        finding = next((f for f in all_findings if f.id == finding_id), None)
+
+        if not finding:
+            return {"error": f"Finding {finding_id} not found"}
+
+        if not finding.fix:
+            return {"error": f"Finding {finding_id} has no fix defined"}
+
+        if not finding.index_uid:
+            return {"error": f"Finding {finding_id} is not index-specific"}
+
+        # Get the index
+        if finding.index_uid not in state.report.indexes:
+            return {"error": f"Index {finding.index_uid} not found in report"}
+
+        from meiliscan.benchmarks.fix_benchmark import FixBenchmarkRunner
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+        collector = LiveInstanceCollector(
+            url=state.meili_url,
+            api_key=state.meili_api_key,
+        )
+
+        try:
+            if not await collector.connect():
+                return {"error": "Failed to connect to MeiliSearch instance"}
+
+            # Fetch fresh index data for the specific index
+            all_indexes = await collector.get_indexes()
+            index_data = next(
+                (idx for idx in all_indexes if idx.uid == finding.index_uid), None
+            )
+            if not index_data:
+                return {"error": f"Failed to fetch index data for {finding.index_uid}"}
+
+            runner = FixBenchmarkRunner(collector=collector)
+            result = await runner.benchmark_fix(
+                index=index_data,
+                finding=finding,
+                apply=apply,
+                revert_after=revert_after,
+            )
+
+            return {
+                "success": True,
+                "applied": result.applied,
+                "reverted": result.reverted,
+                "fix_benchmark": result.model_dump(),
+            }
+
+        except Exception as e:
+            return {"error": f"Fix benchmark failed: {e}"}
+        finally:
+            await collector.close()
+
     @app.get("/api/export")
     async def api_export(request: Request, format: str = "json") -> Response:
         """Export the analysis report in various formats.
