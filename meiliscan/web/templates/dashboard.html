@@ -116,77 +116,91 @@
     {% endif %}
 </div>
 
-<!-- Health Score & Indexes -->
+<!-- Statistics & Indexes -->
 <div class="grid grid-2 mb-2">
-<!-- Health Score -->
+<!-- Statistics -->
 <div class="card">
     <div class="card-header">
-        <h2 class="card-title">Health Score</h2>
+        <h2 class="card-title">Configuration Coverage</h2>
     </div>
-    <div class="health-score-container">
-        <!-- Left: Score Display -->
-        <div class="health-score-display">
-            <div class="health-score-value {% if report.summary.health_score >= 80 %}text-green{% elif report.summary.health_score >= 50 %}text-yellow{% else %}text-red{% endif %}">
-                {{ report.summary.health_score }}
+    <div class="statistics-container">
+        <!-- Left: Coverage Display -->
+        <div class="coverage-display">
+            {% set coverage = report.statistics.overall_coverage_percent if report.statistics else 0 %}
+            <div class="coverage-value {% if coverage >= 70 %}text-green{% elif coverage >= 40 %}text-yellow{% else %}text-red{% endif %}">
+                {{ coverage }}%
             </div>
-            <div class="health-score-label">out of 100</div>
-            {% if score_breakdown %}
-            <span class="badge badge-{{ 'red' if score_breakdown.label == 'Critical' else 'yellow' if score_breakdown.label in ['Poor', 'Needs Attention'] else 'green' }}">{{ score_breakdown.label }}</span>
-            {% endif %}
+            <div class="coverage-label">configured</div>
+            <span class="badge badge-{% if coverage >= 70 %}green{% elif coverage >= 40 %}yellow{% else %}red{% endif %}">
+                {% if coverage >= 70 %}Well Configured{% elif coverage >= 40 %}Partially Configured{% else %}Needs Configuration{% endif %}
+            </span>
             <div class="health-bar" style="margin-top: 1rem;">
-                <div class="health-bar-fill {% if report.summary.health_score >= 80 %}good{% elif report.summary.health_score >= 50 %}warning{% else %}critical{% endif %}" 
-                     style="width: {{ report.summary.health_score }}%;"></div>
+                <div class="health-bar-fill {% if coverage >= 70 %}good{% elif coverage >= 40 %}warning{% else %}critical{% endif %}" 
+                     style="width: {{ coverage }}%;"></div>
             </div>
         </div>
         
-        <!-- Right: Calculation Table -->
-        {% if score_breakdown %}
-        <div class="health-score-calculation">
-            <table class="score-table">
+        <!-- Right: Configuration Breakdown -->
+        <div class="configuration-breakdown">
+            {% if report.statistics %}
+            <table class="config-table">
                 <thead>
                     <tr>
-                        <th>Severity</th>
-                        <th>Count</th>
-                        <th>Weight</th>
-                        <th>Penalty</th>
+                        <th>Setting</th>
+                        <th>Configured</th>
                     </tr>
                 </thead>
                 <tbody>
                     <tr>
-                        <td><span class="text-red">Critical</span></td>
-                        <td>{{ score_breakdown.counts.critical }}</td>
-                        <td>× {{ score_breakdown.weights.critical }}</td>
-                        <td class="text-red">{% if score_breakdown.penalties.critical > 0 %}-{% endif %}{{ score_breakdown.penalties.critical }}</td>
+                        <td>Searchable Attributes</td>
+                        <td>
+                            <span class="badge badge-{% if report.statistics.indexes_with_custom_searchable > 0 %}green{% else %}gray{% endif %}">
+                                {{ report.statistics.indexes_with_custom_searchable }}/{{ report.statistics.total_indexes }}
+                            </span>
+                        </td>
                     </tr>
                     <tr>
-                        <td><span class="text-yellow">Warnings</span></td>
-                        <td>{{ score_breakdown.counts.warning }}</td>
-                        <td>× {{ score_breakdown.weights.warning }}</td>
-                        <td class="text-yellow">{% if score_breakdown.penalties.warning > 0 %}-{% endif %}{{ score_breakdown.penalties.warning }}</td>
+                        <td>Filterable Attributes</td>
+                        <td>
+                            <span class="badge badge-{% if report.statistics.indexes_with_custom_filterable > 0 %}green{% else %}gray{% endif %}">
+                                {{ report.statistics.indexes_with_custom_filterable }}/{{ report.statistics.total_indexes }}
+                            </span>
+                        </td>
                     </tr>
                     <tr>
-                        <td><span class="text-blue">Suggestions</span></td>
-                        <td>{{ score_breakdown.counts.suggestion }}</td>
-                        <td>× {{ score_breakdown.weights.suggestion }}</td>
-                        <td class="text-blue">{% if score_breakdown.penalties.suggestion > 0 %}-{% endif %}{{ score_breakdown.penalties.suggestion }}</td>
+                        <td>Sortable Attributes</td>
+                        <td>
+                            <span class="badge badge-{% if report.statistics.indexes_with_custom_sortable > 0 %}green{% else %}gray{% endif %}">
+                                {{ report.statistics.indexes_with_custom_sortable }}/{{ report.statistics.total_indexes }}
+                            </span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td>Custom Ranking Rules</td>
+                        <td>
+                            <span class="badge badge-{% if report.statistics.indexes_with_custom_ranking > 0 %}green{% else %}gray{% endif %}">
+                                {{ report.statistics.indexes_with_custom_ranking }}/{{ report.statistics.total_indexes }}
+                            </span>
+                        </td>
                     </tr>
                 </tbody>
-                <tfoot>
-                    <tr class="score-table-total">
-                        <td colspan="3">Total Penalty</td>
-                        <td class="text-red">-{{ score_breakdown.total_penalty }}{% if score_breakdown.capped %} *{% endif %}</td>
-                    </tr>
-                    <tr class="score-table-final">
-                        <td colspan="3">Final Score (100 - penalty)</td>
-                        <td class="{% if score_breakdown.final_score >= 80 %}text-green{% elif score_breakdown.final_score >= 50 %}text-yellow{% else %}text-red{% endif %}">{{ score_breakdown.final_score }}</td>
-                    </tr>
-                </tfoot>
             </table>
-            {% if score_breakdown.capped %}
-            <div class="text-secondary" style="font-size: 0.75rem; margin-top: 0.5rem;">* Score cannot go below 0</div>
+            {% if report.statistics.database_size_bytes %}
+            <div class="stat-row mt-1">
+                <span class="text-secondary">Database Size:</span>
+                <span>{{ report.statistics.database_size_bytes|filesizeformat }}</span>
+            </div>
+            {% endif %}
+            {% if report.statistics.collection_timing %}
+            <div class="stat-row">
+                <span class="text-secondary">Collection Time:</span>
+                <span>{{ "%.0f"|format(report.statistics.collection_timing.total_ms) }}ms</span>
+            </div>
+            {% endif %}
+            {% else %}
+            <p class="text-secondary">Statistics not available</p>
             {% endif %}
         </div>
-        {% endif %}
     </div>
 </div>
 

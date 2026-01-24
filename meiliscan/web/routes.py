@@ -674,6 +674,19 @@ def register_routes(app: FastAPI) -> None:
             "warnings": state.report.summary.warnings,
         }
 
+    @app.get("/api/statistics")
+    async def api_statistics(request: Request) -> dict:
+        """Get instance statistics including configuration coverage."""
+        state: AppState = request.app.state.analyzer_state
+
+        if not state.report:
+            return {"error": "No analysis data available"}
+
+        if not state.report.statistics:
+            return {"error": "No statistics available"}
+
+        return state.report.statistics.model_dump()
+
     @app.get("/api/export")
     async def api_export(request: Request, format: str = "json") -> Response:
         """Export the analysis report in various formats.

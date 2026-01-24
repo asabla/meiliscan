@@ -457,6 +457,93 @@ tr:hover {
     }
 }
 
+/* Statistics / Configuration Coverage */
+.statistics-container {
+    display: flex;
+    gap: 2rem;
+    align-items: flex-start;
+}
+
+.coverage-display {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 140px;
+}
+
+.coverage-value {
+    font-size: 3.5rem;
+    font-weight: 700;
+    line-height: 1;
+}
+
+.coverage-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.coverage-display .health-bar {
+    width: 100%;
+}
+
+.configuration-breakdown {
+    flex: 1;
+}
+
+.config-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.config-table th,
+.config-table td {
+    padding: 0.5rem 0.75rem;
+    text-align: left;
+}
+
+.config-table th {
+    font-weight: 500;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.config-table td {
+    border-bottom: 1px solid var(--bg-tertiary);
+}
+
+.config-table th:last-child,
+.config-table td:last-child {
+    text-align: right;
+}
+
+.stat-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+    font-size: 0.875rem;
+}
+
+@media (max-width: 768px) {
+    .statistics-container {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .coverage-display {
+        flex-direction: row;
+        gap: 1rem;
+        align-items: center;
+        min-width: auto;
+    }
+
+    .coverage-display .health-bar {
+        flex: 1;
+    }
+}
+
 .health-bar {
     height: 1rem;
     background-color: var(--bg-tertiary);
