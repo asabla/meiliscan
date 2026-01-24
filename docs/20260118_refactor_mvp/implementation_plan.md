@@ -294,10 +294,10 @@ The archived Python code remains available for:
 - [x] `meiliscan serve` launches web dashboard with dashboard/findings/index views ✅
 - [x] TUI mode available via OpenTUI ✅ (partial - needs polish)
 - [x] CI mode with appropriate exit codes ✅
-- [ ] Cross-platform binaries via GoReleaser
+- [x] Cross-platform binaries via GoReleaser ✅
 
 ### Quality Gates:
-- All analyzers have unit tests
-- Integration tests for collectors (live + dump)
-- Web UI has basic E2E tests
+- All analyzers have unit tests ✅
+- Integration tests for collectors (live + dump) ✅
+- Web UI has basic E2E tests ✅
 - Documentation updated for Go version ✅

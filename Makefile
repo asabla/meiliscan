@@ -1,4 +1,4 @@
-.PHONY: build test clean install run help
+.PHONY: build test clean install run help snapshot release-dry-run
 
 # Variables
 BINARY_NAME=meiliscan
@@ -54,3 +54,11 @@ tidy:
 ## run: Build and run with sample args
 run: build
 	./$(BINARY_NAME) --help
+
+## snapshot: Build snapshot release (for testing)
+snapshot:
+	goreleaser release --snapshot --clean
+
+## release-dry-run: Test release process without publishing
+release-dry-run:
+	goreleaser release --skip=publish --clean
