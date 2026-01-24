@@ -1,0 +1,20 @@
+{
+  "name": "meiliscan-tui",
+  "version": "1.0.0",
+  "description": "Terminal UI for Meiliscan using OpenTUI",
+  "module": "src/index.ts",
+  "type": "module",
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "dev": "bun run --watch src/index.ts"
+  },
+  "devDependencies": {
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {
+    "@opentui/core": "^0.1.74"
+  }
+}

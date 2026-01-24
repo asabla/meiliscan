@@ -1,0 +1,315 @@
+openapi: 3.1.0
+info:
+  title: Meiliscan API
+  description: |
+    REST API for Meiliscan - a Meilisearch configuration analyzer.
+    
+    Analyze live Meilisearch instances or dump files to identify configuration issues,
+    performance problems, and security concerns.
+  version: 1.0.0
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+tags:
+  - name: Health
+    description: Health check endpoints
+  - name: Analysis
+    description: Meilisearch analysis endpoints
+
+paths:
+  /api/health:
+    get:
+      tags:
+        - Health
+      summary: Health check
+      description: Returns the health status of the Meiliscan API server
+      operationId: getHealth
+      responses:
+        '200':
+          description: Server is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+
+  /api/analyze:
+    post:
+      tags:
+        - Analysis
+      summary: Analyze a Meilisearch instance
+      description: |
+        Analyzes a live Meilisearch instance and returns findings.
+        Provide the instance URL and optionally an API key for authentication.
+      operationId: analyzeInstance
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: Analysis completed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Report'
+        '400':
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Analysis failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /api/analyze/stream:
+    post:
+      tags:
+        - Analysis
+      summary: Analyze with streaming progress
+      description: |
+        Analyzes a Meilisearch instance with Server-Sent Events for progress updates.
+        Returns progress events followed by the final report.
+      operationId: analyzeInstanceStream
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AnalyzeRequest'
+      responses:
+        '200':
+          description: SSE stream with progress and final report
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - version
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+          example: ok
+        version:
+          type: string
+          example: "1.0.0"
+        uptime:
+          type: string
+          description: Server uptime in human-readable format
+          example: "2h30m15s"
+
+    AnalyzeRequest:
+      type: object
+      required:
+        - url
+      properties:
+        url:
+          type: string
+          format: uri
+          description: Meilisearch instance URL
+          example: "http://localhost:7700"
+        api_key:
+          type: string
+          description: Meilisearch API key (master key or admin key)
+          example: "your-master-key"
+
+    Report:
+      type: object
+      required:
+        - generated_at
+        - version
+        - source
+        - instance
+        - findings
+        - summary
+      properties:
+        generated_at:
+          type: string
+          format: date-time
+          description: When the report was generated
+        version:
+          type: string
+          description: Report format version
+          example: "1.0.0"
+        source:
+          $ref: '#/components/schemas/Source'
+        instance:
+          $ref: '#/components/schemas/InstanceInfo'
+        findings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Finding'
+        summary:
+          $ref: '#/components/schemas/Summary'
+
+    Source:
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          type: string
+          enum: [live, dump]
+          description: Type of data source
+        url:
+          type: string
+          description: Instance URL (for live sources)
+        dump_path:
+          type: string
+          description: Dump file path (for dump sources)
+
+    InstanceInfo:
+      type: object
+      properties:
+        version:
+          type: string
+          description: Meilisearch version
+          example: "1.6.0"
+        index_count:
+          type: integer
+          description: Number of indexes
+        total_documents:
+          type: integer
+          format: int64
+          description: Total documents across all indexes
+        database_size:
+          type: integer
+          format: int64
+          description: Database size in bytes
+
+    Finding:
+      type: object
+      required:
+        - id
+        - title
+        - description
+        - severity
+        - category
+        - timestamp
+      properties:
+        id:
+          type: string
+          description: Unique finding identifier
+          example: "MEILI-S001"
+        title:
+          type: string
+          description: Short title
+          example: "Wildcard searchableAttributes"
+        description:
+          type: string
+          description: Detailed description of the finding
+        severity:
+          type: string
+          enum: [critical, warning, suggestion, info]
+        category:
+          type: string
+          enum: [schema, document, performance, best_practice, instance, search_probe]
+        index_uid:
+          type: string
+          description: Affected index (if applicable)
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional context-specific details
+        recommendation:
+          type: string
+          description: Recommended action to resolve the finding
+        fix_command:
+          type: string
+          description: API command to fix the issue
+        timestamp:
+          type: string
+          format: date-time
+
+    Summary:
+      type: object
+      required:
+        - health_score
+        - health_status
+        - total_findings
+        - critical_count
+        - warning_count
+        - suggestion_count
+        - info_count
+      properties:
+        health_score:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Overall health score (0-100)
+        health_status:
+          type: string
+          enum: [healthy, warning, critical]
+          description: Health status based on score
+        total_findings:
+          type: integer
+          description: Total number of findings
+        critical_count:
+          type: integer
+          description: Number of critical findings
+        warning_count:
+          type: integer
+          description: Number of warning findings
+        suggestion_count:
+          type: integer
+          description: Number of suggestion findings
+        info_count:
+          type: integer
+          description: Number of info findings
+
+    ErrorResponse:
+      type: object
+      required:
+        - error
+        - message
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: "invalid_request"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "URL is required"
+        details:
+          type: object
+          additionalProperties: true
+          description: Additional error details
+
+    ProgressEvent:
+      type: object
+      required:
+        - type
+        - message
+      properties:
+        type:
+          type: string
+          enum: [progress, complete, error]
+        message:
+          type: string
+          description: Progress message
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+          description: Progress percentage
+        data:
+          type: object
+          description: Event-specific data (report for complete, error details for error)

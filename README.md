@@ -1,62 +1,35 @@
 # Meiliscan
 
-A comprehensive tool for analyzing MeiliSearch instances and dump files to identify optimization opportunities, potential pitfalls, and provide actionable recommendations.
+A comprehensive static analysis tool for Meilisearch that identifies configuration issues, performance problems, and provides actionable recommendations.
 
-![Dashboard Screenshot](docs/screenshots/dashboard.png)
+> **Note**: This is a Go rewrite of the original Python tool. The Python version is archived in `archive/python-v1/` for reference.
 
 ## Features
 
-- **Live Instance Analysis**: Connect to a running MeiliSearch instance and analyze its configuration
-- **Dump File Analysis**: Parse and analyze MeiliSearch dump archives without a running instance
-- **Instance Config Analysis**: Optional analysis of `config.toml` for production security/reliability checks
-- **Search Probing**: Opt-in read-only search probes to validate sort/filter configurations
-- **PII Detection**: Optional detection of sensitive/PII fields in documents
-- **42 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, search probes, and best practices
-- **Health Scoring**: Get an overall health score for your MeiliSearch setup
-- **Web Dashboard**: Interactive web UI for exploring analysis results
-- **Historical Comparison**: Compare two analysis reports to track changes over time
-- **Multiple Export Formats**: JSON, Markdown, SARIF (for GitHub/IDEs), and Agent-friendly output
-- **CI/CD Integration**: Exit codes and flags for automated pipelines
-- **Fix Script Generation**: Generate executable scripts to apply recommended fixes
-
-## Requirements
-
-- Python 3.11+
-- [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- **Live Instance Analysis**: Connect to a running Meilisearch instance and analyze its configuration
+- **Dump File Analysis**: Analyze Meilisearch dump files offline
+- **Health Scoring**: Get an overall health score (0-100) for your Meilisearch setup
+- **51 Findings**: Comprehensive checks across schema, performance, documents, and more
+- **Multiple Export Formats**: Terminal, JSON, Markdown, and SARIF output
+- **CI/CD Integration**: Exit codes and SARIF format for automated pipelines
+- **Search Probes**: Live validation of sort/filter configuration (live instances only)
+- **Web Dashboard**: Browser-based UI with real-time analysis
+- **Terminal UI (TUI)**: Interactive terminal interface built with OpenTUI
 
 ## Installation
 
-### From source (recommended for now)
+### From Source
 
 ```bash
+# Clone the repository
 git clone https://github.com/asabla/meiliscan.git
 cd meiliscan
-make install-dev
-```
 
-Notes:
-- The default install includes the web dashboard dependencies, so `meiliscan serve` works without extras.
-- If you want a minimal install, use `uv sync` and manage optional deps yourself.
+# Build
+go build -o meiliscan ./cmd/meiliscan
 
-### Using uv
-
-```bash
-# Run without installing (temporary environment)
-uvx --from git+https://github.com/asabla/meiliscan meiliscan --help
-
-# Serve the web dashboard (works without extras)
-uvx --from git+https://github.com/asabla/meiliscan meiliscan serve --url http://localhost:7700 --port 8080
-
-# Or install persistently to PATH
-uv tool install git+https://github.com/asabla/meiliscan
-meiliscan --help
-```
-
-### Using pip
-
-```bash
-pip install git+https://github.com/asabla/meiliscan.git
-meiliscan --help
+# Or install to $GOPATH/bin
+go install ./cmd/meiliscan
 ```
 
 ## Quick Start
@@ -70,437 +43,338 @@ meiliscan analyze --url http://localhost:7700
 # With API key
 meiliscan analyze --url http://localhost:7700 --api-key your-master-key
 
-# Save results to file
-meiliscan analyze --url http://localhost:7700 --output analysis.json
+# Export as JSON
+meiliscan analyze --url http://localhost:7700 --format json --output report.json
 
-# Enhanced analysis with config.toml (production checks)
-meiliscan analyze --url http://localhost:7700 --config-toml /path/to/config.toml
+# Export as Markdown
+meiliscan analyze --url http://localhost:7700 --format markdown --output report.md
 
-# Run search probes to validate sort/filter configuration
-meiliscan analyze --url http://localhost:7700 --probe-search
+# Export as SARIF (for GitHub Actions, etc.)
+meiliscan analyze --url http://localhost:7700 --format sarif --output results.sarif
 
-# Enable PII/sensitive field detection
-meiliscan analyze --url http://localhost:7700 --detect-sensitive
-
-# Increase sample document count for better analysis
-meiliscan analyze --url http://localhost:7700 --sample-documents 50
+# CI mode - exit with non-zero code on critical/warning findings
+meiliscan analyze --url http://localhost:7700 --ci
 ```
 
 ### Analyze a Dump File
 
 ```bash
-# Analyze a dump archive
-meiliscan analyze --dump ./path/to/dump.dump
-
-# Export as markdown
-meiliscan analyze --dump ./dump.dump --format markdown --output report.md
+# Analyze a Meilisearch dump
+meiliscan analyze --dump /path/to/dump.dump
 ```
-
-### Web Dashboard
-
-```bash
-# Start the web dashboard
-meiliscan serve --url http://localhost:7700 --port 8080
-
-# Then open http://localhost:8080 in your browser
-```
-
-### Quick Health Summary
-
-```bash
-meiliscan summary --url http://localhost:7700
-```
-
-## Example Output
-
-### CLI Summary
-
-```
-$ meiliscan summary --url http://localhost:7700
-
-╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
-│ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
-│                                                                              │
-│ Health Score: 18/100 (Critical)                                              │
-│ ███░░░░░░░░░░░░░░░░░                                                         │
-│                                                                              │
-│ ● Critical: 1    ● Warnings: 5    ● Suggestions: 9    ● Info: 6              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-
-Critical Issues:
-  • products: Wildcard searchableAttributes
-
-Run 'analyze' for full report
-```
-
-### CLI Analysis
-
-```
-$ meiliscan analyze --url http://localhost:7700
-
-╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
-│ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
-│                                                                              │
-│ Health Score: 18/100 (Critical)                                              │
-│ ███░░░░░░░░░░░░░░░░░                                                         │
-│                                                                              │
-│ ● Critical: 1    ● Warnings: 5    ● Suggestions: 9    ● Info: 6              │
-╰──────────────────────────────────────────────────────────────────────────────╯
-                                                                                
-                                  Top Findings                                  
-┏━━━━━━━━━━━━┳━━━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┓
-┃ ID         ┃ Severi… ┃ Index         ┃ Title                                 ┃
-┡━━━━━━━━━━━━╇━━━━━━━━━╇━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┩
-│ MEILI-S001 │ critic… │ products      │ Wildcard searchableAttributes         │
-│ MEILI-S002 │ warning │ orders        │ ID fields in searchableAttributes     │
-│ MEILI-S009 │ warning │ orders        │ Very low pagination limit             │
-│ MEILI-D004 │ warning │ products      │ Large array fields detected           │
-│ MEILI-D007 │ warning │ products      │ Mixed types in fields                 │
-│ MEILI-S002 │ warning │ users         │ ID fields in searchableAttributes     │
-│ MEILI-S010 │ sugges… │ articles      │ High pagination limit                 │
-│ MEILI-D005 │ sugges… │ articles      │ HTML/Markdown content in text fields  │
-│ MEILI-B002 │ sugges… │ articles      │ Fields in both searchable and         │
-│            │         │               │ filterable attributes                 │
-│ MEILI-S006 │ sugges… │ orders        │ No stop words configured              │
-└────────────┴─────────┴───────────────┴───────────────────────────────────────┘
-
-Use --output to save the full report to a file.
-```
-
-## Analysis Checks
-
-### Schema Findings (S001-S020)
-
-| ID | Title | Severity | Description |
-|----|-------|----------|-------------|
-| MEILI-S001 | Wildcard searchableAttributes | Critical | All fields are searchable, including IDs and numbers |
-| MEILI-S002 | ID fields in searchableAttributes | Warning | ID fields shouldn't typically be searchable |
-| MEILI-S003 | Numeric fields in searchableAttributes | Suggestion | Numeric fields may be better as filterable |
-| MEILI-S004 | Empty filterableAttributes | Info | No filterable attributes configured |
-| MEILI-S005 | Wildcard displayedAttributes with many fields | Suggestion | Large response payloads |
-| MEILI-S006 | No stop words configured | Suggestion | Missing language-appropriate stop words |
-| MEILI-S007 | Default ranking rules | Info | Using default ranking rules |
-| MEILI-S008 | No distinct attribute set | Suggestion | Potentially duplicate results |
-| MEILI-S009 | Very low pagination limit | Warning | maxTotalHits < 100 |
-| MEILI-S010 | High pagination limit | Suggestion | maxTotalHits > 10000 |
-| MEILI-S011 | Missing primary key | Critical | Index has no primary key configured |
-| MEILI-S012 | Suspicious primary key | Warning | Primary key looks like a mutable/non-identifier field |
-| MEILI-S013 | Missing sortable attributes | Info | No sortable attributes but index has common sort candidates |
-| MEILI-S014 | Sortable attribute type issues | Warning | Sortable attribute has inconsistent or complex types |
-| MEILI-S015 | High-cardinality filterable | Suggestion | Filterable attribute appears high-cardinality (UUID/email patterns) |
-| MEILI-S016 | Faceting maxValuesPerFacet mismatch | Suggestion | Faceting limit doesn't match observed cardinality |
-| MEILI-S017 | Suspicious synonyms | Suggestion | Synonyms set has issues (empty, self-synonyms, very large) |
-| MEILI-S018 | Typo tolerance on ID fields | Suggestion | Typo tolerance enabled on identifier-like fields |
-| MEILI-S019 | Permissive typo settings | Info | Very permissive minWordSizeForTypos settings |
-| MEILI-S020 | Dictionary issues | Suggestion | Large dictionary, duplicate entries, or suspicious separators |
-
-### Document Findings (D001-D013)
-
-| ID | Title | Severity | Description |
-|----|-------|----------|-------------|
-| MEILI-D001 | Large documents | Warning | Documents exceed recommended size |
-| MEILI-D002 | Inconsistent schema | Warning | Field presence varies across documents |
-| MEILI-D003 | Deep nesting | Warning | Deeply nested object structures |
-| MEILI-D004 | Large arrays | Warning | Arrays with many elements |
-| MEILI-D005 | HTML in text fields | Suggestion | Raw HTML in searchable content |
-| MEILI-D006 | Empty field values | Info | Fields with empty or null values |
-| MEILI-D007 | Mixed types in field | Warning | Same field has different types |
-| MEILI-D008 | Very long text | Suggestion | Text fields exceeding optimal length |
-| MEILI-D009 | Sensitive field names | Warning | Field names suggesting PII data (with `--detect-sensitive`) |
-| MEILI-D010 | PII content detected | Critical | PII patterns in field values (with `--detect-sensitive`) |
-| MEILI-D011 | Arrays of objects in filterable | Warning | Filterable fields contain arrays of objects (flattening issues) |
-| MEILI-D012 | Geo coordinates without _geo | Suggestion | Lat/lng fields detected but not using MeiliSearch _geo format |
-| MEILI-D013 | Date strings in sortable | Suggestion | String dates in sortable fields (should use Unix timestamps) |
-
-### Performance Findings (P001-P010)
-
-| ID | Title | Severity | Description |
-|----|-------|----------|-------------|
-| MEILI-P001 | High task failure rate | Critical | Many indexing tasks are failing |
-| MEILI-P002 | Slow indexing | Warning | Indexing performance is degraded |
-| MEILI-P003 | Database fragmentation | Suggestion | Database may benefit from optimization |
-| MEILI-P004 | Too many indexes | Suggestion | Large number of indexes may impact performance |
-| MEILI-P005 | Imbalanced indexes | Info | Document counts vary significantly |
-| MEILI-P006 | Too many fields | Warning | Indexes have excessive field counts |
-| MEILI-P007 | Task queue backlog | Warning | Sustained queueing delays (>60s average) |
-| MEILI-P008 | Tiny indexing tasks | Suggestion | Too many small batches (<10 docs), suggest client-side batching |
-| MEILI-P009 | Oversized indexing tasks | Suggestion | Tasks taking >10 minutes, suggest smaller batches |
-| MEILI-P010 | Recurring task errors | Warning | Same error codes appearing repeatedly (≥3 times) |
-
-### Best Practices Findings (B001-B004)
-
-| ID | Title | Severity | Description |
-|----|-------|----------|-------------|
-| MEILI-B001 | Settings after documents | Warning | Settings were updated after adding documents |
-| MEILI-B002 | Duplicate searchable/filterable | Suggestion | Same fields in both searchable and filterable |
-| MEILI-B003 | Missing embedders config | Info | No AI/vector search configuration |
-| MEILI-B004 | Old MeiliSearch version | Suggestion/Warning | Running an outdated version |
-
-### Instance Config Findings (I001-I006)
-
-These findings require providing a `config.toml` file via `--config-toml`.
-
-| ID | Title | Severity | Description |
-|----|-------|----------|-------------|
-| MEILI-I001 | Production without master key | Critical | `env=production` but master key missing or too short |
-| MEILI-I002 | Exposed without SSL | Warning | Binding to 0.0.0.0 without SSL configured |
-| MEILI-I003 | Verbose logging in production | Suggestion | DEBUG/TRACE logging enabled in production |
-| MEILI-I004 | No scheduled snapshots | Suggestion | Snapshots not scheduled in production environment |
-| MEILI-I005 | Extreme payload limits | Warning | HTTP payload size limit too low or too high |
-| MEILI-I006 | Risky indexing settings | Suggestion | Indexing memory/threads settings may cause issues |
-
-### Search Probe Findings (Q001-Q003)
-
-These findings require the `--probe-search` flag.
-
-| ID | Title | Severity | Description |
-|----|-------|----------|-------------|
-| MEILI-Q001 | Sort probe failed | Warning | Configured sortable attribute failed smoke test |
-| MEILI-Q002 | Filter probe failed | Warning | Configured filterable attribute failed smoke test |
-| MEILI-Q003 | Large response payload | Info | Search response unusually large |
 
 ## CLI Reference
 
 ### `analyze`
 
-Analyze a MeiliSearch instance or dump file.
+Analyze a Meilisearch instance or dump file.
 
 ```bash
-meiliscan analyze [OPTIONS]
+meiliscan analyze [flags]
 ```
 
-Options:
-- `--url, -u`: MeiliSearch instance URL
-- `--api-key, -k`: MeiliSearch API key (or set `MEILI_MASTER_KEY` env var)
-- `--dump, -d`: Path to a MeiliSearch dump file
-- `--output, -o`: Output file path
-- `--format, -f`: Output format: `json`, `markdown`, `sarif`, `agent` (default: json)
-- `--ci`: CI mode - exit with non-zero code on findings
-- `--fail-on-warnings`: In CI mode, also fail on warnings (not just critical)
-- `--config-toml`: Path to Meilisearch `config.toml` for enhanced instance analysis
-- `--probe-search`: Run read-only search probes to validate sort/filter configuration
-- `--sample-documents`: Number of sample documents to fetch per index (default: 20)
-- `--detect-sensitive`: Enable detection of potential PII/sensitive fields in documents
+**Flags:**
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--url` | `-u` | Meilisearch instance URL |
+| `--api-key` | `-k` | Meilisearch API key (or set `MEILI_MASTER_KEY` env var) |
+| `--dump` | `-d` | Path to Meilisearch dump file |
+| `--output` | `-o` | Output file path (default: stdout for terminal) |
+| `--format` | `-f` | Output format: `terminal`, `json`, `markdown`, `sarif` (default: terminal) |
+| `--ci` | | CI mode - exit code 1 on critical, 2 on warning findings |
 
-### `compare`
+### `version`
 
-Compare two analysis reports to track changes over time.
+Show version information.
 
 ```bash
-meiliscan compare OLD_REPORT NEW_REPORT [OPTIONS]
+meiliscan version
 ```
-
-Options:
-- `--output, -o`: Output file path
-- `--format, -f`: Output format: `json`, `markdown` (default: markdown)
-
-### `fix-script`
-
-Generate a shell script to apply recommended fixes.
-
-```bash
-meiliscan fix-script --input REPORT_JSON --output SCRIPT_PATH
-```
-
-Options:
-- `--input, -i`: Path to analysis JSON report
-- `--output, -o`: Output script path
 
 ### `serve`
 
-Start the web dashboard.
+Start the web dashboard and API server.
 
 ```bash
-meiliscan serve [OPTIONS]
+meiliscan serve [flags]
 ```
 
-Options:
-- `--url, -u`: MeiliSearch instance URL
-- `--api-key, -k`: MeiliSearch API key
-- `--host`: Dashboard host (default: 127.0.0.1)
-- `--port, -p`: Dashboard port (default: 8080)
+**Flags:**
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--port` | `-p` | Server port (default: 8080) |
+| `--host` | | Host to bind to (default: 127.0.0.1) |
 
-### `summary`
-
-Display a quick health summary.
-
+**Example:**
 ```bash
-meiliscan summary [OPTIONS]
+# Start the server
+meiliscan serve --port 8080
+
+# Open http://localhost:8080 in your browser
 ```
 
-Options:
-- `--url, -u`: MeiliSearch instance URL (required)
-- `--api-key, -k`: MeiliSearch API key
+## Health Score
 
-## Export Formats
+Meiliscan calculates a health score from 0-100 based on findings:
 
-### JSON (default)
+| Score | Rating | Description |
+|-------|--------|-------------|
+| 90-100 | Excellent | No significant issues |
+| 70-89 | Good | Minor optimizations possible |
+| 50-69 | Fair | Some issues should be addressed |
+| 30-49 | Poor | Multiple issues need attention |
+| 0-29 | Critical | Serious issues require immediate action |
 
-Structured JSON output for programmatic processing.
+**Severity weights:**
+- Critical: -25 points
+- Warning: -10 points  
+- Suggestion: -3 points
+- Info: -1 point
+
+## Findings Catalog
+
+Meiliscan checks for **51 different findings** across 6 categories:
+
+### Schema (S001-S020)
+
+| ID | Finding | Severity |
+|----|---------|----------|
+| S001 | Wildcard searchableAttributes | Critical |
+| S002 | ID fields in searchableAttributes | Warning |
+| S003 | Numeric fields in searchableAttributes | Suggestion |
+| S004 | Empty filterableAttributes | Info |
+| S005 | Wildcard displayedAttributes with many fields | Suggestion |
+| S006 | No stop words configured | Suggestion |
+| S007 | Default ranking rules | Info |
+| S008 | No distinct attribute configured | Suggestion |
+| S009 | Very low pagination limit | Warning |
+| S010 | High pagination limit | Suggestion |
+| S011 | No primary key defined | Critical |
+| S012 | Primary key appears mutable | Warning |
+| S013 | No sortable attributes configured | Info |
+| S014 | Sortable attribute type issues | Warning |
+| S015 | High-cardinality filterable attribute | Suggestion |
+| S016 | Faceting maxValuesPerFacet issues | Info/Suggestion |
+| S017 | Synonyms configuration issues | Suggestion |
+| S018 | Typo tolerance enabled on ID fields | Suggestion |
+| S019 | Very permissive typo tolerance | Info |
+| S020 | Dictionary/tokenization issues | Suggestion |
+
+### Performance (P001-P010)
+
+| ID | Finding | Severity |
+|----|---------|----------|
+| P001 | High task failure rate | Critical |
+| P002 | Slow indexing operations | Warning |
+| P003 | Database fragmentation detected | Suggestion |
+| P004 | Too many indexes | Suggestion |
+| P005 | Imbalanced index distribution | Info |
+| P006 | Too many unique fields | Warning |
+| P007 | Sustained task queue backlog | Warning |
+| P008 | Many tiny indexing tasks | Suggestion |
+| P009 | Oversized indexing tasks | Suggestion |
+| P010 | Recurring task failures | Warning |
+
+### Documents (D001-D013)
+
+| ID | Finding | Severity |
+|----|---------|----------|
+| D001 | Large documents detected | Warning |
+| D002 | Inconsistent document schema | Warning |
+| D003 | Deep document nesting | Warning |
+| D004 | Large array fields detected | Warning |
+| D005 | HTML/Markdown content in text fields | Suggestion |
+| D006 | High empty/null field ratio | Info |
+| D007 | Mixed types in fields | Warning |
+| D008 | Very long text fields | Suggestion |
+| D009 | Potentially sensitive field names | Warning |
+| D010 | Potential PII detected in content | Critical |
+| D011 | Arrays of objects in filterable fields | Warning |
+| D012 | Geo coordinates not using _geo format | Suggestion |
+| D013 | Date strings in sortable attributes | Suggestion |
+
+### Instance (I001)
+
+| ID | Finding | Severity |
+|----|---------|----------|
+| I001 | Instance running without authentication | Critical |
+
+### Best Practices (B001-B004)
+
+| ID | Finding | Severity |
+|----|---------|----------|
+| B001 | Settings updated after documents added | Warning |
+| B002 | Fields in both searchable and filterable | Suggestion |
+| B003 | Unused sortable attributes | Suggestion |
+| B004 | Unused filterable attributes | Suggestion |
+
+### Search Probe (Q001-Q003) - Live Only
+
+| ID | Finding | Severity |
+|----|---------|----------|
+| Q001 | Sort probe failed | Warning |
+| Q002 | Filter probe failed | Warning |
+| Q003 | Large search response payload | Info |
+
+## Terminal UI (TUI)
+
+Meiliscan includes an interactive terminal UI built with [OpenTUI](https://github.com/opentui/opentui).
+
+### Prerequisites
+
+- [Bun](https://bun.sh/) runtime (v1.0+)
+
+### Running the TUI
 
 ```bash
-meiliscan analyze --url ... --format json --output report.json
+# First, start the API server
+meiliscan serve --port 8080
+
+# In another terminal, run the TUI
+cd tui
+bun install   # First time only
+bun run start
 ```
 
-### Markdown
+**TUI Features:**
+- Interactive connection form for Meilisearch URL and API key
+- Dashboard with health score, instance info, and findings summary
+- Filterable findings list (by severity)
+- Detailed finding view with recommendations and fix commands
+- Keyboard navigation (arrow keys, Enter, Esc)
 
-Human-readable report with tables and formatted findings.
+**Keyboard Shortcuts:**
+| Key | Action |
+|-----|--------|
+| `Enter` | Connect / Select |
+| `Tab` | Switch input fields |
+| `↑/↓` or `j/k` | Navigate findings |
+| `1-4` | Filter by severity |
+| `A` | Show all findings |
+| `F` | View findings list |
+| `R` | Refresh analysis |
+| `B` | Go back |
+| `Esc` | Go back |
+| `Ctrl+C` | Quit |
 
+**Environment Variables:**
 ```bash
-meiliscan analyze --url ... --format markdown --output report.md
-```
-
-### SARIF
-
-Static Analysis Results Interchange Format for GitHub Code Scanning and IDE integration.
-
-```bash
-meiliscan analyze --url ... --format sarif --output results.sarif
-```
-
-### Agent
-
-Optimized output for AI coding agents (Claude, GPT, etc.) with prioritized issues and fix commands.
-
-```bash
-meiliscan analyze --url ... --format agent --output agent-context.md
+# Custom API URL (default: http://localhost:8080)
+MEILISCAN_API_URL=http://localhost:8080 bun run start
 ```
 
 ## CI/CD Integration
 
-Use the `--ci` flag to enable CI mode with appropriate exit codes:
+### Exit Codes
 
-```bash
-# Exit code 2 on critical findings, 0 otherwise
-meiliscan analyze --url http://localhost:7700 --ci
-
-# Exit code 1 on warnings, 2 on critical findings
-meiliscan analyze --url http://localhost:7700 --ci --fail-on-warnings
-```
+When using `--ci` flag:
+- `0`: No critical or warning findings
+- `1`: Critical findings detected
+- `2`: Warning findings detected (no critical)
 
 ### GitHub Actions Example
 
 ```yaml
-- name: Analyze MeiliSearch
-  run: |
-    meiliscan analyze \
-      --url ${{ secrets.MEILISEARCH_URL }} \
-      --api-key ${{ secrets.MEILISEARCH_API_KEY }} \
-      --format sarif \
-      --output results.sarif \
-      --ci
+name: Meilisearch Analysis
 
-- name: Upload SARIF
-  uses: github/codeql-action/upload-sarif@v2
-  with:
-    sarif_file: results.sarif
+on: [push, pull_request]
+
+jobs:
+  analyze:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+      
+      - name: Install Meiliscan
+        run: go install github.com/asabla/meiliscan/cmd/meiliscan@latest
+      
+      - name: Analyze Meilisearch
+        run: |
+          meiliscan analyze \
+            --url ${{ secrets.MEILI_URL }} \
+            --api-key ${{ secrets.MEILI_KEY }} \
+            --format sarif \
+            --output results.sarif \
+            --ci
+      
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: results.sarif
 ```
-
-## Web Dashboard
-
-The web dashboard provides an interactive interface for exploring analysis results:
-
-- **Dashboard Overview**: Health score gauge, summary statistics, quick actions
-- **Index Details**: Per-index settings, statistics, and findings
-- **Findings Explorer**: Filter by severity, category, and index
-- **Comparison View**: Upload and compare two JSON reports
-- **Document Sampling**: Preview sample documents from each index
-
-Start the dashboard:
-
-```bash
-meiliscan serve --url http://localhost:7700 --port 8080
-```
-
-### Findings Explorer
-
-Filter and explore all findings by severity, category, or index:
-
-![Findings Page](docs/screenshots/findings.png)
-
-### Index Details
-
-Drill down into individual indexes to see settings, statistics, and findings:
-
-![Index Detail Page](docs/screenshots/index_detail.png)
 
 ## Development
 
-### Setup
+### Building
 
 ```bash
-git clone https://github.com/yourusername/meiliscan.git
-cd meiliscan
-make install-dev  # or: uv sync --all-extras
+go build -o meiliscan ./cmd/meiliscan
 ```
 
-### Makefile Commands
-
-Run `make help` for a full list of commands.
+### Testing
 
 ```bash
-# Setup
-make install-dev     # Install all dependencies
-
-# Testing
-make test            # Run all tests
-make test-cov        # Run tests with coverage report
-make test-file F=tests/test_schema_analyzer.py  # Run single test file
-
-# Code Quality
-make lint            # Run ruff linter
-make format          # Format code with ruff
-
-# Development
-make serve           # Start web dashboard on http://localhost:8080
-make serve-dev       # Start with auto-reload
-
-# Test Data Seeding
-make seed-dump       # Create test-dump.dump with sample data
-make seed-instance   # Seed MeiliSearch at localhost:7700
-make seed-instance MEILI_URL=http://localhost:7700 MEILI_API_KEY=my-key
-make seed-clean      # Delete all test indexes
-
-# Cleanup
-make clean           # Remove build artifacts and cache
-```
-
-### Running Tests
-
-```bash
-# All tests
-make test
+# Run all tests
+go test ./...
 
 # With coverage
-make test-cov
+go test -cover ./...
 
-# Single test file
-make test-file F=tests/test_schema_analyzer.py
-
-# Single test function
-uv run pytest tests/test_schema_analyzer.py::TestSchemaAnalyzer::test_wildcard -v
-
-# Pattern matching
-uv run pytest -k "test_large"
+# Verbose output
+go test -v ./...
 ```
 
 ### Project Structure
 
 ```
 meiliscan/
-├── analyzers/       # Analysis logic (schema, document, performance, best_practices)
-├── collectors/      # Data collection (live_instance.py, dump_parser.py)
-├── core/            # Orchestration (collector.py, reporter.py, scorer.py)
-├── exporters/       # Output formats (json, markdown, sarif, agent)
-├── models/          # Pydantic models (finding.py, index.py, report.py)
-├── web/             # FastAPI dashboard + templates + static/
-└── cli.py           # Typer CLI entry point
+├── cmd/meiliscan/          # CLI entry point
+├── internal/
+│   ├── analyzer/           # Analysis logic
+│   │   ├── schema.go       # S001-S020 findings
+│   │   ├── performance.go  # P001-P010 findings
+│   │   ├── documents.go    # D001-D013 findings
+│   │   ├── instance.go     # I001 finding
+│   │   ├── best_practices.go # B001-B004 findings
+│   │   └── search_probe.go # Q001-Q003 findings
+│   ├── cli/                # Cobra CLI commands
+│   ├── collector/          # Data collection (live/dump)
+│   ├── exporter/           # Output formats
+│   ├── finding/            # Finding model
+│   └── report/             # Report model with health scoring
+├── api/                    # HTTP API server
+├── web/                    # Web dashboard (templ + htmx)
+│   ├── static/             # CSS, JS assets
+│   └── templates/          # templ templates
+├── tui/                    # Terminal UI (TypeScript/Bun)
+│   └── src/
+│       ├── index.ts        # TUI entry point
+│       └── api.ts          # API client
+└── archive/python-v1/      # Archived Python implementation
 ```
+
+## Roadmap
+
+**Completed:**
+- Live instance analysis
+- Dump file analysis  
+- 51 findings across 6 categories
+- JSON, Markdown, SARIF export
+- CI/CD integration
+- Health scoring
+- Web dashboard with HTMX
+- Terminal UI (TUI) with OpenTUI
+
+**Planned:**
+- Watch mode for continuous monitoring
+- Diff reports between analyses
+- Instance findings I002-I006 (config.toml parsing)
 
 ## License
 
 MIT
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.

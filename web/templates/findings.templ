@@ -1,0 +1,246 @@
+package templates
+
+import (
+	"fmt"
+	"github.com/asabla/meiliscan/internal/finding"
+)
+
+// FindingsData holds data for the findings page
+type FindingsData struct {
+	Findings        []*finding.Finding
+	SeverityCounts  SeverityCounts
+	Categories      []string
+	Indexes         []string
+	CurrentSeverity string
+	CurrentCategory string
+	CurrentIndex    string
+}
+
+// SeverityCounts holds counts by severity
+type SeverityCounts struct {
+	Critical   int
+	Warning    int
+	Suggestion int
+	Info       int
+}
+
+templ Findings(data FindingsData) {
+	@Layout("Findings", "/findings") {
+		<h1 style="font-size: 1.75rem; margin-bottom: 1.5rem;">Findings Explorer</h1>
+		<!-- Severity Summary -->
+		<div class="card mb-2">
+			<div class="card-header">
+				<h2 class="card-title">Issues by Severity</h2>
+			</div>
+			<div class="flex gap-2 flex-wrap">
+				<button
+					onclick="filterBySeverity('critical')"
+					class={ "badge badge-red", templ.KV("badge-active", data.CurrentSeverity == "critical") }
+					style="cursor: pointer; border: none;"
+				>
+					{ fmt.Sprintf("%d Critical", data.SeverityCounts.Critical) }
+				</button>
+				<button
+					onclick="filterBySeverity('warning')"
+					class={ "badge badge-yellow", templ.KV("badge-active", data.CurrentSeverity == "warning") }
+					style="cursor: pointer; border: none;"
+				>
+					{ fmt.Sprintf("%d Warnings", data.SeverityCounts.Warning) }
+				</button>
+				<button
+					onclick="filterBySeverity('suggestion')"
+					class={ "badge badge-blue", templ.KV("badge-active", data.CurrentSeverity == "suggestion") }
+					style="cursor: pointer; border: none;"
+				>
+					{ fmt.Sprintf("%d Suggestions", data.SeverityCounts.Suggestion) }
+				</button>
+				<button
+					onclick="filterBySeverity('info')"
+					class={ "badge badge-gray", templ.KV("badge-active", data.CurrentSeverity == "info") }
+					style="cursor: pointer; border: none;"
+				>
+					{ fmt.Sprintf("%d Info", data.SeverityCounts.Info) }
+				</button>
+				if data.CurrentSeverity != "" {
+					<button
+						onclick="filterBySeverity('')"
+						class="badge badge-outline"
+						style="cursor: pointer; border: none;"
+					>
+						Clear filter
+					</button>
+				}
+			</div>
+		</div>
+		<!-- Filters -->
+		<div class="card mb-2">
+			<div class="flex items-center gap-2 flex-wrap">
+				<div class="form-group" style="margin-bottom: 0;">
+					<label for="severity-filter" style="display: inline; margin-right: 0.5rem;">Severity</label>
+					<select id="severity-filter" onchange="applyFilters()" style="width: auto;">
+						<option value="">All</option>
+						<option value="critical" selected?={ data.CurrentSeverity == "critical" }>Critical</option>
+						<option value="warning" selected?={ data.CurrentSeverity == "warning" }>Warning</option>
+						<option value="suggestion" selected?={ data.CurrentSeverity == "suggestion" }>Suggestion</option>
+						<option value="info" selected?={ data.CurrentSeverity == "info" }>Info</option>
+					</select>
+				</div>
+				<div class="form-group" style="margin-bottom: 0;">
+					<label for="category-filter" style="display: inline; margin-right: 0.5rem;">Category</label>
+					<select id="category-filter" onchange="applyFilters()" style="width: auto;">
+						<option value="">All</option>
+						for _, cat := range data.Categories {
+							<option value={ cat } selected?={ data.CurrentCategory == cat }>{ cat }</option>
+						}
+					</select>
+				</div>
+				if len(data.Indexes) > 0 {
+					<div class="form-group" style="margin-bottom: 0;">
+						<label for="index-filter" style="display: inline; margin-right: 0.5rem;">Index</label>
+						<select id="index-filter" onchange="applyFilters()" style="width: auto;">
+							<option value="">All</option>
+							for _, idx := range data.Indexes {
+								<option value={ idx } selected?={ data.CurrentIndex == idx }>{ idx }</option>
+							}
+						</select>
+					</div>
+				}
+				<button class="btn btn-secondary btn-sm" onclick="clearFilters()">Clear</button>
+			</div>
+		</div>
+		<!-- Findings List -->
+		<div
+			id="findings-list"
+			hx-get={ buildFindingsListURL(data.CurrentSeverity, data.CurrentCategory, data.CurrentIndex) }
+			hx-trigger="load"
+			hx-swap="innerHTML"
+		>
+			<div class="text-center text-muted" style="padding: 2rem;">
+				Loading findings...
+			</div>
+		</div>
+		<script>
+			function filterBySeverity(severity) {
+				document.getElementById('severity-filter').value = severity;
+				applyFilters();
+			}
+
+			function applyFilters() {
+				const severity = document.getElementById('severity-filter').value;
+				const category = document.getElementById('category-filter').value;
+				const indexEl = document.getElementById('index-filter');
+				const index = indexEl ? indexEl.value : '';
+				
+				const params = new URLSearchParams();
+				if (severity) params.set('severity', severity);
+				if (category) params.set('category', category);
+				if (index) params.set('index', index);
+				
+				// Update URL without reloading
+				const newUrl = '/findings' + (params.toString() ? '?' + params.toString() : '');
+				window.history.pushState({}, '', newUrl);
+				
+				// Build HTMX endpoint URL
+				const htmxUrl = '/findings/list' + (params.toString() ? '?' + params.toString() : '');
+				
+				// Trigger HTMX request
+				htmx.ajax('GET', htmxUrl, {target: '#findings-list', swap: 'innerHTML'});
+			}
+
+			function clearFilters() {
+				document.getElementById('severity-filter').value = '';
+				document.getElementById('category-filter').value = '';
+				const indexEl = document.getElementById('index-filter');
+				if (indexEl) indexEl.value = '';
+				applyFilters();
+			}
+		</script>
+	}
+}
+
+// FindingsList is a partial for HTMX updates
+templ FindingsList(findings []*finding.Finding, currentSeverity, currentCategory, currentIndex string) {
+	<div class="mb-2">
+		<p class="text-secondary">
+			Showing { fmt.Sprintf("%d", len(findings)) } { plural(len(findings), "finding", "findings") }
+			if currentSeverity != "" || currentCategory != "" || currentIndex != "" {
+				(filtered)
+			}
+		</p>
+	</div>
+	if len(findings) > 0 {
+		for _, f := range findings {
+			@FindingCard(f)
+		}
+	} else {
+		<div class="card">
+			<div class="empty-state">
+				<h2>No Findings</h2>
+				<p class="text-secondary">
+					if currentSeverity != "" || currentCategory != "" || currentIndex != "" {
+						No findings match the selected filters.
+					} else {
+						Great news! No issues were found in your Meilisearch configuration.
+					}
+				</p>
+			</div>
+		</div>
+	}
+}
+
+templ FindingCard(f *finding.Finding) {
+	<div class={ "card finding finding-" + string(f.Severity) }>
+		<div class="finding-header">
+			<div class="finding-title">
+				{ f.Title }
+			</div>
+			<div class="flex gap-1 items-center">
+				<span class={ "badge badge-" + SeverityColor(string(f.Severity)) }>{ string(f.Severity) }</span>
+				<span class="badge badge-gray">{ string(f.Category) }</span>
+				<span class="finding-id">{ f.ID }</span>
+			</div>
+		</div>
+		<div class="finding-description">{ f.Description }</div>
+		if f.IndexUID != "" {
+			<div class="mt-1">
+				<strong class="text-secondary">Index:</strong>
+				<a href={ templ.SafeURL("/index/" + f.IndexUID) }>{ f.IndexUID }</a>
+			</div>
+		}
+		if f.Recommendation != "" {
+			<div class="mt-1">
+				<strong class="text-secondary">Recommendation:</strong> { f.Recommendation }
+			</div>
+		}
+		if f.FixCommand != "" {
+			<div class="mt-1">
+				<strong class="text-secondary">Fix Command:</strong>
+				<pre><code>{ f.FixCommand }</code></pre>
+			</div>
+		}
+	</div>
+}
+
+func buildFindingsListURL(severity, category, index string) string {
+	url := "/findings/list"
+	params := ""
+	if severity != "" {
+		params += "severity=" + severity
+	}
+	if category != "" {
+		if params != "" {
+			params += "&"
+		}
+		params += "category=" + category
+	}
+	if index != "" {
+		if params != "" {
+			params += "&"
+		}
+		params += "index=" + index
+	}
+	if params != "" {
+		url += "?" + params
+	}
+	return url
+}
