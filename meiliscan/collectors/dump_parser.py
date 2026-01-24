@@ -16,14 +16,6 @@ from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 if TYPE_CHECKING:
     from meiliscan.core.progress import ProgressCallback
 
-# Number of documents to sample for inferring field distribution.
-# After this many documents, field distribution patterns are statistically stable.
-FIELD_SAMPLE_SIZE = 10_000
-
-# Safety cap to prevent OOM when max_sample_docs=None is passed.
-# This limits the number of full documents kept in memory.
-MAX_SAMPLE_DOCS_CAP = 100_000
-
 
 class DumpParser(BaseCollector):
     """Parser for MeiliSearch dump files.
@@ -231,9 +223,7 @@ class DumpParser(BaseCollector):
 
         Performance optimizations:
         - Uses orjson for 3-10x faster JSON parsing of documents
-        - Only parses first FIELD_SAMPLE_SIZE documents for field distribution
-        - After sample limit, only counts lines (no JSON parsing)
-        - Uses Counter for efficient field tracking
+        - Uses Counter for efficient field distribution tracking
 
         Args:
             index_dir: Path to the index directory
@@ -255,43 +245,27 @@ class DumpParser(BaseCollector):
             if settings_path.exists():
                 settings_data = json.loads(settings_path.read_text())
 
-            # Load documents with optimized parsing
+            # Load documents with optimized parsing (orjson is 3-10x faster)
             documents_path = index_dir / "documents.jsonl"
             sample_docs: list[dict[str, Any]] = []
             field_distribution: Counter[str] = Counter()
             doc_count = 0
 
-            # Determine effective limits
-            # - effective_sample_limit: how many docs to keep in memory
-            # - parse_limit: how many docs to fully parse (for field distribution)
-            if self.max_sample_docs is None:
-                effective_sample_limit = MAX_SAMPLE_DOCS_CAP
-            else:
-                effective_sample_limit = self.max_sample_docs
-
-            parse_limit = max(effective_sample_limit, FIELD_SAMPLE_SIZE)
-
             if documents_path.exists():
                 with open(documents_path, "rb") as f:  # Binary mode for orjson
                     for line in f:
                         doc_count += 1
+                        doc = orjson.loads(line)
 
-                        # Phase 1: Parse documents for samples and field distribution
-                        if doc_count <= parse_limit:
-                            doc = orjson.loads(line)
-                            field_distribution.update(doc.keys())
+                        # Track field distribution for all documents
+                        field_distribution.update(doc.keys())
 
-                            if doc_count <= effective_sample_limit:
-                                sample_docs.append(doc)
-                        # Phase 2: Just count lines (no JSON parsing!)
-                        # This is the key optimization for large files
-
-            # Scale field distribution to estimated totals if we sampled
-            if doc_count > parse_limit and parse_limit > 0:
-                scale_factor = doc_count / parse_limit
-                field_distribution = Counter(
-                    {k: int(v * scale_factor) for k, v in field_distribution.items()}
-                )
+                        # Collect sample documents (all if max_sample_docs is None)
+                        if (
+                            self.max_sample_docs is None
+                            or doc_count <= self.max_sample_docs
+                        ):
+                            sample_docs.append(doc)
 
             # Create index data
             settings = (
