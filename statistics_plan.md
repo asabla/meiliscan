@@ -333,7 +333,7 @@ async def benchmark_fix(
 
 ---
 
-## Phase 8: CLI Updates
+## Phase 8: CLI Updates ✅ COMPLETED
 
 ### New benchmark command
 
@@ -345,9 +345,20 @@ def benchmark(
     comprehensive: bool = False,
     output: Path | None = None,
     format: str = "json",
+    indexes: str | None = None,  # Filter by index UIDs
 ):
     """Run search benchmarks against a live instance."""
 ```
+
+**Implemented in commit `197bf05`:**
+- `meiliscan benchmark --url <url>` - Basic benchmark
+- `--comprehensive` / `-c` - Run multiple queries per type
+- `--output` / `-o` - Save results to file
+- `--format` / `-f` - Output as json or markdown
+- `--indexes` / `-i` - Filter by comma-separated index UIDs
+- Rich panel display with latency statistics
+- Per-index results table
+- Slowest queries summary
 
 ### Updated CLI output format
 
