@@ -15,7 +15,7 @@ import { MeiliscanAPI, type Report, type Finding } from "./api";
 
 // Application state
 interface AppState {
-  view: "welcome" | "connecting" | "dashboard" | "findings" | "finding_detail";
+  view: "welcome" | "connecting" | "dashboard" | "findings" | "finding_detail" | "help";
   api: MeiliscanAPI;
   report?: Report;
   serverUrl: string;
@@ -24,7 +24,11 @@ interface AppState {
   selectedFindingIndex: number;
   findingFilter: {
     severity?: string;
+    category?: string;
   };
+  terminalWidth: number;
+  terminalHeight: number;
+  previousView?: AppState["view"];
 }
 
 // Severity colors
@@ -42,12 +46,22 @@ const SEVERITY_SYMBOLS: Record<string, string> = {
   info: "○",
 };
 
+// Get terminal dimensions
+function getTerminalSize(): { width: number; height: number } {
+  return {
+    width: process.stdout.columns || 80,
+    height: process.stdout.rows || 24,
+  };
+}
+
 class MeiliscanTUI {
   private renderer!: Awaited<ReturnType<typeof createCliRenderer>>;
   private state: AppState;
   private renderableIds: string[] = [];
+  private resizeHandler: () => void;
 
   constructor(apiBaseUrl: string = "http://localhost:8080") {
+    const termSize = getTerminalSize();
     this.state = {
       view: "welcome",
       api: new MeiliscanAPI(apiBaseUrl),
@@ -55,6 +69,16 @@ class MeiliscanTUI {
       apiKey: "",
       selectedFindingIndex: 0,
       findingFilter: {},
+      terminalWidth: termSize.width,
+      terminalHeight: termSize.height,
+    };
+
+    // Handle terminal resize
+    this.resizeHandler = () => {
+      const newSize = getTerminalSize();
+      this.state.terminalWidth = newSize.width;
+      this.state.terminalHeight = newSize.height;
+      this.render();
     };
   }
 
@@ -62,6 +86,9 @@ class MeiliscanTUI {
     this.renderer = await createCliRenderer({
       targetFps: 30,
     });
+
+    // Listen for terminal resize
+    process.stdout.on("resize", this.resizeHandler);
 
     this.setupKeyHandlers();
     this.render();
@@ -73,11 +100,27 @@ class MeiliscanTUI {
       // Global: Quit
       if (key.ctrl && key.name === "c") {
         this.cleanup();
+        process.stdout.off("resize", this.resizeHandler);
         process.exit(0);
+      }
+
+      // Global: Help
+      if (key.name === "?" || (key.shift && key.name === "/")) {
+        if (this.state.view !== "help") {
+          this.state.previousView = this.state.view;
+          this.state.view = "help";
+          this.render();
+          return;
+        }
       }
 
       // Global: Back/Escape
       if (key.name === "escape") {
+        if (this.state.view === "help") {
+          this.state.view = this.state.previousView || "dashboard";
+          this.render();
+          return;
+        }
         this.goBack();
       }
 
@@ -91,6 +134,9 @@ class MeiliscanTUI {
           break;
         case "finding_detail":
           this.handleFindingDetailKeys(key);
+          break;
+        case "help":
+          this.handleHelpKeys(key);
           break;
       }
     });
@@ -114,6 +160,7 @@ class MeiliscanTUI {
 
   private handleFindingsKeys(key: KeyEvent) {
     const findings = this.getFilteredFindings();
+    const pageSize = Math.max(5, this.state.terminalHeight - 15);
 
     if (key.name === "up" || key.name === "k") {
       this.state.selectedFindingIndex = Math.max(
@@ -126,6 +173,28 @@ class MeiliscanTUI {
         findings.length - 1,
         this.state.selectedFindingIndex + 1
       );
+      this.render();
+    } else if (key.name === "pageup" || (key.ctrl && key.name === "u")) {
+      // Page up - move up by pageSize
+      this.state.selectedFindingIndex = Math.max(
+        0,
+        this.state.selectedFindingIndex - pageSize
+      );
+      this.render();
+    } else if (key.name === "pagedown" || (key.ctrl && key.name === "d")) {
+      // Page down - move down by pageSize
+      this.state.selectedFindingIndex = Math.min(
+        findings.length - 1,
+        this.state.selectedFindingIndex + pageSize
+      );
+      this.render();
+    } else if (key.name === "home" || key.name === "g") {
+      // Go to top
+      this.state.selectedFindingIndex = 0;
+      this.render();
+    } else if (key.name === "end" || (key.shift && key.name === "g")) {
+      // Go to bottom
+      this.state.selectedFindingIndex = Math.max(0, findings.length - 1);
       this.render();
     } else if (key.name === "return") {
       if (findings.length > 0) {
@@ -160,6 +229,12 @@ class MeiliscanTUI {
       this.render();
     } else if (key.name === "0" || key.name === "a") {
       this.state.findingFilter.severity = undefined;
+      this.state.findingFilter.category = undefined;
+      this.state.selectedFindingIndex = 0;
+      this.render();
+    } else if (key.name === "c") {
+      // Cycle through categories
+      this.cycleCategory();
       this.state.selectedFindingIndex = 0;
       this.render();
     } else if (key.name === "b") {
@@ -171,6 +246,14 @@ class MeiliscanTUI {
   private handleFindingDetailKeys(key: KeyEvent) {
     if (key.name === "escape" || key.name === "q" || key.name === "b") {
       this.state.view = "findings";
+      this.render();
+    }
+  }
+
+  private handleHelpKeys(key: KeyEvent) {
+    // Any key closes help
+    if (key.name === "escape" || key.name === "q" || key.name === "return" || key.name === "?") {
+      this.state.view = this.state.previousView || "dashboard";
       this.render();
     }
   }
@@ -187,8 +270,37 @@ class MeiliscanTUI {
         this.state.report = undefined;
         this.state.view = "welcome";
         break;
+      case "help":
+        this.state.view = this.state.previousView || "dashboard";
+        break;
     }
     this.render();
+  }
+
+  private getCategories(): string[] {
+    if (!this.state.report) return [];
+    const categories = new Set<string>();
+    for (const f of this.state.report.findings) {
+      categories.add(f.category);
+    }
+    return Array.from(categories).sort();
+  }
+
+  private cycleCategory() {
+    const categories = this.getCategories();
+    if (categories.length === 0) return;
+
+    const currentCategory = this.state.findingFilter.category;
+    if (!currentCategory) {
+      this.state.findingFilter.category = categories[0];
+    } else {
+      const idx = categories.indexOf(currentCategory);
+      if (idx === categories.length - 1) {
+        this.state.findingFilter.category = undefined; // Clear filter
+      } else {
+        this.state.findingFilter.category = categories[idx + 1];
+      }
+    }
   }
 
   private getFilteredFindings(): Finding[] {
@@ -197,6 +309,11 @@ class MeiliscanTUI {
     if (this.state.findingFilter.severity) {
       findings = findings.filter(
         (f) => f.severity === this.state.findingFilter.severity
+      );
+    }
+    if (this.state.findingFilter.category) {
+      findings = findings.filter(
+        (f) => f.category === this.state.findingFilter.category
       );
     }
     return findings;
@@ -236,6 +353,9 @@ class MeiliscanTUI {
         break;
       case "finding_detail":
         this.renderFindingDetail();
+        break;
+      case "help":
+        this.renderHelp();
         break;
     }
   }
@@ -594,7 +714,7 @@ class MeiliscanTUI {
     // Navigation hints
     const navHints = new TextRenderable(this.renderer, {
       id: "nav-hints",
-      content: t`${fg("#666666")("[")}${fg("#FFFFFF")("F")}${fg("#666666")("]indings  [")}${fg("#FFFFFF")("R")}${fg("#666666")("]efresh  [")}${fg("#FFFFFF")("D")}${fg("#666666")("]isconnect  [")}${fg("#FFFFFF")("Ctrl+C")}${fg("#666666")("] Quit")}`,
+      content: t`${fg("#666666")("[")}${fg("#FFFFFF")("F")}${fg("#666666")("]indings  [")}${fg("#FFFFFF")("R")}${fg("#666666")("]efresh  [")}${fg("#FFFFFF")("D")}${fg("#666666")("]isconnect  [")}${fg("#FFFFFF")("?")}${fg("#666666")("] Help  [")}${fg("#FFFFFF")("Ctrl+C")}${fg("#666666")("] Quit")}`,
       position: "absolute",
       left: 2,
       bottom: 1,
@@ -657,12 +777,25 @@ class MeiliscanTUI {
 
     const filterAll = new TextRenderable(this.renderer, {
       id: "filter-all",
-      content: t`${fg(!activeFilter ? "#FFFFFF" : "#666666")("[A]ll")}`,
+      content: t`${fg(!activeFilter && !this.state.findingFilter.category ? "#FFFFFF" : "#666666")("[A]ll")}`,
       position: "absolute",
       left: 68,
       top: 3,
     });
     this.addRenderable(filterAll);
+
+    // Category filter indicator
+    const categoryFilter = this.state.findingFilter.category;
+    if (categoryFilter) {
+      const categoryText = new TextRenderable(this.renderer, {
+        id: "category-filter",
+        content: t`${fg("#666666")("[C]ategory:")} ${fg("#55FFAA")(categoryFilter)}`,
+        position: "absolute",
+        left: 2,
+        top: 4,
+      });
+      this.addRenderable(categoryText);
+    }
 
     // Findings count
     const countText = new TextRenderable(this.renderer, {
@@ -674,32 +807,43 @@ class MeiliscanTUI {
     });
     this.addRenderable(countText);
 
-    // Findings list
-    const maxVisible = 12;
+    // Findings list - adapt to terminal height
+    const listStartRow = categoryFilter ? 6 : 5;  // Extra row if category filter shown
+    const previewHeight = 8;
+    const footerHeight = 2;
+    const availableHeight = this.state.terminalHeight - listStartRow - previewHeight - footerHeight;
+    const maxVisible = Math.max(3, availableHeight);
     const startIdx = Math.max(
       0,
       this.state.selectedFindingIndex - Math.floor(maxVisible / 2)
     );
     const visibleFindings = findings.slice(startIdx, startIdx + maxVisible);
 
+    // Max title width based on terminal
+    const maxTitleWidth = Math.max(20, this.state.terminalWidth - 20);
+
     visibleFindings.forEach((finding, i) => {
       const actualIdx = startIdx + i;
       const isSelected = actualIdx === this.state.selectedFindingIndex;
       const prefix = isSelected ? "▶ " : "  ";
+      const truncatedTitle = finding.title.slice(0, maxTitleWidth);
 
       const findingRow = new TextRenderable(this.renderer, {
         id: `finding-row-${i}`,
         content: isSelected
-          ? t`${fg("#FFFFFF")(prefix)}${fg(SEVERITY_COLORS[finding.severity])(SEVERITY_SYMBOLS[finding.severity])} ${fg("#FFFFFF")(finding.id.padEnd(10))} ${fg("#FFFFFF")(finding.title.slice(0, 50))}`
-          : t`${prefix}${fg(SEVERITY_COLORS[finding.severity])(SEVERITY_SYMBOLS[finding.severity])} ${fg("#AAAAAA")(finding.id.padEnd(10))} ${finding.title.slice(0, 50)}`,
+          ? t`${fg("#FFFFFF")(prefix)}${fg(SEVERITY_COLORS[finding.severity])(SEVERITY_SYMBOLS[finding.severity])} ${fg("#FFFFFF")(finding.id.padEnd(10))} ${fg("#FFFFFF")(truncatedTitle)}`
+          : t`${prefix}${fg(SEVERITY_COLORS[finding.severity])(SEVERITY_SYMBOLS[finding.severity])} ${fg("#AAAAAA")(finding.id.padEnd(10))} ${truncatedTitle}`,
         position: "absolute",
         left: 2,
-        top: 5 + i,
+        top: listStartRow + i,
       });
       this.addRenderable(findingRow);
     });
 
-    // Preview pane (if finding selected)
+    // Preview pane (if finding selected) - position based on terminal size
+    const previewTop = Math.max(listStartRow + maxVisible + 1, this.state.terminalHeight - previewHeight - footerHeight);
+    const previewWidth = Math.min(75, this.state.terminalWidth - 4);
+
     if (findings.length > 0) {
       const selectedFinding = findings[this.state.selectedFindingIndex];
 
@@ -710,27 +854,28 @@ class MeiliscanTUI {
         borderColor: SEVERITY_COLORS[selectedFinding.severity],
         position: "absolute",
         left: 2,
-        top: 18,
-        width: 75,
-        height: 8,
+        top: previewTop,
+        width: previewWidth,
+        height: previewHeight,
       });
       this.addRenderable(previewBox);
 
       const previewTitle = new TextRenderable(this.renderer, {
         id: "preview-title",
-        content: t`${bold(selectedFinding.title)}`,
+        content: t`${bold(selectedFinding.title.slice(0, previewWidth - 6))}`,
         position: "absolute",
         left: 4,
-        top: 20,
+        top: previewTop + 2,
       });
       this.addRenderable(previewTitle);
 
+      const maxDescWidth = previewWidth - 8;
       const previewDesc = new TextRenderable(this.renderer, {
         id: "preview-desc",
-        content: t`${fg("#888888")(selectedFinding.description.slice(0, 150))}${selectedFinding.description.length > 150 ? "..." : ""}`,
+        content: t`${fg("#888888")(selectedFinding.description.slice(0, maxDescWidth))}${selectedFinding.description.length > maxDescWidth ? "..." : ""}`,
         position: "absolute",
         left: 4,
-        top: 22,
+        top: previewTop + 4,
       });
       this.addRenderable(previewDesc);
 
@@ -740,7 +885,7 @@ class MeiliscanTUI {
           content: t`${fg("#666666")("Index:")} ${selectedFinding.index_uid}`,
           position: "absolute",
           left: 4,
-          top: 24,
+          top: previewTop + 6,
         });
         this.addRenderable(previewIndex);
       }
@@ -749,7 +894,7 @@ class MeiliscanTUI {
     // Navigation hints
     const navHints = new TextRenderable(this.renderer, {
       id: "nav-hints",
-      content: t`${fg("#666666")("[")}${fg("#FFFFFF")("↑↓")}${fg("#666666")("] Navigate  [")}${fg("#FFFFFF")("Enter")}${fg("#666666")("] Details  [")}${fg("#FFFFFF")("B")}${fg("#666666")("]ack  [")}${fg("#FFFFFF")("Ctrl+C")}${fg("#666666")("] Quit")}`,
+      content: t`${fg("#666666")("[")}${fg("#FFFFFF")("↑↓/jk")}${fg("#666666")("] Navigate  [")}${fg("#FFFFFF")("Enter")}${fg("#666666")("] Details  [")}${fg("#FFFFFF")("C")}${fg("#666666")("]ategory  [")}${fg("#FFFFFF")("B")}${fg("#666666")("]ack  [")}${fg("#FFFFFF")("?")}${fg("#666666")("] Help")}`,
       position: "absolute",
       left: 2,
       bottom: 1,
@@ -930,12 +1075,99 @@ class MeiliscanTUI {
     // Navigation hints
     const navHints = new TextRenderable(this.renderer, {
       id: "nav-hints",
-      content: t`${fg("#666666")("[")}${fg("#FFFFFF")("B")}${fg("#666666")("]ack to list  [")}${fg("#FFFFFF")("Esc")}${fg("#666666")("] Back  [")}${fg("#FFFFFF")("Ctrl+C")}${fg("#666666")("] Quit")}`,
+      content: t`${fg("#666666")("[")}${fg("#FFFFFF")("B")}${fg("#666666")("]ack to list  [")}${fg("#FFFFFF")("Esc")}${fg("#666666")("] Back  [")}${fg("#FFFFFF")("?")}${fg("#666666")("] Help  [")}${fg("#FFFFFF")("Ctrl+C")}${fg("#666666")("] Quit")}`,
       position: "absolute",
       left: 2,
       bottom: 1,
     });
     this.addRenderable(navHints);
+  }
+
+  private renderHelp() {
+    const width = Math.min(60, this.state.terminalWidth - 4);
+    const height = Math.min(22, this.state.terminalHeight - 2);
+    const left = Math.floor((this.state.terminalWidth - width) / 2);
+    const top = Math.floor((this.state.terminalHeight - height) / 2);
+
+    // Help box
+    const helpBox = new BoxRenderable(this.renderer, {
+      id: "help-box",
+      title: "Keyboard Shortcuts",
+      titleAlignment: "center",
+      borderStyle: "rounded",
+      borderColor: "#00AAFF",
+      width,
+      height,
+      position: "absolute",
+      left,
+      top,
+    });
+    this.addRenderable(helpBox);
+
+    const helpContent = [
+      { section: "Global", items: [
+        ["Ctrl+C", "Quit application"],
+        ["?", "Show this help"],
+        ["Esc", "Go back / Close help"],
+      ]},
+      { section: "Navigation", items: [
+        ["↑/k, ↓/j", "Move up/down"],
+        ["PgUp/Ctrl+U", "Page up"],
+        ["PgDn/Ctrl+D", "Page down"],
+        ["Home/g", "Go to top"],
+        ["End/G", "Go to bottom"],
+        ["Enter", "Select / View details"],
+        ["B", "Go back"],
+      ]},
+      { section: "Findings Filters", items: [
+        ["1-4", "Filter by severity"],
+        ["C", "Cycle category filter"],
+        ["A/0", "Clear all filters"],
+      ]},
+      { section: "Dashboard", items: [
+        ["F", "Go to Findings"],
+        ["R", "Refresh analysis"],
+        ["D", "Disconnect"],
+      ]},
+    ];
+
+    let row = top + 2;
+    for (const group of helpContent) {
+      // Section header
+      const sectionHeader = new TextRenderable(this.renderer, {
+        id: `help-section-${group.section}`,
+        content: t`${bold(fg("#00AAFF")(group.section))}`,
+        position: "absolute",
+        left: left + 2,
+        top: row,
+      });
+      this.addRenderable(sectionHeader);
+      row++;
+
+      // Items
+      for (const [key, desc] of group.items) {
+        const itemText = new TextRenderable(this.renderer, {
+          id: `help-item-${key}`,
+          content: t`  ${fg("#FFAA00")(key.padEnd(14))} ${fg("#CCCCCC")(desc)}`,
+          position: "absolute",
+          left: left + 2,
+          top: row,
+        });
+        this.addRenderable(itemText);
+        row++;
+      }
+      row++; // Extra space between sections
+    }
+
+    // Close hint
+    const closeHint = new TextRenderable(this.renderer, {
+      id: "help-close",
+      content: t`${fg("#666666")("Press any key to close")}`,
+      position: "absolute",
+      left: left + Math.floor((width - 22) / 2),
+      top: top + height - 2,
+    });
+    this.addRenderable(closeHint);
   }
 }
 

@@ -213,32 +213,39 @@ Since this is an ongoing/hobby project, we use a **vertical slice approach** whe
 
 ---
 
-### Milestone 6: OpenTUI ✅ (Partial)
+### Milestone 6: OpenTUI ✅
 **Goal**: TUI for terminal users
 
-**Status**: Basic implementation complete, needs polish
+**Status**: Complete
 
 **Deliverables**:
 - ~~OpenTUI Go bindings~~ → TypeScript/Bun implementation instead
 - ✅ Analysis view (connects via API)
 - ✅ Findings browser with filtering
 - ✅ Finding detail view
-- ⏳ Direct SDK mode for dumps (not implemented)
+- ⏳ Direct SDK mode for dumps (not implemented - post-MVP)
 
 **What exists** (`tui/` directory):
 - TypeScript app using `@opentui/core` (v0.1.74)
 - Connects to Go API server (`POST /api/analyze`)
-- Views: Welcome → Connecting → Dashboard → Findings → Finding Detail
-- Keyboard navigation (vim-style j/k, filters 1-4, Enter/Esc)
-- Severity filtering, preview pane
+- Views: Welcome → Connecting → Dashboard → Findings → Finding Detail → Help
+- Keyboard navigation (vim-style j/k, PageUp/PageDown, Home/End)
+- Severity and category filtering
+- Preview pane
+- Terminal size adaptation (responsive layout)
+- Help screen with keyboard shortcuts
+
+**Keyboard shortcuts**:
+- Global: `Ctrl+C` quit, `?` help, `Esc` back
+- Navigation: `↑↓/jk`, `PgUp/Ctrl+U`, `PgDn/Ctrl+D`, `Home/g`, `End/G`
+- Findings: `1-4` severity filter, `C` category filter, `A/0` clear filters, `Enter` details
+- Dashboard: `F` findings, `R` refresh, `D` disconnect
 
 **Known limitations**:
 - Requires separate API server running (`meiliscan serve`)
 - No direct dump analysis (must go through API)
-- Input handling could be improved
-- Layout doesn't adapt to terminal size
 
-**Exit criteria**: Terminal UI alternative to CLI - **PARTIAL**
+**Exit criteria**: Terminal UI alternative to CLI - **COMPLETE**
 
 ---
 
