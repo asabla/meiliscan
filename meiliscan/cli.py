@@ -893,6 +893,286 @@ async def _display_tasks(
         await collector.close()
 
 
+@app.command()
+def benchmark(
+    url: Annotated[
+        str,
+        typer.Option(
+            "--url",
+            "-u",
+            help="MeiliSearch instance URL",
+        ),
+    ],
+    api_key: Annotated[
+        Optional[str],
+        typer.Option(
+            "--api-key",
+            "-k",
+            help="MeiliSearch API key",
+            envvar="MEILI_MASTER_KEY",
+        ),
+    ] = None,
+    comprehensive: Annotated[
+        bool,
+        typer.Option(
+            "--comprehensive",
+            "-c",
+            help="Run comprehensive benchmarks with multiple queries per type",
+        ),
+    ] = False,
+    output: Annotated[
+        Optional[Path],
+        typer.Option(
+            "--output",
+            "-o",
+            help="Output file path for benchmark results",
+        ),
+    ] = None,
+    format_type: Annotated[
+        str,
+        typer.Option(
+            "--format",
+            "-f",
+            help="Output format (json, markdown)",
+        ),
+    ] = "json",
+    indexes: Annotated[
+        Optional[str],
+        typer.Option(
+            "--indexes",
+            "-i",
+            help="Comma-separated list of index UIDs to benchmark (default: all)",
+        ),
+    ] = None,
+) -> None:
+    """Run search benchmarks against a live MeiliSearch instance.
+
+    Measures search latency for various query types including baseline,
+    text search, filtered, sorted, faceted, and complex queries.
+    """
+    if format_type not in ("json", "markdown"):
+        console.print(
+            f"[red]Error:[/red] Unknown format '{format_type}'. Use 'json' or 'markdown'."
+        )
+        raise typer.Exit(1)
+
+    # Parse indexes filter
+    index_filter = None
+    if indexes:
+        index_filter = [uid.strip() for uid in indexes.split(",")]
+
+    exit_code = asyncio.run(
+        _run_benchmark(url, api_key, comprehensive, output, format_type, index_filter)
+    )
+
+    if exit_code != 0:
+        raise typer.Exit(exit_code)
+
+
+async def _run_benchmark(
+    url: str,
+    api_key: str | None,
+    comprehensive: bool,
+    output: Path | None,
+    format_type: str,
+    index_filter: list[str] | None,
+) -> int:
+    """Run benchmarks against a MeiliSearch instance."""
+    from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
+    from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+    collector = LiveInstanceCollector(
+        url=url,
+        api_key=api_key,
+    )
+
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        MofNCompleteColumn(),
+        TimeElapsedColumn(),
+        console=console,
+        transient=False,
+    ) as progress:
+        task = progress.add_task("[cyan]Connecting...[/cyan]", total=None)
+
+        if not await collector.connect():
+            console.print(
+                f"[red]Error:[/red] Failed to connect to MeiliSearch at {url}"
+            )
+            await collector.close()
+            return 1
+
+        progress.update(task, description="[cyan]Fetching indexes...[/cyan]")
+
+        # Fetch all indexes
+        all_indexes = await collector.get_indexes()
+
+        if not all_indexes:
+            console.print("[red]Error:[/red] No indexes found to benchmark")
+            await collector.close()
+            return 1
+
+        # Apply filter if specified
+        if index_filter:
+            indexes_to_benchmark = [
+                idx for idx in all_indexes if idx.uid in index_filter
+            ]
+            not_found = set(index_filter) - {idx.uid for idx in indexes_to_benchmark}
+            if not_found:
+                console.print(
+                    f"[yellow]Warning:[/yellow] Indexes not found: {', '.join(not_found)}"
+                )
+        else:
+            indexes_to_benchmark = all_indexes
+
+        if not indexes_to_benchmark:
+            console.print("[red]Error:[/red] No indexes to benchmark after filtering")
+            await collector.close()
+            return 1
+
+        progress.update(
+            task,
+            description=f"[cyan]Benchmarking {len(indexes_to_benchmark)} indexes...[/cyan]",
+            total=len(indexes_to_benchmark),
+            completed=0,
+        )
+
+        # Run benchmarks
+        runner = SearchBenchmarkRunner(
+            collector=collector,
+            queries_per_type=3 if comprehensive else 1,
+        )
+
+        if comprehensive:
+            benchmark_report = await runner.run_comprehensive(indexes_to_benchmark)
+        else:
+            benchmark_report = await runner.run_baseline(indexes_to_benchmark)
+
+        progress.update(task, description="[cyan]Benchmark complete[/cyan]")
+
+        await collector.close()
+
+    # Display summary
+    _display_benchmark_summary(benchmark_report)
+
+    # Export results
+    _export_benchmark(benchmark_report, output, format_type)
+
+    return 0
+
+
+def _display_benchmark_summary(report) -> None:
+    """Display benchmark summary."""
+    summary_text = f"""
+[bold]Duration:[/bold] {report.duration_ms:.2f}ms    [bold]Total Queries:[/bold] {report.total_queries}
+
+[bold]Latency Statistics:[/bold]
+  Avg Baseline: {report.avg_baseline_ms:.2f}ms
+  Avg Overall:  {report.avg_overall_ms:.2f}ms
+  P50: {report.p50_latency_ms:.2f}ms    P95: {report.p95_latency_ms:.2f}ms    P99: {report.p99_latency_ms:.2f}ms
+  Min: {report.min_latency_ms:.2f}ms    Max: {report.max_latency_ms:.2f}ms
+"""
+
+    console.print(
+        Panel(summary_text.strip(), title="Benchmark Results", border_style="blue")
+    )
+
+    # Per-index table
+    if report.indexes:
+        table = Table(
+            title="\nPer-Index Results", show_header=True, header_style="bold"
+        )
+        table.add_column("Index", style="cyan", width=20)
+        table.add_column("Documents", justify="right", width=12)
+        table.add_column("Baseline", justify="right", width=10)
+        table.add_column("Text", justify="right", width=10)
+        table.add_column("Filtered", justify="right", width=10)
+        table.add_column("Sorted", justify="right", width=10)
+        table.add_column("Avg", justify="right", width=10)
+
+        for idx_bench in report.indexes:
+            table.add_row(
+                idx_bench.index_uid,
+                f"{idx_bench.document_count:,}",
+                f"{idx_bench.baseline_latency_ms:.1f}ms",
+                f"{idx_bench.text_latency_ms:.1f}ms"
+                if idx_bench.text_latency_ms
+                else "-",
+                f"{idx_bench.filtered_latency_ms:.1f}ms"
+                if idx_bench.filtered_latency_ms
+                else "-",
+                f"{idx_bench.sorted_latency_ms:.1f}ms"
+                if idx_bench.sorted_latency_ms
+                else "-",
+                f"{idx_bench.avg_latency_ms:.1f}ms",
+            )
+
+        console.print(table)
+
+    # Slowest queries
+    if report.slowest_queries:
+        console.print("\n[bold]Slowest Queries:[/bold]")
+        for i, q in enumerate(report.slowest_queries[:5], 1):
+            console.print(
+                f"  {i}. [cyan]{q.index_uid}[/cyan] ({q.query.query_type}): "
+                f"[yellow]{q.latency_ms:.2f}ms[/yellow]"
+            )
+
+
+def _export_benchmark(report, output: Path | None, format_type: str) -> None:
+    """Export benchmark results."""
+    import json
+
+    if format_type == "markdown":
+        lines = [
+            "# MeiliSearch Benchmark Report",
+            "",
+            f"**Run at:** {report.ran_at.isoformat()}",
+            f"**Source:** {report.source_url}",
+            f"**Duration:** {report.duration_ms:.2f}ms",
+            f"**Total Queries:** {report.total_queries}",
+            "",
+            "## Summary",
+            "",
+            "| Metric | Value |",
+            "|--------|-------|",
+            f"| Avg Baseline | {report.avg_baseline_ms:.2f}ms |",
+            f"| Avg Overall | {report.avg_overall_ms:.2f}ms |",
+            f"| P50 Latency | {report.p50_latency_ms:.2f}ms |",
+            f"| P95 Latency | {report.p95_latency_ms:.2f}ms |",
+            f"| P99 Latency | {report.p99_latency_ms:.2f}ms |",
+            "",
+            "## Per-Index Results",
+            "",
+        ]
+
+        for idx_bench in report.indexes:
+            lines.extend(
+                [
+                    f"### {idx_bench.index_uid}",
+                    "",
+                    f"- Documents: {idx_bench.document_count:,}",
+                    f"- Baseline: {idx_bench.baseline_latency_ms:.2f}ms",
+                    f"- Average: {idx_bench.avg_latency_ms:.2f}ms",
+                    "",
+                ]
+            )
+
+        content = "\n".join(lines)
+    else:
+        content = json.dumps(report.model_dump(), indent=2, default=str)
+
+    if output:
+        output.write_text(content)
+        console.print(f"\n[green]Benchmark results saved to:[/green] {output}")
+    else:
+        console.print(
+            "\n[dim]Use --output to save the benchmark results to a file.[/dim]"
+        )
+
+
 @app.command(name="fix-script")
 def fix_script(
     input_file: Annotated[
