@@ -1,5 +1,9 @@
 <div id="document-samples">
-    {% if documents %}
+    {% if error %}
+    <div class="alert alert-error" style="padding: 1rem; background-color: rgba(220, 38, 38, 0.1); border: 1px solid var(--danger); border-radius: 0.375rem; margin-bottom: 1rem;">
+        <strong>Error loading documents:</strong> {{ error }}
+    </div>
+    {% elif documents %}
     <div class="mb-1 flex justify-between items-center">
         <span class="text-secondary">
             Showing {{ (page - 1) * per_page + 1 }}-{{ [(page - 1) * per_page + documents|length, total]|min }} of {{ total }} sample documents
