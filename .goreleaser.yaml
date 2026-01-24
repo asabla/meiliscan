@@ -34,10 +34,12 @@ builds:
 archives:
   - id: default
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
-    format: tar.gz
+    formats:
+      - tar.gz
     format_overrides:
       - goos: windows
-        format: zip
+        formats:
+          - zip
     files:
       - LICENSE
       - README.md
@@ -93,20 +95,24 @@ release:
     go install github.com/asabla/meiliscan/cmd/meiliscan@v{{.Version}}
     ```
 
-brews:
+homebrew_casks:
   - name: meiliscan
     repository:
       owner: asabla
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
-    directory: Formula
+    directory: Casks
     homepage: "https://github.com/asabla/meiliscan"
     description: "Static analysis tool for Meilisearch instances"
     license: "MIT"
-    test: |
-      system "#{bin}/meiliscan", "--version"
-    install: |
-      bin.install "meiliscan"
+    url:
+      verified: github.com/asabla/meiliscan
+    hooks:
+      post:
+        install: |
+          if OS.mac?
+            system_command "/usr/bin/xattr", args: ["-dr", "com.apple.quarantine", "#{staged_path}/meiliscan"]
+          end
 
 snapshot:
   version_template: "{{ incpatch .Version }}-next"
