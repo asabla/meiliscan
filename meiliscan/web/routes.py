@@ -92,6 +92,72 @@ def register_routes(app: FastAPI) -> None:
             },
         )
 
+    @app.get("/index/{index_uid}/documents", response_class=HTMLResponse)
+    async def index_documents_partial(
+        request: Request,
+        index_uid: str,
+        page: int = 1,
+        per_page: int = 10,
+    ):
+        """Fetch paginated documents for an index (HTMX partial)."""
+        state: AppState = request.app.state.analyzer_state
+        templates = request.app.state.templates
+
+        documents: list = []
+        total = 0
+        error: str | None = None
+
+        # Fetch from live instance if available
+        if state.meili_url:
+            from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+            collector = LiveInstanceCollector(
+                url=state.meili_url,
+                api_key=state.meili_api_key,
+            )
+            try:
+                if await collector.connect():
+                    offset = (page - 1) * per_page
+                    data = await collector.get_documents(
+                        index_uid=index_uid,
+                        limit=per_page,
+                        offset=offset,
+                    )
+                    documents = data.get("results", [])
+                    total = data.get("total", len(documents))
+                else:
+                    error = "Failed to connect to MeiliSearch instance"
+            except Exception as e:
+                error = str(e)
+            finally:
+                await collector.close()
+        elif state.report and index_uid in state.report.indexes:
+            # Use cached sample documents from dump analysis
+            index_analysis = state.report.indexes[index_uid]
+            all_docs = index_analysis.sample_documents or []
+            total = len(all_docs)
+            start = (page - 1) * per_page
+            end = start + per_page
+            documents = all_docs[start:end]
+        else:
+            error = "No data source available"
+
+        total_pages = (total + per_page - 1) // per_page if total > 0 else 1
+
+        return templates.TemplateResponse(
+            "components/document_samples.html",
+            {
+                "request": request,
+                "documents": documents,
+                "total": total,
+                "page": page,
+                "per_page": per_page,
+                "total_pages": total_pages,
+                "index_uid": index_uid,
+                "error": error,
+            },
+        )
+
     @app.get("/findings", response_class=HTMLResponse)
     async def findings_explorer(
         request: Request,

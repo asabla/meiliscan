@@ -514,6 +514,43 @@ class LiveInstanceCollector(BaseCollector):
         tasks_response = await self.get_tasks_paginated(limit=1000)
         return TasksSummary.from_tasks(tasks_response.results)
 
+    async def get_documents(
+        self,
+        index_uid: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> dict[str, Any]:
+        """Fetch documents from an index with pagination.
+
+        Args:
+            index_uid: The index UID
+            limit: Maximum number of documents to return
+            offset: Number of documents to skip
+
+        Returns:
+            Dictionary with 'results', 'total', 'limit', and 'offset' keys
+        """
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        response = await self._client.get(
+            f"/indexes/{index_uid}/documents",
+            params={"limit": limit, "offset": offset},
+        )
+        response.raise_for_status()
+        data = response.json()
+
+        # Normalize response format (older MeiliSearch returns list directly)
+        if isinstance(data, list):
+            return {
+                "results": data,
+                "total": len(data),
+                "limit": limit,
+                "offset": offset,
+            }
+
+        return data
+
     async def search(
         self,
         index_uid: str,

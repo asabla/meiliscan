@@ -49,11 +49,6 @@
                 <select id="index-select" 
                         name="index" 
                         style="width: 100%;"
-                        hx-get=""
-                        hx-target="#index-info-content"
-                        hx-swap="innerHTML"
-                        hx-indicator="#settings-spinner"
-                        hx-trigger="change"
                         onchange="changeIndex(this.value)">
                     {% for idx in indexes %}
                     <option value="{{ idx }}" {% if idx == selected_index %}selected{% endif %}>{{ idx }}</option>
@@ -202,12 +197,18 @@
         form.setAttribute('hx-post', '/search/' + indexUid + '/results');
         htmx.process(form);
         
-        // Update the index select's hx-get to load the new index settings
-        const indexSelect = document.getElementById('index-select');
-        indexSelect.setAttribute('hx-get', '/search/' + indexUid + '/settings');
+        // Show loading indicator
+        const spinner = document.getElementById('settings-spinner');
+        if (spinner) spinner.style.display = 'inline';
         
-        // Trigger the HTMX request to load settings
-        htmx.trigger(indexSelect, 'htmx:trigger');
+        // Load settings via HTMX ajax directly (avoids attribute manipulation issues)
+        htmx.ajax('GET', '/search/' + indexUid + '/settings', {
+            target: '#index-info-content',
+            swap: 'innerHTML'
+        }).then(function() {
+            // Hide loading indicator after load
+            if (spinner) spinner.style.display = '';
+        });
         
         // Clear previous search results
         document.getElementById('search-results').innerHTML = 
