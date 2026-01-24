@@ -4,14 +4,25 @@ import asyncio
 import json
 import tarfile
 import tempfile
+from collections import Counter
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import orjson
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 
 if TYPE_CHECKING:
     from meiliscan.core.progress import ProgressCallback
+
+# Number of documents to sample for inferring field distribution.
+# After this many documents, field distribution patterns are statistically stable.
+FIELD_SAMPLE_SIZE = 10_000
+
+# Safety cap to prevent OOM when max_sample_docs=None is passed.
+# This limits the number of full documents kept in memory.
+MAX_SAMPLE_DOCS_CAP = 100_000
 
 
 class DumpParser(BaseCollector):
@@ -218,6 +229,12 @@ class DumpParser(BaseCollector):
 
         This method performs blocking file I/O and should be run in a thread pool.
 
+        Performance optimizations:
+        - Uses orjson for 3-10x faster JSON parsing of documents
+        - Only parses first FIELD_SAMPLE_SIZE documents for field distribution
+        - After sample limit, only counts lines (no JSON parsing)
+        - Uses Counter for efficient field tracking
+
         Args:
             index_dir: Path to the index directory
             uid: The index UID
@@ -226,42 +243,55 @@ class DumpParser(BaseCollector):
             IndexData object or None if loading failed
         """
         try:
-            # Load metadata
+            # Load metadata (small file, stdlib json is fine)
             metadata_path = index_dir / "metadata.json"
             metadata: dict[str, Any] = {}
             if metadata_path.exists():
                 metadata = json.loads(metadata_path.read_text())
 
-            # Load settings
+            # Load settings (small file, stdlib json is fine)
             settings_path = index_dir / "settings.json"
             settings_data: dict[str, Any] = {}
             if settings_path.exists():
                 settings_data = json.loads(settings_path.read_text())
 
-            # Load documents (sample or all based on max_sample_docs)
+            # Load documents with optimized parsing
             documents_path = index_dir / "documents.jsonl"
             sample_docs: list[dict[str, Any]] = []
-            field_distribution: dict[str, int] = {}
+            field_distribution: Counter[str] = Counter()
             doc_count = 0
 
+            # Determine effective limits
+            # - effective_sample_limit: how many docs to keep in memory
+            # - parse_limit: how many docs to fully parse (for field distribution)
+            if self.max_sample_docs is None:
+                effective_sample_limit = MAX_SAMPLE_DOCS_CAP
+            else:
+                effective_sample_limit = self.max_sample_docs
+
+            parse_limit = max(effective_sample_limit, FIELD_SAMPLE_SIZE)
+
             if documents_path.exists():
-                with open(documents_path) as f:
-                    for i, line in enumerate(f):
+                with open(documents_path, "rb") as f:  # Binary mode for orjson
+                    for line in f:
                         doc_count += 1
-                        doc = json.loads(line)
 
-                        # Track field distribution
-                        for field in doc.keys():
-                            field_distribution[field] = (
-                                field_distribution.get(field, 0) + 1
-                            )
+                        # Phase 1: Parse documents for samples and field distribution
+                        if doc_count <= parse_limit:
+                            doc = orjson.loads(line)
+                            field_distribution.update(doc.keys())
 
-                        # Collect sample documents (all if max_sample_docs is None)
-                        should_collect = (
-                            self.max_sample_docs is None or i < self.max_sample_docs
-                        )
-                        if should_collect:
-                            sample_docs.append(doc)
+                            if doc_count <= effective_sample_limit:
+                                sample_docs.append(doc)
+                        # Phase 2: Just count lines (no JSON parsing!)
+                        # This is the key optimization for large files
+
+            # Scale field distribution to estimated totals if we sampled
+            if doc_count > parse_limit and parse_limit > 0:
+                scale_factor = doc_count / parse_limit
+                field_distribution = Counter(
+                    {k: int(v * scale_factor) for k, v in field_distribution.items()}
+                )
 
             # Create index data
             settings = (
@@ -270,7 +300,7 @@ class DumpParser(BaseCollector):
             stats = IndexStats(
                 numberOfDocuments=doc_count,
                 isIndexing=False,
-                fieldDistribution=field_distribution,
+                fieldDistribution=dict(field_distribution),
             )
 
             return IndexData(
@@ -282,7 +312,7 @@ class DumpParser(BaseCollector):
                 stats=stats,
                 sample_documents=sample_docs,
             )
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, orjson.JSONDecodeError, OSError):
             return None
 
     async def _load_index(self, index_dir: Path, uid: str) -> IndexData | None:
