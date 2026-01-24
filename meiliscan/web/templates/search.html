@@ -49,6 +49,11 @@
                 <select id="index-select" 
                         name="index" 
                         style="width: 100%;"
+                        hx-get=""
+                        hx-target="#index-info-content"
+                        hx-swap="innerHTML"
+                        hx-indicator="#settings-spinner"
+                        hx-trigger="change"
                         onchange="changeIndex(this.value)">
                     {% for idx in indexes %}
                     <option value="{{ idx }}" {% if idx == selected_index %}selected{% endif %}>{{ idx }}</option>
@@ -155,46 +160,14 @@
     <div class="card">
         <div class="card-header">
             <h2 class="card-title">Index Info</h2>
+            <span id="settings-spinner" class="htmx-indicator text-muted" style="font-size: 0.75rem;">
+                Loading...
+            </span>
         </div>
 
-        {% if index_settings %}
-        <div class="mb-2">
-            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Filterable Attributes</h3>
-            {% if index_settings.get('filterableAttributes') %}
-            <div class="flex flex-wrap gap-1">
-                {% for attr in index_settings.get('filterableAttributes', []) %}
-                <code class="badge badge-blue" style="cursor: pointer;" onclick="addFilter('{{ attr }}')">{{ attr }}</code>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-muted" style="font-size: 0.875rem;">None configured</p>
-            {% endif %}
+        <div id="index-info-content">
+            {% include "components/search_index_info.html" %}
         </div>
-
-        <div class="mb-2">
-            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Sortable Attributes</h3>
-            {% if index_settings.get('sortableAttributes') %}
-            <div class="flex flex-wrap gap-1">
-                {% for attr in index_settings.get('sortableAttributes', []) %}
-                <code class="badge badge-green">{{ attr }}</code>
-                {% endfor %}
-            </div>
-            {% else %}
-            <p class="text-muted" style="font-size: 0.875rem;">None configured</p>
-            {% endif %}
-        </div>
-
-        <div>
-            <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Distinct Attribute</h3>
-            {% if index_settings.get('distinctAttribute') %}
-            <code class="badge badge-yellow">{{ index_settings.get('distinctAttribute') }}</code>
-            {% else %}
-            <p class="text-muted" style="font-size: 0.875rem;">Not configured</p>
-            {% endif %}
-        </div>
-        {% else %}
-        <p class="text-muted">Select an index to view settings</p>
-        {% endif %}
 
         <div class="mt-2" style="border-top: 1px solid var(--border); padding-top: 1rem;">
             <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Filter Syntax Help</h3>
@@ -222,9 +195,30 @@
 </div>
 
 <script>
-    // Change index - redirect to update the form
+    // Change index - update form action and load settings via HTMX (no page reload)
     function changeIndex(indexUid) {
-        window.location.href = '/search?index=' + encodeURIComponent(indexUid);
+        // Update the form's hx-post target to the new index
+        const form = document.getElementById('search-form');
+        form.setAttribute('hx-post', '/search/' + indexUid + '/results');
+        htmx.process(form);
+        
+        // Update the index select's hx-get to load the new index settings
+        const indexSelect = document.getElementById('index-select');
+        indexSelect.setAttribute('hx-get', '/search/' + indexUid + '/settings');
+        
+        // Trigger the HTMX request to load settings
+        htmx.trigger(indexSelect, 'htmx:trigger');
+        
+        // Clear previous search results
+        document.getElementById('search-results').innerHTML = 
+            '<p class="text-muted">Enter a search query and click "Search" to see results.</p>';
+        
+        // Reset page to 1
+        document.getElementById('page-input').value = '1';
+        
+        // Update browser URL without reload (for bookmarking)
+        const newUrl = '/search?index=' + encodeURIComponent(indexUid);
+        window.history.pushState({index: indexUid}, '', newUrl);
     }
 
     // Add filter helper - inserts attribute into filter field
@@ -246,7 +240,7 @@
 
     // Reset page to 1 when form values change
     document.querySelectorAll('#search-form input, #search-form select').forEach(el => {
-        if (el.name !== 'page') {
+        if (el.name !== 'page' && el.name !== 'index') {
             el.addEventListener('change', () => {
                 document.getElementById('page-input').value = '1';
             });
@@ -266,12 +260,15 @@
             document.getElementById('search-form').requestSubmit();
         }
     });
-
-    // Update form action when index changes via JS (for HTMX)
-    function updateFormAction(indexUid) {
-        document.getElementById('search-form').setAttribute('hx-post', '/search/' + indexUid + '/results');
-        htmx.process(document.getElementById('search-form'));
-    }
+    
+    // Handle browser back/forward navigation
+    window.addEventListener('popstate', function(e) {
+        if (e.state && e.state.index) {
+            const indexSelect = document.getElementById('index-select');
+            indexSelect.value = e.state.index;
+            changeIndex(e.state.index);
+        }
+    });
 </script>
 {% endif %}
 {% endblock %}

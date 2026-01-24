@@ -1,0 +1,85 @@
+{% if index_settings %}
+<div class="mb-2">
+    <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Filterable Attributes</h3>
+    {% if index_settings.get('filterableAttributes') %}
+    <div class="flex flex-wrap gap-1">
+        {% for attr in index_settings.get('filterableAttributes', []) %}
+        <code class="badge badge-blue" style="cursor: pointer;" onclick="addFilter('{{ attr }}')">{{ attr }}</code>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted" style="font-size: 0.875rem;">None configured</p>
+    {% endif %}
+</div>
+
+<div class="mb-2">
+    <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Sortable Attributes</h3>
+    {% if index_settings.get('sortableAttributes') %}
+    <div class="flex flex-wrap gap-1">
+        {% for attr in index_settings.get('sortableAttributes', []) %}
+        <code class="badge badge-green">{{ attr }}</code>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="text-muted" style="font-size: 0.875rem;">None configured</p>
+    {% endif %}
+</div>
+
+<div>
+    <h3 class="text-secondary" style="font-size: 0.875rem; margin-bottom: 0.5rem;">Distinct Attribute</h3>
+    {% if index_settings.get('distinctAttribute') %}
+    <code class="badge badge-yellow">{{ index_settings.get('distinctAttribute') }}</code>
+    {% else %}
+    <p class="text-muted" style="font-size: 0.875rem;">Not configured</p>
+    {% endif %}
+</div>
+
+<!-- Update sort field options dynamically -->
+<template id="sort-options-data">
+{% if index_settings and index_settings.get('sortableAttributes') %}
+{% for attr in index_settings.get('sortableAttributes', []) %}
+<option value="{{ attr }}">{{ attr }}</option>
+{% endfor %}
+{% endif %}
+</template>
+
+<!-- Update distinct field options dynamically -->
+<template id="distinct-options-data">
+{% if index_settings and index_settings.get('distinctAttribute') %}
+<option value="{{ index_settings.get('distinctAttribute') }}">
+    {{ index_settings.get('distinctAttribute') }} (default)
+</option>
+{% endif %}
+{% if index_settings and index_settings.get('filterableAttributes') %}
+{% for attr in index_settings.get('filterableAttributes', []) %}
+{% if attr != index_settings.get('distinctAttribute') %}
+<option value="{{ attr }}">{{ attr }}</option>
+{% endif %}
+{% endfor %}
+{% endif %}
+</template>
+
+<script>
+// Update sort and distinct dropdowns when this partial loads
+(function() {
+    const sortField = document.getElementById('sort_field');
+    const distinctField = document.getElementById('distinct');
+    
+    if (sortField) {
+        const sortOptions = document.getElementById('sort-options-data');
+        if (sortOptions) {
+            sortField.innerHTML = '<option value="">-- No sorting --</option>' + sortOptions.innerHTML;
+        }
+    }
+    
+    if (distinctField) {
+        const distinctOptions = document.getElementById('distinct-options-data');
+        if (distinctOptions) {
+            distinctField.innerHTML = '<option value="">-- None --</option>' + distinctOptions.innerHTML;
+        }
+    }
+})();
+</script>
+{% else %}
+<p class="text-muted">Select an index to view settings</p>
+{% endif %}

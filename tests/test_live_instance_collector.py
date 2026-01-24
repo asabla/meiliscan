@@ -447,3 +447,151 @@ class TestLiveInstanceCollector:
             )
 
         await collector.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_list_index_uids_paginated(self, collector: LiveInstanceCollector):
+        """Test that list_index_uids paginates and returns sorted UIDs."""
+        # Mock health check
+        respx.get("http://localhost:7700/health").mock(
+            return_value=Response(200, json={"status": "available"})
+        )
+
+        # Mock version
+        respx.get("http://localhost:7700/version").mock(
+            return_value=Response(200, json={"pkgVersion": "1.7.0"})
+        )
+
+        # Create 25 mock indexes with unsorted UIDs
+        all_indexes = [{"uid": f"zindex-{i}", "primaryKey": "id"} for i in range(15)]
+        all_indexes += [{"uid": f"aindex-{i}", "primaryKey": "id"} for i in range(10)]
+
+        first_batch = all_indexes[:20]
+        second_batch = all_indexes[20:]
+
+        # Mock paginated /indexes responses
+        # The code uses batch_size=1000, so we simulate a scenario where
+        # the first response indicates more items exist via total > len(results)
+        # and the batch size equals the limit (triggering pagination logic)
+        respx.get("http://localhost:7700/indexes").mock(
+            side_effect=[
+                Response(
+                    200,
+                    json={
+                        "results": first_batch,
+                        "offset": 0,
+                        "limit": 1000,
+                        "total": 25,
+                    },
+                ),
+                Response(
+                    200,
+                    json={
+                        "results": second_batch,
+                        "offset": 20,
+                        "limit": 1000,
+                        "total": 25,
+                    },
+                ),
+            ]
+        )
+
+        # Connect and list index UIDs
+        await collector.connect()
+        uids = await collector.list_index_uids()
+
+        # Verify we got all 25 UIDs
+        assert len(uids) == 25
+
+        # Verify UIDs are sorted
+        assert uids == sorted(uids)
+
+        # Verify aindex-* comes before zindex-*
+        assert uids[0].startswith("aindex")
+        assert uids[-1].startswith("zindex")
+
+        await collector.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_list_index_uids_legacy_format(
+        self, collector: LiveInstanceCollector
+    ):
+        """Test list_index_uids with legacy non-paginated response."""
+        # Mock health check
+        respx.get("http://localhost:7700/health").mock(
+            return_value=Response(200, json={"status": "available"})
+        )
+
+        # Mock version
+        respx.get("http://localhost:7700/version").mock(
+            return_value=Response(200, json={"pkgVersion": "0.28.0"})
+        )
+
+        # Plain list response (legacy format)
+        all_indexes = [{"uid": f"index-{i}", "primaryKey": "id"} for i in range(3)]
+        respx.get("http://localhost:7700/indexes").mock(
+            return_value=Response(200, json=all_indexes)
+        )
+
+        await collector.connect()
+        uids = await collector.list_index_uids()
+
+        assert len(uids) == 3
+        assert uids == ["index-0", "index-1", "index-2"]
+
+        await collector.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_index_settings(self, collector: LiveInstanceCollector):
+        """Test get_index_settings fetches settings for a specific index."""
+        # Mock health check
+        respx.get("http://localhost:7700/health").mock(
+            return_value=Response(200, json={"status": "available"})
+        )
+
+        # Mock version
+        respx.get("http://localhost:7700/version").mock(
+            return_value=Response(200, json={"pkgVersion": "1.7.0"})
+        )
+
+        # Mock settings endpoint
+        expected_settings = {
+            "searchableAttributes": ["title", "description"],
+            "filterableAttributes": ["category", "price"],
+            "sortableAttributes": ["price", "date"],
+            "distinctAttribute": "product_id",
+        }
+        respx.get("http://localhost:7700/indexes/products/settings").mock(
+            return_value=Response(200, json=expected_settings)
+        )
+
+        await collector.connect()
+        settings = await collector.get_index_settings("products")
+
+        assert settings == expected_settings
+        assert settings["searchableAttributes"] == ["title", "description"]
+        assert settings["filterableAttributes"] == ["category", "price"]
+        assert settings["sortableAttributes"] == ["price", "date"]
+        assert settings["distinctAttribute"] == "product_id"
+
+        await collector.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_list_index_uids_not_connected(
+        self, collector: LiveInstanceCollector
+    ):
+        """Test that list_index_uids raises error when not connected."""
+        with pytest.raises(RuntimeError, match="not connected"):
+            await collector.list_index_uids()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_index_settings_not_connected(
+        self, collector: LiveInstanceCollector
+    ):
+        """Test that get_index_settings raises error when not connected."""
+        with pytest.raises(RuntimeError, match="not connected"):
+            await collector.get_index_settings("test-index")
