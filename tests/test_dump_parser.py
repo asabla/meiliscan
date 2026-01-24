@@ -651,7 +651,6 @@ class TestDumpParser:
     @pytest.mark.asyncio
     async def test_concurrent_loading_respects_semaphore(self, mock_dump_dir: Path):
         """Test that concurrent loading respects the semaphore limit."""
-        import asyncio
         from unittest.mock import patch
 
         dump_root = next(
@@ -676,7 +675,6 @@ class TestDumpParser:
         # Track concurrent executions
         max_concurrent_seen = 0
         current_concurrent = 0
-        concurrent_lock = asyncio.Lock()
 
         original_load_index_sync = DumpParser._load_index_sync
 

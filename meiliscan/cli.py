@@ -318,8 +318,14 @@ async def _analyze_dump(
         )
         progress.update(index_task, completed=0, visible=True)
 
-        reporter = Reporter(collector, analysis_options=analysis_options)
-        report = reporter.generate_report(source_url=None, progress_cb=progress_cb)
+        reporter = Reporter(
+            collector,
+            analysis_options=analysis_options,
+            max_concurrent=max_concurrent,
+        )
+        report = await reporter.generate_report(
+            source_url=None, progress_cb=progress_cb
+        )
         report.source.type = "dump"
         report.source.dump_path = str(dump_path)
 
@@ -420,7 +426,7 @@ async def _analyze_instance(
             probe_analyzer = SearchProbeAnalyzer()
 
             async def search_fn(index_uid, query, filter, sort):
-                return await collector._collector.search(
+                return await collector.search(
                     index_uid=index_uid,
                     query=query,
                     filter=filter,
@@ -439,8 +445,12 @@ async def _analyze_instance(
         )
         progress.update(index_task, completed=0, visible=True)
 
-        reporter = Reporter(collector, analysis_options=analysis_options)
-        report = reporter.generate_report(source_url=url, progress_cb=progress_cb)
+        reporter = Reporter(
+            collector,
+            analysis_options=analysis_options,
+            max_concurrent=max_concurrent,
+        )
+        report = await reporter.generate_report(source_url=url, progress_cb=progress_cb)
 
         progress.update(phase_task, description="[cyan]Phase:[/cyan] Analysis complete")
         progress.update(index_task, visible=False)
@@ -619,7 +629,7 @@ async def _summary_instance(url: str, api_key: str | None) -> None:
         raise typer.Exit(1)
 
     reporter = Reporter(collector)
-    report = reporter.generate_report(source_url=url)
+    report = await reporter.generate_report(source_url=url)
 
     await collector.close()
 

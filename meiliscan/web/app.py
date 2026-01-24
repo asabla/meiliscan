@@ -295,7 +295,7 @@ async def run_analysis(state: AppState) -> None:
 
         # Run analysis
         reporter = Reporter(state.collector, analysis_options=analysis_options)
-        state.report = reporter.generate_report(
+        state.report = await reporter.generate_report(
             source_url=state.meili_url, progress_cb=progress_cb
         )
 

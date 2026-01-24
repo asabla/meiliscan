@@ -71,8 +71,14 @@ class AnalysisReport(BaseModel):
 
     # Internal storage not exported
     _raw_indexes: dict[str, IndexData] = {}
+    _findings_cache: list[Finding] | None = None
+    _finding_count: int = 0
 
     model_config = {"populate_by_name": True}
+
+    def _invalidate_cache(self) -> None:
+        """Invalidate the findings cache."""
+        self._findings_cache = None
 
     def add_index(self, index: IndexData) -> None:
         """Add an index to the report."""
@@ -101,16 +107,21 @@ class AnalysisReport(BaseModel):
 
     def add_finding(self, finding: Finding) -> None:
         """Add a finding to the appropriate location in the report."""
+        self._invalidate_cache()
+        self._finding_count += 1
         if finding.index_uid and finding.index_uid in self.indexes:
             self.indexes[finding.index_uid].findings.append(finding)
         else:
             self.global_findings.append(finding)
 
+    @property
+    def finding_count(self) -> int:
+        """Get the total number of findings without building the list."""
+        return self._finding_count
+
     def calculate_summary(self) -> None:
         """Calculate summary statistics from findings."""
-        all_findings: list[Finding] = list(self.global_findings)
-        for index_analysis in self.indexes.values():
-            all_findings.extend(index_analysis.findings)
+        all_findings = self.get_all_findings()
 
         self.summary.total_indexes = len(self.indexes)
         self.summary.total_documents = sum(
@@ -130,10 +141,15 @@ class AnalysisReport(BaseModel):
         )
 
     def get_all_findings(self) -> list[Finding]:
-        """Get all findings from the report."""
+        """Get all findings from the report (cached)."""
+        if self._findings_cache is not None:
+            return self._findings_cache
+
         findings: list[Finding] = list(self.global_findings)
         for index_analysis in self.indexes.values():
             findings.extend(index_analysis.findings)
+
+        self._findings_cache = findings
         return findings
 
     def get_finding_by_id(self, finding_id: str) -> Finding | None:
