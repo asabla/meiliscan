@@ -600,3 +600,154 @@ class TestDumpParser:
         assert version == "V5"
 
         await parser.close()
+
+    def test_max_concurrent_parameter(self, tmp_path: Path):
+        """Test that max_concurrent parameter is stored correctly."""
+        parser = DumpParser(tmp_path / "test.dump", max_concurrent=5)
+        assert parser.max_concurrent == 5
+
+        parser_default = DumpParser(tmp_path / "test.dump")
+        assert parser_default.max_concurrent == 10  # default value
+
+    @pytest.mark.asyncio
+    async def test_concurrent_loading_multiple_indexes(self, mock_dump_dir: Path):
+        """Test that multiple indexes are loaded concurrently."""
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        indexes_dir = dump_root / "indexes"
+
+        # Create 5 additional indexes
+        for i in range(5):
+            index_dir = indexes_dir / f"index_{i}"
+            index_dir.mkdir()
+            (index_dir / "metadata.json").write_text(json.dumps({"primaryKey": "id"}))
+            (index_dir / "settings.json").write_text(
+                json.dumps({"searchableAttributes": ["name"]})
+            )
+            with open(index_dir / "documents.jsonl", "w") as f:
+                for j in range(10):
+                    f.write(json.dumps({"id": j, "name": f"Item {j}"}) + "\n")
+
+        dump_file = mock_dump_dir / "concurrent.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        # Parse with concurrency limit of 3
+        parser = DumpParser(dump_file, max_concurrent=3)
+        await parser.connect()
+
+        indexes = await parser.get_indexes()
+
+        # Should have loaded all 6 indexes (1 original + 5 new)
+        assert len(indexes) == 6
+        index_uids = {idx.uid for idx in indexes}
+        assert "products" in index_uids
+        for i in range(5):
+            assert f"index_{i}" in index_uids
+
+        await parser.close()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_loading_respects_semaphore(self, mock_dump_dir: Path):
+        """Test that concurrent loading respects the semaphore limit."""
+        import asyncio
+        from unittest.mock import patch
+
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        indexes_dir = dump_root / "indexes"
+
+        # Create 4 additional indexes (5 total)
+        for i in range(4):
+            index_dir = indexes_dir / f"index_{i}"
+            index_dir.mkdir()
+            (index_dir / "metadata.json").write_text(json.dumps({"primaryKey": "id"}))
+            (index_dir / "settings.json").write_text(json.dumps({}))
+            (index_dir / "documents.jsonl").write_text(
+                json.dumps({"id": 1, "name": "Test"}) + "\n"
+            )
+
+        dump_file = mock_dump_dir / "semaphore.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        # Track concurrent executions
+        max_concurrent_seen = 0
+        current_concurrent = 0
+        concurrent_lock = asyncio.Lock()
+
+        original_load_index_sync = DumpParser._load_index_sync
+
+        def tracking_load_index_sync(self, index_dir, uid):
+            nonlocal max_concurrent_seen, current_concurrent
+            # Use a simple counter (not async-safe but good enough for this test
+            # since we're tracking from synchronous code)
+            import threading
+
+            with threading.Lock():
+                current_concurrent += 1
+                if current_concurrent > max_concurrent_seen:
+                    max_concurrent_seen = current_concurrent
+
+            try:
+                # Add a small delay to make concurrent execution more likely
+                import time
+
+                time.sleep(0.01)
+                return original_load_index_sync(self, index_dir, uid)
+            finally:
+                with threading.Lock():
+                    current_concurrent -= 1
+
+        with patch.object(DumpParser, "_load_index_sync", tracking_load_index_sync):
+            parser = DumpParser(dump_file, max_concurrent=2)
+            await parser.connect()
+            await parser.close()
+
+        # With 5 indexes and max_concurrent=2, we should never see more than 2 concurrent
+        assert max_concurrent_seen <= 2
+
+    @pytest.mark.asyncio
+    async def test_concurrent_loading_with_failures(self, mock_dump_dir: Path):
+        """Test that concurrent loading handles individual index failures gracefully."""
+        dump_root = next(
+            d for d in mock_dump_dir.iterdir() if d.name.startswith("dump-")
+        )
+        indexes_dir = dump_root / "indexes"
+
+        # Create a valid index
+        valid_dir = indexes_dir / "valid_index"
+        valid_dir.mkdir()
+        (valid_dir / "metadata.json").write_text(json.dumps({"primaryKey": "id"}))
+        (valid_dir / "settings.json").write_text(json.dumps({}))
+        (valid_dir / "documents.jsonl").write_text(
+            json.dumps({"id": 1, "name": "Test"}) + "\n"
+        )
+
+        # Create an invalid index with malformed JSON
+        invalid_dir = indexes_dir / "invalid_index"
+        invalid_dir.mkdir()
+        (invalid_dir / "metadata.json").write_text("not valid json {{{")
+        (invalid_dir / "settings.json").write_text(json.dumps({}))
+        (invalid_dir / "documents.jsonl").write_text("")
+
+        dump_file = mock_dump_dir / "with_failures.dump"
+        with tarfile.open(dump_file, "w:gz") as tar:
+            tar.add(dump_root, arcname=dump_root.name)
+
+        parser = DumpParser(dump_file, max_concurrent=5)
+        await parser.connect()
+
+        indexes = await parser.get_indexes()
+
+        # Should have loaded only the valid indexes (original products + valid_index)
+        # The invalid_index should be filtered out
+        assert len(indexes) == 2
+        index_uids = {idx.uid for idx in indexes}
+        assert "products" in index_uids
+        assert "valid_index" in index_uids
+        assert "invalid_index" not in index_uids
+
+        await parser.close()

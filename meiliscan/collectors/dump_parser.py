@@ -4,6 +4,7 @@ import asyncio
 import json
 import tarfile
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -30,16 +31,23 @@ class DumpParser(BaseCollector):
             └── documents.jsonl # All documents (NDJSON format)
     """
 
-    def __init__(self, dump_path: str | Path, max_sample_docs: int | None = 100):
+    def __init__(
+        self,
+        dump_path: str | Path,
+        max_sample_docs: int | None = 100,
+        max_concurrent: int = 10,
+    ):
         """Initialize the dump parser.
 
         Args:
             dump_path: Path to the .dump file
             max_sample_docs: Maximum number of sample documents to load per index.
                             If None, load all documents.
+            max_concurrent: Maximum number of indexes to parse concurrently.
         """
         self.dump_path = Path(dump_path)
         self.max_sample_docs = max_sample_docs
+        self.max_concurrent = max_concurrent
         self._temp_dir: tempfile.TemporaryDirectory | None = None
         self._extracted_path: Path | None = None
         self._metadata: dict[str, Any] = {}
@@ -126,7 +134,9 @@ class DumpParser(BaseCollector):
     async def _load_indexes(
         self, progress_cb: "ProgressCallback | None" = None
     ) -> list[IndexData]:
-        """Load all indexes from the dump.
+        """Load all indexes from the dump concurrently.
+
+        Uses ThreadPoolExecutor to parallelize file I/O operations across indexes.
 
         Args:
             progress_cb: Optional callback for progress updates
@@ -146,23 +156,76 @@ class DumpParser(BaseCollector):
         index_dirs = [d for d in indexes_path.iterdir() if d.is_dir()]
         total_indexes = len(index_dirs)
 
-        for i, index_dir in enumerate(index_dirs, start=1):
+        if total_indexes == 0:
+            return indexes
+
+        # Use semaphore to limit concurrent parsing
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+        completed_count = 0
+        completed_lock = asyncio.Lock()
+
+        # Create a thread pool executor for blocking file I/O
+        loop = asyncio.get_event_loop()
+
+        async def load_with_semaphore(
+            index_dir: Path, index_num: int
+        ) -> IndexData | None:
+            nonlocal completed_count
             uid = index_dir.name
-            emit_parse(
-                progress_cb,
-                f"Loading index {uid} ({i}/{total_indexes})...",
-                current=i,
-                total=total_indexes,
-                index_uid=uid,
-            )
-            index_data = await self._load_index(index_dir, uid)
-            if index_data:
-                indexes.append(index_data)
+
+            async with semaphore:
+                emit_parse(
+                    progress_cb,
+                    f"Loading index {uid}...",
+                    current=completed_count,
+                    total=total_indexes,
+                    index_uid=uid,
+                )
+
+                # Run blocking file I/O in thread pool
+                result = await loop.run_in_executor(
+                    None,  # Uses default ThreadPoolExecutor
+                    self._load_index_sync,
+                    index_dir,
+                    uid,
+                )
+
+                async with completed_lock:
+                    completed_count += 1
+                    emit_parse(
+                        progress_cb,
+                        f"Loaded {uid} ({completed_count}/{total_indexes})",
+                        current=completed_count,
+                        total=total_indexes,
+                        index_uid=uid,
+                    )
+
+                return result
+
+        # Load all indexes concurrently with bounded parallelism
+        tasks = [
+            load_with_semaphore(index_dir, i)
+            for i, index_dir in enumerate(index_dirs, start=1)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Filter out None results (failed loads)
+        indexes = [idx for idx in results if idx is not None]
 
         return indexes
 
-    async def _load_index(self, index_dir: Path, uid: str) -> IndexData | None:
-        """Load a single index from its directory."""
+    def _load_index_sync(self, index_dir: Path, uid: str) -> IndexData | None:
+        """Load a single index from its directory (synchronous version for thread pool).
+
+        This method performs blocking file I/O and should be run in a thread pool.
+
+        Args:
+            index_dir: Path to the index directory
+            uid: The index UID
+
+        Returns:
+            IndexData object or None if loading failed
+        """
         try:
             # Load metadata
             metadata_path = index_dir / "metadata.json"
@@ -183,11 +246,8 @@ class DumpParser(BaseCollector):
             doc_count = 0
 
             if documents_path.exists():
-                with open(documents_path, "r") as f:
+                with open(documents_path) as f:
                     for i, line in enumerate(f):
-                        if i % 2000 == 0:
-                            await asyncio.sleep(0)
-
                         doc_count += 1
                         doc = json.loads(line)
 
@@ -225,6 +285,22 @@ class DumpParser(BaseCollector):
             )
         except (json.JSONDecodeError, OSError):
             return None
+
+    async def _load_index(self, index_dir: Path, uid: str) -> IndexData | None:
+        """Load a single index from its directory (async wrapper).
+
+        This is kept for backwards compatibility but delegates to _load_index_sync
+        via the event loop's thread pool.
+
+        Args:
+            index_dir: Path to the index directory
+            uid: The index UID
+
+        Returns:
+            IndexData object or None if loading failed
+        """
+        loop = asyncio.get_event_loop()
+        return await loop.run_in_executor(None, self._load_index_sync, index_dir, uid)
 
     async def get_version(self) -> str | None:
         """Get the MeiliSearch version from the dump."""

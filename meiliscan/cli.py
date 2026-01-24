@@ -149,6 +149,14 @@ def analyze(
             help="Enable detection of potential PII/sensitive fields in documents",
         ),
     ] = False,
+    max_concurrent: Annotated[
+        int,
+        typer.Option(
+            "--max-concurrent",
+            "-c",
+            help="Maximum number of indexes to fetch/parse concurrently (default: 10)",
+        ),
+    ] = 10,
 ) -> None:
     """Analyze a MeiliSearch instance or dump file."""
     if not url and not dump:
@@ -210,6 +218,7 @@ def analyze(
         "probe_search": probe_search,
         "sample_documents": sample_docs_value,
         "detect_sensitive": detect_sensitive,
+        "max_concurrent": max_concurrent,
     }
 
     if dump:
@@ -247,8 +256,11 @@ async def _analyze_dump(
     """Analyze a MeiliSearch dump file."""
     analysis_options = analysis_options or {}
     sample_docs = analysis_options.get("sample_documents", 20)
+    max_concurrent = analysis_options.get("max_concurrent", 10)
 
-    collector = DataCollector.from_dump(dump_path, max_sample_docs=sample_docs)
+    collector = DataCollector.from_dump(
+        dump_path, max_sample_docs=sample_docs, max_concurrent=max_concurrent
+    )
 
     with Progress(
         SpinnerColumn(),
@@ -341,8 +353,11 @@ async def _analyze_instance(
     """Analyze a live MeiliSearch instance."""
     analysis_options = analysis_options or {}
     sample_docs = analysis_options.get("sample_documents", 20)
+    max_concurrent = analysis_options.get("max_concurrent", 10)
 
-    collector = DataCollector.from_url(url, api_key, sample_docs=sample_docs)
+    collector = DataCollector.from_url(
+        url, api_key, sample_docs=sample_docs, max_concurrent=max_concurrent
+    )
 
     with Progress(
         SpinnerColumn(),
