@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+
+{% block title %}Search Benchmarks - Meiliscan{% endblock %}
+
+{% block content %}
+<h1 style="font-size: 1.75rem; margin-bottom: 1.5rem;">Search Benchmarks</h1>
+
+{% if not is_live %}
+<!-- Not Connected / Dump Mode -->
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">🔌</div>
+        <h2>Live Connection Required</h2>
+        <p class="text-secondary">Benchmarks require a connection to a live MeiliSearch instance.</p>
+        <p class="text-secondary mt-1">Dump file analysis does not support live benchmarks.</p>
+        <a href="/" class="btn btn-primary mt-2">Go to Dashboard</a>
+    </div>
+</div>
+
+{% elif not report %}
+<!-- Not Analyzed -->
+<div class="card">
+    <div class="empty-state">
+        <div class="empty-state-icon">📊</div>
+        <h2>No Analysis Data</h2>
+        <p class="text-secondary">Run an analysis first to enable benchmarks.</p>
+        <a href="/" class="btn btn-primary mt-2">Go to Dashboard</a>
+    </div>
+</div>
+
+{% else %}
+<!-- Benchmark Interface -->
+
+<!-- Run Benchmark Card -->
+<div class="card mb-2">
+    <div class="card-header">
+        <h2 class="card-title">Run Search Benchmark</h2>
+    </div>
+    <p class="text-secondary mb-2">
+        Measure search latency across different query types: baseline, text search, filtered, sorted, faceted, and complex queries.
+    </p>
+    <form id="benchmark-form">
+        <div class="form-group" style="margin-bottom: 1rem;">
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+                <input type="checkbox" name="comprehensive" id="comprehensive-checkbox">
+                <span>Comprehensive <span class="text-secondary">(3 queries per type for more accurate results)</span></span>
+            </label>
+        </div>
+        <div class="flex gap-1 items-center">
+            <button type="submit" class="btn btn-primary" id="run-benchmark-btn">
+                Run Benchmark
+            </button>
+            <span id="benchmark-status" class="text-secondary" style="margin-left: 0.5rem;"></span>
+        </div>
+    </form>
+</div>
+
+<!-- Results Area -->
+<div id="benchmark-results">
+    {% if benchmark %}
+        {% include "components/benchmark_results.html" %}
+    {% else %}
+        <div class="card">
+            <div class="empty-state" style="padding: 2rem;">
+                <div class="empty-state-icon">⏱️</div>
+                <h3>No Benchmark Results Yet</h3>
+                <p class="text-secondary">Click "Run Benchmark" above to measure search performance.</p>
+            </div>
+        </div>
+    {% endif %}
+</div>
+
+<!-- Fix Benchmarks Section -->
+{% if fixable_findings %}
+<div class="card mt-2">
+    <div class="card-header">
+        <h2 class="card-title">Test Fixes</h2>
+    </div>
+    <p class="text-secondary mb-2">
+        Benchmark individual fixes to see their performance impact before applying them permanently.
+    </p>
+    
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Finding</th>
+                    <th>Index</th>
+                    <th>Fix</th>
+                    <th style="width: 200px;">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for finding in fixable_findings %}
+                <tr>
+                    <td>
+                        <span class="badge badge-{{ finding.severity.value|severity_color }}">{{ finding.id }}</span>
+                    </td>
+                    <td><code>{{ finding.index_uid }}</code></td>
+                    <td>{{ finding.title }}</td>
+                    <td>
+                        <div class="flex gap-1">
+                            <button class="btn btn-sm btn-secondary"
+                                    hx-post="/benchmark/fix/{{ finding.id }}"
+                                    hx-target="#fix-result-{{ finding.id|replace('-', '_') }}"
+                                    hx-swap="innerHTML"
+                                    hx-indicator="#fix-spinner-{{ finding.id|replace('-', '_') }}">
+                                Dry Run
+                            </button>
+                            <button class="btn btn-sm btn-warning"
+                                    hx-post="/benchmark/fix/{{ finding.id }}?apply=true&revert_after=true"
+                                    hx-target="#fix-result-{{ finding.id|replace('-', '_') }}"
+                                    hx-swap="innerHTML"
+                                    hx-confirm="This will temporarily modify your MeiliSearch instance settings. The changes will be reverted after benchmarking. Continue?"
+                                    hx-indicator="#fix-spinner-{{ finding.id|replace('-', '_') }}">
+                                Apply & Test
+                            </button>
+                            <span id="fix-spinner-{{ finding.id|replace('-', '_') }}" class="htmx-indicator text-secondary" style="font-size: 0.75rem;">
+                                Testing...
+                            </span>
+                        </div>
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="4" id="fix-result-{{ finding.id|replace('-', '_') }}" style="padding: 0; border: none;">
+                        <!-- Fix benchmark results will be inserted here -->
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Benchmark JavaScript -->
+<script>
+    // Handle benchmark form submission
+    document.getElementById('benchmark-form').addEventListener('submit', async function(e) {
+        e.preventDefault();
+        
+        const btn = document.getElementById('run-benchmark-btn');
+        const status = document.getElementById('benchmark-status');
+        const resultsDiv = document.getElementById('benchmark-results');
+        const comprehensive = document.getElementById('comprehensive-checkbox').checked;
+        
+        // Disable button and show loading
+        btn.disabled = true;
+        btn.textContent = 'Running...';
+        status.textContent = 'Connecting...';
+        
+        // Start SSE connection for progress updates
+        let eventSource = null;
+        try {
+            eventSource = new EventSource('/api/benchmark/events');
+            
+            eventSource.addEventListener('progress', function(e) {
+                const data = JSON.parse(e.data);
+                status.textContent = data.message || 'Running...';
+            });
+            
+            eventSource.addEventListener('done', function(e) {
+                eventSource.close();
+            });
+            
+            eventSource.addEventListener('error', function(e) {
+                // Ignore errors - will be handled by fetch response
+            });
+        } catch (err) {
+            // SSE not supported or blocked - continue without progress
+        }
+        
+        try {
+            // Run benchmark via API
+            const response = await fetch('/api/benchmark?comprehensive=' + comprehensive, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            const data = await response.json();
+            
+            if (data.error) {
+                status.textContent = 'Error: ' + data.error;
+                status.style.color = 'var(--red)';
+            } else if (data.success) {
+                status.textContent = 'Complete!';
+                status.style.color = 'var(--green)';
+                
+                // Reload results partial
+                const resultsResponse = await fetch('/benchmark/results');
+                const resultsHtml = await resultsResponse.text();
+                resultsDiv.innerHTML = resultsHtml;
+            }
+        } catch (err) {
+            status.textContent = 'Error: ' + err.message;
+            status.style.color = 'var(--red)';
+        } finally {
+            if (eventSource) {
+                eventSource.close();
+            }
+            btn.disabled = false;
+            btn.textContent = 'Run Benchmark';
+            
+            // Reset status color after a delay
+            setTimeout(() => {
+                status.style.color = '';
+            }, 3000);
+        }
+    });
+</script>
+{% endif %}
+{% endblock %}

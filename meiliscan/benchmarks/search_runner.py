@@ -1,6 +1,7 @@
 """Search benchmark runner for measuring MeiliSearch performance."""
 
 import time
+from collections.abc import Awaitable, Callable
 from datetime import datetime
 from typing import TYPE_CHECKING
 
@@ -16,6 +17,10 @@ from meiliscan.models.index import IndexData
 if TYPE_CHECKING:
     from meiliscan.collectors.live_instance import LiveInstanceCollector
 
+# Type aliases for progress callbacks
+ProgressCallback = Callable[[str, str], Awaitable[None]]  # (index_uid, query_type)
+IndexCompleteCallback = Callable[[str], Awaitable[None]]  # (index_uid)
+
 
 class SearchBenchmarkRunner:
     """Runs search benchmarks against a MeiliSearch instance."""
@@ -25,6 +30,8 @@ class SearchBenchmarkRunner:
         collector: "LiveInstanceCollector",
         seed: int | None = None,
         queries_per_type: int = 3,
+        progress_cb: ProgressCallback | None = None,
+        index_complete_cb: IndexCompleteCallback | None = None,
     ):
         """Initialize the benchmark runner.
 
@@ -32,10 +39,14 @@ class SearchBenchmarkRunner:
             collector: Connected LiveInstanceCollector
             seed: Optional random seed for reproducibility
             queries_per_type: Number of queries to run per query type
+            progress_cb: Optional callback for query progress (index_uid, query_type)
+            index_complete_cb: Optional callback when an index benchmark completes (index_uid)
         """
         self._collector = collector
         self._query_generator = QueryGenerator(seed=seed)
         self._queries_per_type = queries_per_type
+        self._progress_cb = progress_cb
+        self._index_complete_cb = index_complete_cb
 
     async def _run_single_query(
         self, index_uid: str, query: SearchQuery
@@ -112,44 +123,47 @@ class SearchBenchmarkRunner:
         # Generate and run queries
         sample_docs = index.sample_documents if index.sample_documents else None
 
+        # Helper to run queries with progress callback
+        async def run_queries(query_type: str, generate_fn, *args) -> None:
+            if self._progress_cb:
+                await self._progress_cb(index.uid, query_type)
+            for _ in range(queries_per_type):
+                query = generate_fn(*args)
+                if query:  # Some generators return None if not applicable
+                    result = await self._run_single_query(index.uid, query)
+                    all_results.append(result)
+
         # Baseline queries
-        for _ in range(queries_per_type):
-            query = self._query_generator.generate_baseline_query(index)
-            result = await self._run_single_query(index.uid, query)
-            all_results.append(result)
+        await run_queries(
+            "baseline", self._query_generator.generate_baseline_query, index
+        )
 
         # Text queries
-        for _ in range(queries_per_type):
-            query = self._query_generator.generate_text_query(index)
-            result = await self._run_single_query(index.uid, query)
-            all_results.append(result)
+        await run_queries("text", self._query_generator.generate_text_query, index)
 
         # Filtered queries (if applicable)
-        for _ in range(queries_per_type):
-            query = self._query_generator.generate_filtered_query(index, sample_docs)
-            if query:
-                result = await self._run_single_query(index.uid, query)
-                all_results.append(result)
+        await run_queries(
+            "filtered",
+            self._query_generator.generate_filtered_query,
+            index,
+            sample_docs,
+        )
 
         # Sorted queries (if applicable)
-        for _ in range(queries_per_type):
-            query = self._query_generator.generate_sorted_query(index)
-            if query:
-                result = await self._run_single_query(index.uid, query)
-                all_results.append(result)
+        await run_queries("sorted", self._query_generator.generate_sorted_query, index)
 
         # Faceted queries (if applicable)
-        for _ in range(queries_per_type):
-            query = self._query_generator.generate_faceted_query(index)
-            if query:
-                result = await self._run_single_query(index.uid, query)
-                all_results.append(result)
+        await run_queries(
+            "faceted", self._query_generator.generate_faceted_query, index
+        )
 
         # Complex queries
-        for _ in range(queries_per_type):
-            query = self._query_generator.generate_complex_query(index, sample_docs)
-            result = await self._run_single_query(index.uid, query)
-            all_results.append(result)
+        await run_queries(
+            "complex",
+            self._query_generator.generate_complex_query,
+            index,
+            sample_docs,
+        )
 
         # Calculate summary metrics by query type
         def avg_latency_for_type(query_type: str) -> float | None:
@@ -212,6 +226,10 @@ class SearchBenchmarkRunner:
         for index in indexes:
             benchmark = await self.benchmark_index(index, comprehensive)
             index_benchmarks.append(benchmark)
+
+            # Notify that this index is complete
+            if self._index_complete_cb:
+                await self._index_complete_cb(index.uid)
 
         duration_ms = (time.perf_counter() - start_time) * 1000
 
