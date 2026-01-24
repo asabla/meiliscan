@@ -243,7 +243,7 @@ def create_app(
     return app
 
 
-async def run_analysis(state: AppState) -> None:
+async def run_analysis(state: AppState, emit_done: bool = True) -> None:
     """Run analysis and store results in state.
 
     Uses the analysis options stored in state:
@@ -251,6 +251,11 @@ async def run_analysis(state: AppState) -> None:
     - probe_search: Run search probes (live instance only)
     - detect_sensitive: Enable PII/sensitive field detection
     - max_concurrent: Maximum concurrent index fetching
+
+    Args:
+        state: Application state
+        emit_done: Whether to emit the done signal (None) when complete.
+                   Set to False when chaining with benchmark.
     """
     state.analysis_status = "running"
     state.analysis_error = None
@@ -325,7 +330,8 @@ async def run_analysis(state: AppState) -> None:
         )
 
         state.analysis_status = "done"
-        await state.emit_progress(None)  # Signal completion
+        if emit_done:
+            await state.emit_progress(None)  # Signal completion
 
     except Exception as e:
         # Log error but don't crash - UI will show "no data" state
@@ -340,22 +346,30 @@ async def run_analysis_and_benchmark(state: AppState) -> None:
 
     This is a wrapper around run_analysis that also triggers benchmark
     if state.run_benchmark is True and we're connected to a live instance.
+
+    Progress events are emitted through the analysis channel so the dashboard
+    progress modal can track both analysis and benchmark phases before reloading.
     """
-    # First run the analysis
-    await run_analysis(state)
+    # Check if we'll need to run benchmark after
+    will_benchmark = state.run_benchmark and state.meili_url
+
+    # Run analysis, but don't emit done signal if we'll benchmark after
+    await run_analysis(state, emit_done=not will_benchmark)
 
     # If analysis succeeded and auto-benchmark is enabled, run benchmarks
-    if (
-        state.analysis_status == "done"
-        and state.run_benchmark
-        and state.meili_url
-        and state.report
-    ):
+    if state.analysis_status == "done" and will_benchmark and state.report:
         await run_benchmark_after_analysis(state)
+        # Now emit the done signal after benchmark completes
+        await state.emit_progress(None)
+    # If analysis failed or no benchmark needed, done signal already emitted by run_analysis
 
 
 async def run_benchmark_after_analysis(state: AppState) -> None:
-    """Run benchmarks after a successful analysis."""
+    """Run benchmarks after a successful analysis.
+
+    Emits progress through the analysis channel (emit_progress) so the
+    dashboard progress modal can show benchmark progress before reloading.
+    """
     from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
     from meiliscan.collectors.live_instance import LiveInstanceCollector
 
@@ -363,8 +377,8 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
     state.benchmark_error = None
 
     try:
-        await state.emit_benchmark_progress(
-            {"phase": "benchmark", "message": "Starting auto-benchmark..."}
+        await state.emit_progress(
+            ProgressEvent(phase="benchmark", message="Starting benchmarks...")
         )
 
         # Create a collector for benchmarking
@@ -372,7 +386,6 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
         if not meili_url:
             state.benchmark_status = "error"
             state.benchmark_error = "No MeiliSearch URL configured"
-            await state.emit_benchmark_progress(None)
             return
 
         collector = LiveInstanceCollector(
@@ -384,11 +397,10 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
             if not await collector.connect():
                 state.benchmark_status = "error"
                 state.benchmark_error = "Failed to connect to MeiliSearch"
-                await state.emit_benchmark_progress(None)
                 return
 
-            await state.emit_benchmark_progress(
-                {"phase": "benchmark", "message": "Fetching index data..."}
+            await state.emit_progress(
+                ProgressEvent(phase="benchmark", message="Fetching index data...")
             )
 
             # Fetch index data for benchmarking
@@ -401,43 +413,42 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
             if not index_data_list:
                 state.benchmark_status = "error"
                 state.benchmark_error = "No indexes to benchmark"
-                await state.emit_benchmark_progress(None)
                 return
 
             total_indexes = len(index_data_list)
-            await state.emit_benchmark_progress(
-                {
-                    "phase": "benchmark",
-                    "message": f"Running benchmarks on {total_indexes} index(es)...",
-                    "total": total_indexes,
-                    "current": 0,
-                }
+            await state.emit_progress(
+                ProgressEvent(
+                    phase="benchmark",
+                    message=f"Running benchmarks on {total_indexes} index(es)...",
+                    total=total_indexes,
+                    current=0,
+                )
             )
 
             # Create progress callback for the benchmark runner
             current_index = [0]  # Use list for mutable closure
 
             async def benchmark_progress_cb(index_uid: str, query_type: str) -> None:
-                await state.emit_benchmark_progress(
-                    {
-                        "phase": "benchmark",
-                        "message": f"Benchmarking {index_uid}: {query_type}",
-                        "index_uid": index_uid,
-                        "current": current_index[0],
-                        "total": total_indexes,
-                    }
+                await state.emit_progress(
+                    ProgressEvent(
+                        phase="benchmark",
+                        message=f"Benchmarking {index_uid}: {query_type}",
+                        index_uid=index_uid,
+                        current=current_index[0],
+                        total=total_indexes,
+                    )
                 )
 
             async def index_complete_cb(index_uid: str) -> None:
                 current_index[0] += 1
-                await state.emit_benchmark_progress(
-                    {
-                        "phase": "benchmark",
-                        "message": f"Completed {index_uid} ({current_index[0]}/{total_indexes})",
-                        "index_uid": index_uid,
-                        "current": current_index[0],
-                        "total": total_indexes,
-                    }
+                await state.emit_progress(
+                    ProgressEvent(
+                        phase="benchmark",
+                        message=f"Completed {index_uid} ({current_index[0]}/{total_indexes})",
+                        index_uid=index_uid,
+                        current=current_index[0],
+                        total=total_indexes,
+                    )
                 )
 
             # Run baseline benchmarks (not comprehensive for auto-benchmark)
@@ -455,10 +466,9 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
                 state.report.benchmark = benchmark_report
 
             state.benchmark_status = "done"
-            await state.emit_benchmark_progress(
-                {"phase": "benchmark", "message": "Benchmark complete!"}
+            await state.emit_progress(
+                ProgressEvent(phase="benchmark", message="Benchmark complete!")
             )
-            await state.emit_benchmark_progress(None)
 
         finally:
             await collector.close()
@@ -466,5 +476,4 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
     except Exception as e:
         state.benchmark_status = "error"
         state.benchmark_error = str(e)
-        await state.emit_benchmark_progress(None)
         print(f"Error running auto-benchmark: {e}")

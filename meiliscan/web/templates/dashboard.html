@@ -538,9 +538,10 @@ const ProgressModal = {
 
         // Phase labels and progress percentages
         const phaseConfig = {
-            'collect': { label: 'Collecting Data', percent: 33 },
-            'parse': { label: 'Parsing Dump', percent: 33 },
-            'analyze': { label: 'Analyzing Indexes', percent: 66 }
+            'collect': { label: 'Collecting Data', percent: 25 },
+            'parse': { label: 'Parsing Dump', percent: 25 },
+            'analyze': { label: 'Analyzing Indexes', percent: 50 },
+            'benchmark': { label: 'Running Benchmarks', percent: 75 }
         };
 
         // Update phase if changed
@@ -574,8 +575,10 @@ const ProgressModal = {
             }
         }
 
-        // When analysis is complete, show 100%
-        if (event.phase === 'analyze' && event.current === event.total && event.total > 0) {
+        // When phase completes all items, show 100%
+        // This handles both analyze and benchmark phases completing
+        if ((event.phase === 'analyze' || event.phase === 'benchmark') && 
+            event.current === event.total && event.total > 0) {
             this.phaseBar.style.width = '100%';
         }
     },
