@@ -1,0 +1,164 @@
+{% if not benchmark %}
+<div class="card">
+    <div class="empty-state" style="padding: 2rem;">
+        <div class="empty-state-icon">⏱️</div>
+        <h3>No Benchmark Results</h3>
+        <p class="text-secondary">Run a benchmark to see results here.</p>
+    </div>
+</div>
+{% else %}
+<!-- Benchmark Summary Stats -->
+<div class="grid grid-5 mb-2">
+    <div class="card stat">
+        <div class="stat-value">{{ benchmark.total_queries }}</div>
+        <div class="stat-label">Queries</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.avg_overall_ms) }}ms</div>
+        <div class="stat-label">Avg Latency</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.p50_latency_ms) }}ms</div>
+        <div class="stat-label">P50</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.p95_latency_ms) }}ms</div>
+        <div class="stat-label">P95</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.p99_latency_ms) }}ms</div>
+        <div class="stat-label">P99</div>
+    </div>
+</div>
+
+<!-- Additional Stats Row -->
+<div class="grid grid-4 mb-2">
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.avg_baseline_ms) }}ms</div>
+        <div class="stat-label">Avg Baseline</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.min_latency_ms) }}ms</div>
+        <div class="stat-label">Min</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.max_latency_ms) }}ms</div>
+        <div class="stat-label">Max</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value">{{ "%.1f"|format(benchmark.duration_ms / 1000) }}s</div>
+        <div class="stat-label">Duration</div>
+    </div>
+</div>
+
+<!-- Per-Index Results -->
+<div class="card mb-2">
+    <div class="card-header">
+        <h2 class="card-title">Per-Index Results</h2>
+        <div class="dropdown">
+            <button type="button" class="btn btn-sm btn-secondary dropdown-toggle" onclick="toggleDropdown(this)">
+                Export ▾
+            </button>
+            <ul class="dropdown-menu">
+                <li><a href="/api/benchmark/export?format=json" class="dropdown-item">JSON (.json)</a></li>
+                <li><a href="/api/benchmark/export?format=markdown" class="dropdown-item">Markdown (.md)</a></li>
+            </ul>
+        </div>
+    </div>
+    
+    {% for idx in benchmark.indexes %}
+    <div class="index-benchmark" style="padding: 0.75rem; {% if not loop.last %}border-bottom: 1px solid var(--border);{% endif %}">
+        <div class="flex justify-between items-center">
+            <div>
+                <a href="/index/{{ idx.index_uid }}" style="font-weight: 600; text-decoration: none;">{{ idx.index_uid }}</a>
+                <span class="text-secondary" style="font-size: 0.875rem;">({{ idx.document_count|format_number }} docs)</span>
+            </div>
+            <div>
+                <span class="badge badge-blue">avg: {{ "%.1f"|format(idx.avg_latency_ms) }}ms</span>
+                {% if idx.success_rate < 100 %}
+                <span class="badge badge-red">{{ "%.0f"|format(idx.success_rate) }}% success</span>
+                {% endif %}
+            </div>
+        </div>
+        <div class="text-secondary" style="font-size: 0.75rem; margin-top: 0.25rem;">
+            <span title="Empty query baseline">baseline: {{ "%.1f"|format(idx.baseline_latency_ms) }}ms</span>
+            {% if idx.text_latency_ms is not none %}
+            <span style="margin-left: 0.5rem;" title="Text search queries">| text: {{ "%.1f"|format(idx.text_latency_ms) }}ms</span>
+            {% endif %}
+            {% if idx.filtered_latency_ms is not none %}
+            <span style="margin-left: 0.5rem;" title="Filtered queries">| filtered: {{ "%.1f"|format(idx.filtered_latency_ms) }}ms</span>
+            {% endif %}
+            {% if idx.sorted_latency_ms is not none %}
+            <span style="margin-left: 0.5rem;" title="Sorted queries">| sorted: {{ "%.1f"|format(idx.sorted_latency_ms) }}ms</span>
+            {% endif %}
+            {% if idx.faceted_latency_ms is not none %}
+            <span style="margin-left: 0.5rem;" title="Faceted queries">| faceted: {{ "%.1f"|format(idx.faceted_latency_ms) }}ms</span>
+            {% endif %}
+            {% if idx.complex_latency_ms is not none %}
+            <span style="margin-left: 0.5rem;" title="Complex queries (text + filter + sort)">| complex: {{ "%.1f"|format(idx.complex_latency_ms) }}ms</span>
+            {% endif %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+
+<!-- Slowest Queries -->
+{% if benchmark.slowest_queries %}
+<div class="card">
+    <div class="card-header">
+        <h2 class="card-title">Slowest Queries</h2>
+    </div>
+    <div class="table-responsive">
+        <table class="table">
+            <thead>
+                <tr>
+                    <th style="width: 40px;">#</th>
+                    <th>Index</th>
+                    <th>Type</th>
+                    <th style="width: 100px;">Latency</th>
+                    <th>Query Details</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for q in benchmark.slowest_queries[:10] %}
+                <tr>
+                    <td class="text-secondary">{{ loop.index }}</td>
+                    <td><a href="/index/{{ q.index_uid }}">{{ q.index_uid }}</a></td>
+                    <td><span class="badge badge-gray">{{ q.query.query_type }}</span></td>
+                    <td>
+                        <strong class="{% if q.latency_ms > 100 %}text-red{% elif q.latency_ms > 50 %}text-yellow{% endif %}">
+                            {{ "%.1f"|format(q.latency_ms) }}ms
+                        </strong>
+                    </td>
+                    <td class="text-secondary" style="font-size: 0.75rem; max-width: 300px;">
+                        {% if q.query.query_text %}
+                        <code>"{{ q.query.query_text }}"</code>
+                        {% else %}
+                        <span class="text-muted">(empty query)</span>
+                        {% endif %}
+                        {% if q.query.filter %}
+                        <br><span title="Filter expression">+ filter</span>
+                        {% endif %}
+                        {% if q.query.sort %}
+                        <br><span title="Sort expression">+ sort</span>
+                        {% endif %}
+                        {% if q.query.facets %}
+                        <br><span title="Facet attributes">+ {{ q.query.facets|length }} facets</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endif %}
+
+<!-- Benchmark Info Footer -->
+<div class="mt-2 text-secondary" style="font-size: 0.75rem;">
+    <p>
+        Benchmark run at {{ benchmark.ran_at.strftime('%Y-%m-%d %H:%M:%S') }} UTC
+        {% if benchmark.comprehensive %} | Comprehensive mode ({{ benchmark.queries_per_type }} queries per type){% endif %}
+    </p>
+</div>
+{% endif %}

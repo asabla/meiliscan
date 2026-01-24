@@ -32,10 +32,16 @@ class AppState:
         self.sample_documents: int | None = 20  # None means "all"
         self.detect_sensitive: bool = False
         self.max_concurrent: int = 10  # Concurrent index fetching limit
+        # Benchmark options
+        self.run_benchmark: bool = False  # Run benchmark after analysis
         # Analysis progress tracking
         self.analysis_status: AnalysisStatus = "idle"
         self.analysis_error: str | None = None
         self._progress_subscribers: list[asyncio.Queue[ProgressEvent | None]] = []
+        # Benchmark progress tracking (separate from analysis)
+        self.benchmark_status: AnalysisStatus = "idle"
+        self.benchmark_error: str | None = None
+        self._benchmark_subscribers: list[asyncio.Queue[dict | None]] = []
 
     def subscribe_progress(self) -> asyncio.Queue[ProgressEvent | None]:
         """Subscribe to progress events. Returns a queue that will receive events."""
@@ -51,6 +57,25 @@ class AppState:
     async def emit_progress(self, event: ProgressEvent | None) -> None:
         """Emit a progress event to all subscribers."""
         for queue in self._progress_subscribers:
+            try:
+                await queue.put(event)
+            except Exception:
+                pass  # Ignore errors from closed queues
+
+    def subscribe_benchmark_progress(self) -> asyncio.Queue[dict | None]:
+        """Subscribe to benchmark progress events."""
+        queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        self._benchmark_subscribers.append(queue)
+        return queue
+
+    def unsubscribe_benchmark_progress(self, queue: asyncio.Queue[dict | None]) -> None:
+        """Unsubscribe from benchmark progress events."""
+        if queue in self._benchmark_subscribers:
+            self._benchmark_subscribers.remove(queue)
+
+    async def emit_benchmark_progress(self, event: dict | None) -> None:
+        """Emit a benchmark progress event to all subscribers."""
+        for queue in self._benchmark_subscribers:
             try:
                 await queue.put(event)
             except Exception:
@@ -308,3 +333,138 @@ async def run_analysis(state: AppState) -> None:
         state.analysis_error = str(e)
         await state.emit_progress(None)  # Signal completion
         print(f"Error running analysis: {e}")
+
+
+async def run_analysis_and_benchmark(state: AppState) -> None:
+    """Run analysis and optionally run benchmarks afterwards.
+
+    This is a wrapper around run_analysis that also triggers benchmark
+    if state.run_benchmark is True and we're connected to a live instance.
+    """
+    # First run the analysis
+    await run_analysis(state)
+
+    # If analysis succeeded and auto-benchmark is enabled, run benchmarks
+    if (
+        state.analysis_status == "done"
+        and state.run_benchmark
+        and state.meili_url
+        and state.report
+    ):
+        await run_benchmark_after_analysis(state)
+
+
+async def run_benchmark_after_analysis(state: AppState) -> None:
+    """Run benchmarks after a successful analysis."""
+    from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
+    from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+    state.benchmark_status = "running"
+    state.benchmark_error = None
+
+    try:
+        await state.emit_benchmark_progress(
+            {"phase": "benchmark", "message": "Starting auto-benchmark..."}
+        )
+
+        # Create a collector for benchmarking
+        meili_url = state.meili_url
+        if not meili_url:
+            state.benchmark_status = "error"
+            state.benchmark_error = "No MeiliSearch URL configured"
+            await state.emit_benchmark_progress(None)
+            return
+
+        collector = LiveInstanceCollector(
+            url=meili_url,
+            api_key=state.meili_api_key,
+        )
+
+        try:
+            if not await collector.connect():
+                state.benchmark_status = "error"
+                state.benchmark_error = "Failed to connect to MeiliSearch"
+                await state.emit_benchmark_progress(None)
+                return
+
+            await state.emit_benchmark_progress(
+                {"phase": "benchmark", "message": "Fetching index data..."}
+            )
+
+            # Fetch index data for benchmarking
+            all_indexes = await collector.get_indexes()
+
+            # Filter to only the indexes we analyzed
+            index_uids = set(state.report.indexes.keys()) if state.report else set()
+            index_data_list = [idx for idx in all_indexes if idx.uid in index_uids]
+
+            if not index_data_list:
+                state.benchmark_status = "error"
+                state.benchmark_error = "No indexes to benchmark"
+                await state.emit_benchmark_progress(None)
+                return
+
+            total_indexes = len(index_data_list)
+            await state.emit_benchmark_progress(
+                {
+                    "phase": "benchmark",
+                    "message": f"Running benchmarks on {total_indexes} index(es)...",
+                    "total": total_indexes,
+                    "current": 0,
+                }
+            )
+
+            # Create progress callback for the benchmark runner
+            current_index = [0]  # Use list for mutable closure
+
+            async def benchmark_progress_cb(index_uid: str, query_type: str) -> None:
+                await state.emit_benchmark_progress(
+                    {
+                        "phase": "benchmark",
+                        "message": f"Benchmarking {index_uid}: {query_type}",
+                        "index_uid": index_uid,
+                        "current": current_index[0],
+                        "total": total_indexes,
+                    }
+                )
+
+            async def index_complete_cb(index_uid: str) -> None:
+                current_index[0] += 1
+                await state.emit_benchmark_progress(
+                    {
+                        "phase": "benchmark",
+                        "message": f"Completed {index_uid} ({current_index[0]}/{total_indexes})",
+                        "index_uid": index_uid,
+                        "current": current_index[0],
+                        "total": total_indexes,
+                    }
+                )
+
+            # Run baseline benchmarks (not comprehensive for auto-benchmark)
+            runner = SearchBenchmarkRunner(
+                collector=collector,
+                queries_per_type=1,
+                progress_cb=benchmark_progress_cb,
+                index_complete_cb=index_complete_cb,
+            )
+
+            benchmark_report = await runner.run_baseline(index_data_list)
+
+            # Store in report
+            if state.report:
+                state.report.benchmark = benchmark_report
+
+            state.benchmark_status = "done"
+            await state.emit_benchmark_progress(
+                {"phase": "benchmark", "message": "Benchmark complete!"}
+            )
+            await state.emit_benchmark_progress(None)
+
+        finally:
+            await collector.close()
+
+    except Exception as e:
+        state.benchmark_status = "error"
+        state.benchmark_error = str(e)
+        await state.emit_benchmark_progress(None)
+        print(f"Error running auto-benchmark: {e}")

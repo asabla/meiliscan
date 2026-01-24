@@ -1,0 +1,145 @@
+{# Fix benchmark result partial - displayed inline in the fixes table #}
+
+{% if error %}
+<div style="padding: 1rem; background-color: var(--red-bg, rgba(239, 68, 68, 0.1)); border-radius: 0.25rem; margin: 0.5rem 0;">
+    <span style="color: var(--red);">Error:</span> {{ error }}
+</div>
+
+{% elif result %}
+<div style="padding: 1rem; background-color: var(--card-bg); border-radius: 0.25rem; margin: 0.5rem 0; border: 1px solid var(--border);">
+    
+    {# Header with status #}
+    <div class="flex justify-between items-center mb-1">
+        <strong>{{ finding_id }} - {{ result.fix_description }}</strong>
+        {% if result.applied %}
+            {% if result.reverted %}
+                <span class="badge badge-green" style="font-size: 0.7rem;">Applied & Reverted</span>
+            {% else %}
+                <span class="badge badge-yellow" style="font-size: 0.7rem;">Applied (Not Reverted)</span>
+            {% endif %}
+        {% else %}
+            <span class="badge badge-blue" style="font-size: 0.7rem;">Dry Run (Simulated)</span>
+        {% endif %}
+    </div>
+    
+    {# Results comparison #}
+    <div class="grid grid-cols-3 gap-2 mt-2" style="text-align: center;">
+        {# Before #}
+        <div style="padding: 0.75rem; background: var(--bg); border-radius: 0.25rem;">
+            <div class="text-secondary" style="font-size: 0.75rem; margin-bottom: 0.25rem;">Before</div>
+            <div style="font-size: 1.25rem; font-weight: 600;">
+                {{ "%.2f"|format(result.before_benchmark.avg_latency_ms) }}ms
+            </div>
+            <div class="text-secondary" style="font-size: 0.7rem;">
+                {{ result.before_benchmark.queries|length }} queries
+            </div>
+        </div>
+        
+        {# Improvement #}
+        <div style="padding: 0.75rem; background: var(--bg); border-radius: 0.25rem;">
+            <div class="text-secondary" style="font-size: 0.75rem; margin-bottom: 0.25rem;">Change</div>
+            {% if result.after_benchmark %}
+                {% set change_ms = result.after_benchmark.avg_latency_ms - result.before_benchmark.avg_latency_ms %}
+                {% if result.improvement_percent and result.improvement_percent > 0 %}
+                    <div style="font-size: 1.25rem; font-weight: 600; color: var(--green);">
+                        -{{ "%.1f"|format(result.improvement_percent) }}%
+                    </div>
+                    <div class="text-secondary" style="font-size: 0.7rem;">
+                        {{ "%.2f"|format(change_ms) }}ms faster
+                    </div>
+                {% elif result.improvement_percent and result.improvement_percent < 0 %}
+                    <div style="font-size: 1.25rem; font-weight: 600; color: var(--red);">
+                        +{{ "%.1f"|format(-result.improvement_percent) }}%
+                    </div>
+                    <div class="text-secondary" style="font-size: 0.7rem;">
+                        {{ "%.2f"|format(change_ms) }}ms slower
+                    </div>
+                {% else %}
+                    <div style="font-size: 1.25rem; font-weight: 600; color: var(--text-secondary);">
+                        0%
+                    </div>
+                    <div class="text-secondary" style="font-size: 0.7rem;">
+                        No change
+                    </div>
+                {% endif %}
+            {% else %}
+                <div style="font-size: 1.25rem; font-weight: 600; color: var(--text-secondary);">
+                    --
+                </div>
+                <div class="text-secondary" style="font-size: 0.7rem;">
+                    (dry run)
+                </div>
+            {% endif %}
+        </div>
+        
+        {# After #}
+        <div style="padding: 0.75rem; background: var(--bg); border-radius: 0.25rem;">
+            <div class="text-secondary" style="font-size: 0.75rem; margin-bottom: 0.25rem;">After</div>
+            {% if result.after_benchmark %}
+                <div style="font-size: 1.25rem; font-weight: 600;">
+                    {{ "%.2f"|format(result.after_benchmark.avg_latency_ms) }}ms
+                </div>
+                <div class="text-secondary" style="font-size: 0.7rem;">
+                    {{ result.after_benchmark.queries|length }} queries
+                </div>
+            {% else %}
+                <div style="font-size: 1.25rem; font-weight: 600; color: var(--text-secondary);">
+                    --
+                </div>
+                <div class="text-secondary" style="font-size: 0.7rem;">
+                    Not applied
+                </div>
+            {% endif %}
+        </div>
+    </div>
+    
+    {# Additional details #}
+    <div class="mt-2" style="font-size: 0.75rem; color: var(--text-secondary);">
+        {% if result.waited_for_indexing and result.indexing_duration_ms %}
+            <span>Indexing time: {{ "%.0f"|format(result.indexing_duration_ms) }}ms</span>
+            &bull;
+        {% endif %}
+        <span>Index: <code>{{ result.index_uid }}</code></span>
+        {% if result.before_benchmark.document_count %}
+            &bull;
+            <span>{{ result.before_benchmark.document_count|format_number }} documents</span>
+        {% endif %}
+    </div>
+    
+    {# Recommendation based on results #}
+    {% if result.after_benchmark and result.improvement_percent %}
+        <div class="mt-2" style="padding: 0.5rem; border-radius: 0.25rem; font-size: 0.85rem;
+            {% if result.improvement_percent > 10 %}
+                background: rgba(34, 197, 94, 0.1); color: var(--green);
+            {% elif result.improvement_percent > 0 %}
+                background: rgba(34, 197, 94, 0.05); color: var(--green);
+            {% elif result.improvement_percent > -10 %}
+                background: rgba(251, 191, 36, 0.1); color: var(--yellow);
+            {% else %}
+                background: rgba(239, 68, 68, 0.1); color: var(--red);
+            {% endif %}
+        ">
+            {% if result.improvement_percent > 10 %}
+                <strong>Recommended:</strong> This fix shows significant performance improvement.
+            {% elif result.improvement_percent > 0 %}
+                <strong>Minor improvement:</strong> This fix shows a small performance gain.
+            {% elif result.improvement_percent > -10 %}
+                <strong>Neutral:</strong> This fix has minimal performance impact.
+            {% else %}
+                <strong>Not recommended:</strong> This fix may degrade performance.
+            {% endif %}
+        </div>
+    {% elif not result.applied %}
+        <div class="mt-2" style="padding: 0.5rem; border-radius: 0.25rem; font-size: 0.85rem; background: rgba(59, 130, 246, 0.1); color: var(--blue);">
+            <strong>Dry run only:</strong> Click "Apply & Test" to measure actual performance impact.
+        </div>
+    {% endif %}
+    
+    {# Show error if any #}
+    {% if result.error %}
+        <div class="mt-2" style="padding: 0.5rem; background: rgba(239, 68, 68, 0.1); border-radius: 0.25rem; font-size: 0.85rem; color: var(--red);">
+            <strong>Warning:</strong> {{ result.error }}
+        </div>
+    {% endif %}
+</div>
+{% endif %}
