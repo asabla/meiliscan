@@ -711,6 +711,7 @@ def register_routes(app: FastAPI) -> None:
         sample_all: str = Form(default=""),
         detect_sensitive: str = Form(default=""),
         run_benchmark: str = Form(default=""),
+        benchmark_mode: str = Form(default="basic"),
     ):
         """Connect to a MeiliSearch instance."""
         state: AppState = request.app.state.analyzer_state
@@ -725,6 +726,7 @@ def register_routes(app: FastAPI) -> None:
         state.probe_search = probe_search == "true"
         state.detect_sensitive = detect_sensitive == "true"
         state.run_benchmark = run_benchmark == "true"
+        state.comprehensive_benchmark = benchmark_mode == "comprehensive"
 
         # Handle sample_all checkbox - if checked, set to None (all docs)
         if sample_all == "true":
