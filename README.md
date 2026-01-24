@@ -10,9 +10,11 @@ A comprehensive tool for analyzing MeiliSearch instances and dump files to ident
 - **Dump File Analysis**: Parse and analyze MeiliSearch dump archives without a running instance
 - **Instance Config Analysis**: Optional analysis of `config.toml` for production security/reliability checks
 - **Search Probing**: Opt-in read-only search probes to validate sort/filter configurations
+- **Search Benchmarking**: Measure search latency across different query types (baseline, filtered, sorted, faceted, complex)
 - **PII Detection**: Optional detection of sensitive/PII fields in documents
 - **56 Finding Types**: Comprehensive checks across schema, documents, performance, instance config, search probes, and best practices
-- **Health Scoring**: Get an overall health score for your MeiliSearch setup
+- **Configuration Coverage**: Track how many settings have been customized vs defaults (replaces old health score)
+- **Statistics Dashboard**: Comprehensive instance statistics including document counts, field analysis, and timing metrics
 - **Web Dashboard**: Interactive web UI for exploring analysis results
 - **Historical Comparison**: Compare two analysis reports to track changes over time
 - **Multiple Export Formats**: JSON, Markdown, SARIF (for GitHub/IDEs), and Agent-friendly output
@@ -121,8 +123,28 @@ $ meiliscan summary --url http://localhost:7700
 ╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
 │ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
 │                                                                              │
-│ Health Score: 18/100 (Critical)                                              │
-│ ███░░░░░░░░░░░░░░░░░                                                         │
+│ Configuration Coverage: 25% (2/8 settings customized)                        │
+│ ███████░░░░░░░░░░░░░░░░░░░░░░░                                               │
+│                                                                              │
+│ ● Critical: 1    ● Warnings: 5    ● Suggestions: 9    ● Info: 6              │
+╰──────────────────────────────────────────────────────────────────────────────╯
+
+Critical Issues:
+  • products: Wildcard searchableAttributes
+
+Run 'analyze' for full report
+```
+
+### CLI Analysis
+
+```
+$ meiliscan analyze --url http://localhost:7700
+
+╭──────────────────────── MeiliSearch Analysis Summary ────────────────────────╮
+│ Version: 1.16.0    Indexes: 4    Documents: 1,800                            │
+│                                                                              │
+│ Configuration Coverage: 25% (2/8 settings customized)                        │
+│ ███████░░░░░░░░░░░░░░░░░░░░░░░                                               │
 │                                                                              │
 │ ● Critical: 1    ● Warnings: 5    ● Suggestions: 9    ● Info: 6              │
 ╰──────────────────────────────────────────────────────────────────────────────╯
@@ -308,6 +330,35 @@ Options:
 - `--output, -o`: Output script path
 - `--url, -u`: MeiliSearch URL to use in generated commands (replaces placeholder)
 
+### `benchmark`
+
+Run search performance benchmarks against a live MeiliSearch instance.
+
+```bash
+meiliscan benchmark [OPTIONS]
+```
+
+Options:
+- `--url, -u`: MeiliSearch instance URL (required)
+- `--api-key, -k`: MeiliSearch API key
+- `--comprehensive, -c`: Run comprehensive benchmarks with multiple queries per type
+- `--output, -o`: Output file path for benchmark results
+- `--format, -f`: Output format: `json`, `markdown` (default: json)
+- `--indexes, -i`: Comma-separated list of index UIDs to benchmark (default: all)
+
+Example:
+
+```bash
+# Basic benchmark of all indexes
+meiliscan benchmark --url http://localhost:7700
+
+# Comprehensive benchmark with output
+meiliscan benchmark -u http://localhost:7700 -c -o benchmark.json
+
+# Benchmark specific indexes
+meiliscan benchmark -u http://localhost:7700 --indexes products,articles
+```
+
 ### `serve`
 
 Start the web dashboard.
@@ -424,7 +475,7 @@ meiliscan analyze --url http://localhost:7700 --ci --fail-on-warnings
 
 The web dashboard provides an interactive interface for exploring analysis results:
 
-- **Dashboard Overview**: Health score gauge, summary statistics, quick actions
+- **Dashboard Overview**: Configuration coverage gauge, summary statistics, quick actions
 - **Index Details**: Per-index settings, statistics, and findings
 - **Findings Explorer**: Filter by severity, category, and index
 - **Comparison View**: Upload and compare two JSON reports
@@ -513,10 +564,11 @@ uv run pytest -k "test_large"
 ```
 meiliscan/
 ├── analyzers/       # Analysis logic (schema, document, performance, best_practices)
+├── benchmarks/      # Search benchmarking (query_generator, search_runner, fix_benchmark)
 ├── collectors/      # Data collection (live_instance.py, dump_parser.py)
-├── core/            # Orchestration (collector.py, reporter.py, scorer.py)
+├── core/            # Orchestration (collector.py, reporter.py, statistics.py)
 ├── exporters/       # Output formats (json, markdown, sarif, agent)
-├── models/          # Pydantic models (finding.py, index.py, report.py)
+├── models/          # Pydantic models (finding.py, index.py, report.py, statistics.py, benchmark.py)
 ├── web/             # FastAPI dashboard + templates + static/
 └── cli.py           # Typer CLI entry point
 ```

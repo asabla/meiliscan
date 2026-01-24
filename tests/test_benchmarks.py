@@ -5,13 +5,21 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from meiliscan.benchmarks.fix_benchmark import FixBenchmarkRunner
 from meiliscan.benchmarks.query_generator import QueryGenerator
 from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
 from meiliscan.models.benchmark import (
     BenchmarkReport,
+    FixBenchmark,
     IndexBenchmark,
     SearchBenchmarkResult,
     SearchQuery,
+)
+from meiliscan.models.finding import (
+    Finding,
+    FindingCategory,
+    FindingFix,
+    FindingSeverity,
 )
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 
@@ -629,3 +637,672 @@ class TestBenchmarkReport:
         )
 
         assert report.overall_success_rate == 50.0
+
+
+# ============================================================================
+# FixBenchmark Model Tests
+# ============================================================================
+
+
+class TestFixBenchmark:
+    """Tests for the FixBenchmark model."""
+
+    @pytest.fixture
+    def before_benchmark(self) -> IndexBenchmark:
+        """Create a before benchmark."""
+        return IndexBenchmark(
+            index_uid="test",
+            document_count=100,
+            baseline_latency_ms=20.0,
+            queries=[
+                SearchBenchmarkResult(
+                    index_uid="test",
+                    query=SearchQuery(query_type="baseline", query_text=""),
+                    latency_ms=20.0,
+                    hits_count=10,
+                    success=True,
+                ),
+            ],
+        )
+
+    @pytest.fixture
+    def after_benchmark(self) -> IndexBenchmark:
+        """Create an after benchmark with improved latency."""
+        return IndexBenchmark(
+            index_uid="test",
+            document_count=100,
+            baseline_latency_ms=10.0,
+            queries=[
+                SearchBenchmarkResult(
+                    index_uid="test",
+                    query=SearchQuery(query_type="baseline", query_text=""),
+                    latency_ms=10.0,
+                    hits_count=10,
+                    success=True,
+                ),
+            ],
+        )
+
+    def test_fix_benchmark_creation(self, before_benchmark: IndexBenchmark):
+        """Test creating a FixBenchmark."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Configure searchable attributes",
+            before_benchmark=before_benchmark,
+            before_settings={"searchableAttributes": ["*"]},
+        )
+
+        assert fix.finding_id == "MEILI-S001"
+        assert fix.index_uid == "test"
+        assert fix.applied is False
+        assert fix.reverted is False
+        assert fix.after_benchmark is None
+        assert fix.improvement_percent is None
+
+    def test_fix_benchmark_with_after(
+        self, before_benchmark: IndexBenchmark, after_benchmark: IndexBenchmark
+    ):
+        """Test FixBenchmark with after benchmark."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Configure searchable attributes",
+            before_benchmark=before_benchmark,
+            before_settings={"searchableAttributes": ["*"]},
+            after_benchmark=after_benchmark,
+            after_settings={"searchableAttributes": ["title", "description"]},
+            applied=True,
+            reverted=True,
+            improvement_percent=50.0,
+        )
+
+        assert fix.applied is True
+        assert fix.reverted is True
+        assert fix.after_benchmark is not None
+        assert fix.improvement_percent == 50.0
+
+    def test_latency_change_ms_with_improvement(
+        self, before_benchmark: IndexBenchmark, after_benchmark: IndexBenchmark
+    ):
+        """Test latency change calculation with improvement."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+            after_benchmark=after_benchmark,
+        )
+
+        # After (10ms) - Before (20ms) = -10ms (improvement)
+        assert fix.latency_change_ms == -10.0
+
+    def test_latency_change_ms_with_regression(self, before_benchmark: IndexBenchmark):
+        """Test latency change calculation with regression."""
+        worse_after = IndexBenchmark(
+            index_uid="test",
+            document_count=100,
+            baseline_latency_ms=30.0,
+            queries=[
+                SearchBenchmarkResult(
+                    index_uid="test",
+                    query=SearchQuery(query_type="baseline", query_text=""),
+                    latency_ms=30.0,
+                    hits_count=10,
+                    success=True,
+                ),
+            ],
+        )
+
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+            after_benchmark=worse_after,
+        )
+
+        # After (30ms) - Before (20ms) = 10ms (regression)
+        assert fix.latency_change_ms == 10.0
+
+    def test_latency_change_ms_none_without_after(
+        self, before_benchmark: IndexBenchmark
+    ):
+        """Test latency change is None when no after benchmark."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+        )
+
+        assert fix.latency_change_ms is None
+
+    def test_improved_true_with_positive_improvement(
+        self, before_benchmark: IndexBenchmark, after_benchmark: IndexBenchmark
+    ):
+        """Test improved property returns True for positive improvement."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+            after_benchmark=after_benchmark,
+            improvement_percent=50.0,
+        )
+
+        assert fix.improved is True
+
+    def test_improved_false_with_negative_improvement(
+        self, before_benchmark: IndexBenchmark
+    ):
+        """Test improved property returns False for negative improvement."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+            improvement_percent=-20.0,
+        )
+
+        assert fix.improved is False
+
+    def test_improved_false_without_improvement(self, before_benchmark: IndexBenchmark):
+        """Test improved property returns False when improvement_percent is None."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+        )
+
+        assert fix.improved is False
+
+    def test_fix_benchmark_with_error(self, before_benchmark: IndexBenchmark):
+        """Test FixBenchmark with error."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+            error="Failed to apply fix: Connection refused",
+        )
+
+        assert fix.error == "Failed to apply fix: Connection refused"
+        assert fix.applied is False
+
+    def test_fix_benchmark_with_indexing_time(
+        self, before_benchmark: IndexBenchmark, after_benchmark: IndexBenchmark
+    ):
+        """Test FixBenchmark tracks indexing duration."""
+        fix = FixBenchmark(
+            finding_id="MEILI-S001",
+            index_uid="test",
+            fix_description="Test fix",
+            before_benchmark=before_benchmark,
+            after_benchmark=after_benchmark,
+            applied=True,
+            waited_for_indexing=True,
+            indexing_duration_ms=5000.0,
+        )
+
+        assert fix.waited_for_indexing is True
+        assert fix.indexing_duration_ms == 5000.0
+
+
+# ============================================================================
+# FixBenchmarkRunner Tests
+# ============================================================================
+
+
+class TestFixBenchmarkRunner:
+    """Tests for the FixBenchmarkRunner class."""
+
+    @pytest.fixture
+    def mock_collector(self) -> MagicMock:
+        """Create a mock LiveInstanceCollector."""
+        collector = MagicMock()
+        collector.url = "http://localhost:7700"
+        collector._client = MagicMock()
+        collector.search = AsyncMock(
+            return_value={
+                "hits": [{"id": 1}],
+                "totalHits": 10,
+                "processingTimeMs": 5,
+            }
+        )
+        collector.get_index_settings = AsyncMock(
+            return_value={"searchableAttributes": ["*"], "filterableAttributes": []}
+        )
+        collector.get_task = AsyncMock(
+            return_value=MagicMock(status=MagicMock(value="succeeded"), error=None)
+        )
+        return collector
+
+    @pytest.fixture
+    def sample_index(self) -> IndexData:
+        """Create a sample index for testing."""
+        return IndexData(
+            uid="test-index",
+            settings=IndexSettings(
+                searchable_attributes=["title", "description"],
+                filterable_attributes=["category"],
+                sortable_attributes=["created_at"],
+            ),
+            stats=IndexStats(number_of_documents=100),
+        )
+
+    @pytest.fixture
+    def sample_finding(self) -> Finding:
+        """Create a sample finding with a fix."""
+        return Finding(
+            id="MEILI-S001",
+            category=FindingCategory.SCHEMA,
+            severity=FindingSeverity.CRITICAL,
+            title="Wildcard searchableAttributes",
+            description="All fields are searchable",
+            impact="Performance degradation",
+            index_uid="test-index",
+            current_value=["*"],
+            recommended_value=["title", "description"],
+            fix=FindingFix(
+                type="settings_update",
+                endpoint="PATCH /indexes/test-index/settings",
+                payload={"searchableAttributes": ["title", "description"]},
+            ),
+        )
+
+    @pytest.fixture
+    def finding_without_fix(self) -> Finding:
+        """Create a finding without a fix."""
+        return Finding(
+            id="MEILI-B003",
+            category=FindingCategory.BEST_PRACTICES,
+            severity=FindingSeverity.INFO,
+            title="Missing embedders config",
+            description="No AI/vector search configuration",
+            impact="Missing vector search capability",
+            index_uid=None,
+        )
+
+    def test_runner_initialization(self, mock_collector: MagicMock):
+        """Test FixBenchmarkRunner initialization."""
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        assert runner._collector == mock_collector
+        assert runner._benchmark_runner is not None
+        # SearchBenchmarkRunner is created with queries_per_type=3 for fix benchmarks
+        assert runner._benchmark_runner._queries_per_type == 3
+
+    def test_runner_default_constants(self, mock_collector: MagicMock):
+        """Test default constants are set correctly."""
+        runner = FixBenchmarkRunner(mock_collector)
+
+        assert runner.MAX_INDEXING_WAIT == 300
+        assert runner.INDEXING_POLL_INTERVAL == 2
+
+    @pytest.mark.asyncio
+    async def test_benchmark_fix_dry_run(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        sample_finding: Finding,
+    ):
+        """Test dry run benchmark (apply=False)."""
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=sample_finding,
+            apply=False,
+        )
+
+        assert result.finding_id == "MEILI-S001"
+        assert result.index_uid == "test-index"
+        assert result.applied is False
+        assert result.reverted is False
+        assert result.after_benchmark is None
+        assert result.before_benchmark is not None
+        assert result.error is None
+
+    @pytest.mark.asyncio
+    async def test_benchmark_fix_without_fix_returns_error(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        finding_without_fix: Finding,
+    ):
+        """Test benchmark with finding that has no fix defined."""
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=finding_without_fix,
+            apply=True,
+        )
+
+        assert result.applied is False
+        assert result.error == "Finding has no fix defined"
+
+    @pytest.mark.asyncio
+    async def test_benchmark_fix_apply_success(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        sample_finding: Finding,
+    ):
+        """Test successful fix application and benchmark."""
+        # Mock PATCH response for applying fix
+        mock_patch_response = MagicMock()
+        mock_patch_response.json.return_value = {"taskUid": 123}
+        mock_patch_response.raise_for_status = MagicMock()
+        mock_collector._client.patch = AsyncMock(return_value=mock_patch_response)
+
+        # Mock PUT response for reverting settings
+        mock_put_response = MagicMock()
+        mock_put_response.json.return_value = {"taskUid": 124}
+        mock_put_response.raise_for_status = MagicMock()
+        mock_collector._client.put = AsyncMock(return_value=mock_put_response)
+
+        # Mock GET response for indexing status
+        mock_get_response = MagicMock()
+        mock_get_response.json.return_value = {"isIndexing": False}
+        mock_get_response.raise_for_status = MagicMock()
+        mock_collector._client.get = AsyncMock(return_value=mock_get_response)
+
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=sample_finding,
+            apply=True,
+            revert_after=True,
+        )
+
+        assert result.applied is True
+        assert result.reverted is True
+        assert result.after_benchmark is not None
+        assert result.waited_for_indexing is True
+        assert result.error is None
+        # Verify the PATCH was called with correct payload
+        mock_collector._client.patch.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_fix_apply_without_revert(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        sample_finding: Finding,
+    ):
+        """Test fix application without reverting."""
+        mock_patch_response = MagicMock()
+        mock_patch_response.json.return_value = {"taskUid": 123}
+        mock_patch_response.raise_for_status = MagicMock()
+        mock_collector._client.patch = AsyncMock(return_value=mock_patch_response)
+
+        mock_get_response = MagicMock()
+        mock_get_response.json.return_value = {"isIndexing": False}
+        mock_get_response.raise_for_status = MagicMock()
+        mock_collector._client.get = AsyncMock(return_value=mock_get_response)
+
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=sample_finding,
+            apply=True,
+            revert_after=False,
+        )
+
+        assert result.applied is True
+        assert result.reverted is False
+        # PUT should not be called when revert_after=False
+        mock_collector._client.put.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_benchmark_fix_apply_failure(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        sample_finding: Finding,
+    ):
+        """Test fix application failure."""
+        mock_collector._client.patch = AsyncMock(
+            side_effect=Exception("Connection refused")
+        )
+
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=sample_finding,
+            apply=True,
+        )
+
+        assert result.applied is False
+        assert "Failed to apply fix" in result.error
+
+    @pytest.mark.asyncio
+    async def test_wait_for_task_success(self, mock_collector: MagicMock):
+        """Test waiting for task completion."""
+        runner = FixBenchmarkRunner(mock_collector)
+
+        # Should not raise
+        await runner._wait_for_task(123, timeout=5.0)
+
+        mock_collector.get_task.assert_called_with(123)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_task_failure(self, mock_collector: MagicMock):
+        """Test waiting for a failed task."""
+        mock_collector.get_task = AsyncMock(
+            return_value=MagicMock(
+                status=MagicMock(value="failed"),
+                error=MagicMock(message="Index not found"),
+            )
+        )
+
+        runner = FixBenchmarkRunner(mock_collector)
+
+        with pytest.raises(Exception, match="Task failed"):
+            await runner._wait_for_task(123, timeout=5.0)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_task_not_found(self, mock_collector: MagicMock):
+        """Test waiting for non-existent task."""
+        mock_collector.get_task = AsyncMock(return_value=None)
+
+        runner = FixBenchmarkRunner(mock_collector)
+
+        with pytest.raises(Exception, match="Task 123 not found"):
+            await runner._wait_for_task(123, timeout=5.0)
+
+    @pytest.mark.asyncio
+    async def test_wait_for_indexing_completes(self, mock_collector: MagicMock):
+        """Test waiting for indexing to complete."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"isIndexing": False}
+        mock_response.raise_for_status = MagicMock()
+        mock_collector._client.get = AsyncMock(return_value=mock_response)
+
+        runner = FixBenchmarkRunner(mock_collector)
+
+        # Should complete without raising
+        await runner._wait_for_indexing("test-index")
+
+    @pytest.mark.asyncio
+    async def test_wait_for_indexing_polls(self, mock_collector: MagicMock):
+        """Test indexing polling when initially indexing."""
+        call_count = 0
+
+        async def mock_get(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            mock_response = MagicMock()
+            # Return isIndexing=True twice, then False
+            mock_response.json.return_value = {"isIndexing": call_count < 3}
+            mock_response.raise_for_status = MagicMock()
+            return mock_response
+
+        mock_collector._client.get = mock_get
+
+        runner = FixBenchmarkRunner(mock_collector)
+        # Set a short poll interval for testing
+        runner.INDEXING_POLL_INTERVAL = 0.01
+
+        await runner._wait_for_indexing("test-index")
+
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_apply_fix_calls_patch(
+        self, mock_collector: MagicMock, sample_finding: Finding
+    ):
+        """Test that _apply_fix calls PATCH with correct payload."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"taskUid": 456}
+        mock_response.raise_for_status = MagicMock()
+        mock_collector._client.patch = AsyncMock(return_value=mock_response)
+
+        runner = FixBenchmarkRunner(mock_collector)
+
+        await runner._apply_fix("test-index", sample_finding.fix.payload)
+
+        mock_collector._client.patch.assert_called_once_with(
+            "/indexes/test-index/settings",
+            json={"searchableAttributes": ["title", "description"]},
+        )
+
+    @pytest.mark.asyncio
+    async def test_apply_fix_without_client_raises(self, mock_collector: MagicMock):
+        """Test _apply_fix raises when collector not connected."""
+        mock_collector._client = None
+
+        runner = FixBenchmarkRunner(mock_collector)
+
+        with pytest.raises(RuntimeError, match="Collector not connected"):
+            await runner._apply_fix("test-index", {"searchableAttributes": ["title"]})
+
+    @pytest.mark.asyncio
+    async def test_revert_settings_calls_put(self, mock_collector: MagicMock):
+        """Test that _revert_settings calls PUT with original settings."""
+        mock_response = MagicMock()
+        mock_response.json.return_value = {"taskUid": 789}
+        mock_response.raise_for_status = MagicMock()
+        mock_collector._client.put = AsyncMock(return_value=mock_response)
+
+        runner = FixBenchmarkRunner(mock_collector)
+        original_settings = {"searchableAttributes": ["*"], "filterableAttributes": []}
+
+        await runner._revert_settings("test-index", original_settings)
+
+        mock_collector._client.put.assert_called_once_with(
+            "/indexes/test-index/settings",
+            json=original_settings,
+        )
+
+    @pytest.mark.asyncio
+    async def test_revert_settings_without_client_raises(
+        self, mock_collector: MagicMock
+    ):
+        """Test _revert_settings raises when collector not connected."""
+        mock_collector._client = None
+
+        runner = FixBenchmarkRunner(mock_collector)
+
+        with pytest.raises(RuntimeError, match="Collector not connected"):
+            await runner._revert_settings("test-index", {})
+
+    @pytest.mark.asyncio
+    async def test_benchmark_calculates_improvement(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        sample_finding: Finding,
+    ):
+        """Test that improvement percentage is calculated correctly."""
+        # First call returns slower results (before), second call returns faster (after)
+        call_count = 0
+
+        async def mock_search(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            # Simulate improvement: before=20ms, after=10ms
+            return {
+                "hits": [{"id": 1}],
+                "totalHits": 10,
+                "processingTimeMs": 20 if call_count <= 3 else 10,
+            }
+
+        mock_collector.search = mock_search
+
+        mock_patch_response = MagicMock()
+        mock_patch_response.json.return_value = {"taskUid": 123}
+        mock_patch_response.raise_for_status = MagicMock()
+        mock_collector._client.patch = AsyncMock(return_value=mock_patch_response)
+
+        mock_put_response = MagicMock()
+        mock_put_response.json.return_value = {"taskUid": 124}
+        mock_put_response.raise_for_status = MagicMock()
+        mock_collector._client.put = AsyncMock(return_value=mock_put_response)
+
+        mock_get_response = MagicMock()
+        mock_get_response.json.return_value = {"isIndexing": False}
+        mock_get_response.raise_for_status = MagicMock()
+        mock_collector._client.get = AsyncMock(return_value=mock_get_response)
+
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=sample_finding,
+            apply=True,
+        )
+
+        # Both before and after benchmarks should have been run
+        assert result.before_benchmark is not None
+        assert result.after_benchmark is not None
+        # improvement_percent should be set (exact value depends on latency measurements)
+        assert result.improvement_percent is not None
+
+    @pytest.mark.asyncio
+    async def test_indexing_timeout_still_reverts(
+        self,
+        mock_collector: MagicMock,
+        sample_index: IndexData,
+        sample_finding: Finding,
+    ):
+        """Test that settings are reverted even if indexing times out."""
+        mock_patch_response = MagicMock()
+        mock_patch_response.json.return_value = {"taskUid": 123}
+        mock_patch_response.raise_for_status = MagicMock()
+        mock_collector._client.patch = AsyncMock(return_value=mock_patch_response)
+
+        mock_put_response = MagicMock()
+        mock_put_response.json.return_value = {"taskUid": 124}
+        mock_put_response.raise_for_status = MagicMock()
+        mock_collector._client.put = AsyncMock(return_value=mock_put_response)
+
+        # Make indexing always return True (indexing)
+        mock_get_response = MagicMock()
+        mock_get_response.json.return_value = {"isIndexing": True}
+        mock_get_response.raise_for_status = MagicMock()
+        mock_collector._client.get = AsyncMock(return_value=mock_get_response)
+
+        runner = FixBenchmarkRunner(mock_collector, seed=42)
+        # Set very short timeout for testing
+        runner.MAX_INDEXING_WAIT = 0.01
+        runner.INDEXING_POLL_INTERVAL = 0.001
+
+        result = await runner.benchmark_fix(
+            index=sample_index,
+            finding=sample_finding,
+            apply=True,
+            revert_after=True,
+        )
+
+        assert result.applied is True
+        assert result.reverted is True
+        assert "still indexing" in result.error
+        # PUT should have been called to revert
+        mock_collector._client.put.assert_called_once()
