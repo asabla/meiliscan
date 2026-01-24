@@ -116,7 +116,9 @@ class ComparisonSummary(BaseModel):
     indexes_changed: list[str] = Field(default_factory=list)
 
     # Metric changes
-    health_score: MetricChange = Field(...)
+    configuration_coverage: MetricChange = Field(
+        ..., description="Overall configuration coverage percentage change"
+    )
     total_documents: MetricChange = Field(...)
     total_indexes: MetricChange = Field(...)
     critical_issues: MetricChange = Field(...)

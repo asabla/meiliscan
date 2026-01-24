@@ -21,7 +21,6 @@ from meiliscan import __version__
 from meiliscan.core.collector import DataCollector
 from meiliscan.core.progress import ProgressEvent
 from meiliscan.core.reporter import Reporter
-from meiliscan.core.scorer import HealthScorer
 from meiliscan.exporters.agent_exporter import AgentExporter
 from meiliscan.exporters.json_exporter import JsonExporter
 from meiliscan.exporters.markdown_exporter import MarkdownExporter
@@ -335,7 +334,9 @@ async def _analyze_dump(
         await collector.close()
 
     # Display summary
-    _display_summary(report.summary, report.source.meilisearch_version)
+    _display_summary(
+        report.summary, report.source.meilisearch_version, report.statistics
+    )
 
     # Display findings
     _display_findings(report)
@@ -458,7 +459,9 @@ async def _analyze_instance(
         await collector.close()
 
     # Display summary
-    _display_summary(report.summary, report.source.meilisearch_version)
+    _display_summary(
+        report.summary, report.source.meilisearch_version, report.statistics
+    )
 
     # Display findings
     _display_findings(report)
@@ -510,21 +513,33 @@ def _export_report(report, output: Path | None, format_type: str) -> None:
         console.print("\n[dim]Use --output to save the full report to a file.[/dim]")
 
 
-def _display_summary(summary, version: str | None) -> None:
+def _display_summary(summary, version: str | None, statistics=None) -> None:
     """Display analysis summary."""
-    scorer = HealthScorer()
-    score_label = scorer.get_score_label(summary.health_score)
+    # Use configuration coverage from statistics if available
+    coverage = 0
+    if statistics:
+        coverage = statistics.overall_coverage_percent
 
-    # Build score bar
-    filled = int(summary.health_score / 5)
+    # Get coverage label
+    if coverage >= 80:
+        coverage_label = "Well configured"
+    elif coverage >= 50:
+        coverage_label = "Partially configured"
+    elif coverage >= 20:
+        coverage_label = "Minimal configuration"
+    else:
+        coverage_label = "Default configuration"
+
+    # Build coverage bar
+    filled = int(coverage / 5)
     empty = 20 - filled
-    score_bar = "[green]" + "█" * filled + "[/green][dim]" + "░" * empty + "[/dim]"
+    coverage_bar = "[green]" + "█" * filled + "[/green][dim]" + "░" * empty + "[/dim]"
 
     summary_text = f"""
 [bold]Version:[/bold] {version or "Unknown"}    [bold]Indexes:[/bold] {summary.total_indexes}    [bold]Documents:[/bold] {summary.total_documents:,}
 
-[bold]Health Score:[/bold] {summary.health_score}/100 ({score_label})
-{score_bar}
+[bold]Configuration Coverage:[/bold] {coverage}% ({coverage_label})
+{coverage_bar}
 
 [red]● Critical:[/red] {summary.critical_issues}    [yellow]● Warnings:[/yellow] {summary.warnings}    [blue]● Suggestions:[/blue] {summary.suggestions}    [dim]● Info:[/dim] {summary.info_count}
 """
@@ -633,7 +648,9 @@ async def _summary_instance(url: str, api_key: str | None) -> None:
 
     await collector.close()
 
-    _display_summary(report.summary, report.source.meilisearch_version)
+    _display_summary(
+        report.summary, report.source.meilisearch_version, report.statistics
+    )
 
     # Show top issues
     critical_findings = [
@@ -1118,20 +1135,20 @@ def _display_comparison_summary(comparison) -> None:
     }
     trend_text = trend_indicators.get(summary.overall_trend, "[dim]→ Stable[/dim]")
 
-    # Health score change
-    hs = summary.health_score
-    if hs.change > 0:
-        hs_change = f"[green]+{hs.change}[/green]"
-    elif hs.change < 0:
-        hs_change = f"[red]{hs.change}[/red]"
+    # Configuration coverage change
+    cc = summary.configuration_coverage
+    if cc.change > 0:
+        cc_change = f"[green]+{cc.change}[/green]"
+    elif cc.change < 0:
+        cc_change = f"[red]{cc.change}[/red]"
     else:
-        hs_change = "[dim]0[/dim]"
+        cc_change = "[dim]0[/dim]"
 
     summary_text = f"""
 [bold]Time Period:[/bold] {summary.time_between}
 [bold]Overall Trend:[/bold] {trend_text}
 
-[bold]Health Score:[/bold] {hs.old_value} → {hs.new_value} ({hs_change})
+[bold]Configuration Coverage:[/bold] {cc.old_value}% → {cc.new_value}% ({cc_change})
 
 [bold]Issues:[/bold]
   Critical: {summary.critical_issues.old_value} → {summary.critical_issues.new_value}
@@ -1181,7 +1198,7 @@ def _format_comparison_markdown(comparison) -> str:
         f"- **Time Between Reports:** {comparison.summary.time_between}",
         f"- **Overall Trend:** {comparison.summary.overall_trend.value.title()}",
         "",
-        "### Health Score",
+        "### Configuration Coverage",
         "",
         "| Metric | Before | After | Change |",
         "|--------|--------|-------|--------|",
@@ -1189,7 +1206,7 @@ def _format_comparison_markdown(comparison) -> str:
 
     # Add metrics
     for metric_name, metric in [
-        ("Health Score", comparison.summary.health_score),
+        ("Configuration Coverage", comparison.summary.configuration_coverage),
         ("Critical Issues", comparison.summary.critical_issues),
         ("Warnings", comparison.summary.warnings),
         ("Suggestions", comparison.summary.suggestions),

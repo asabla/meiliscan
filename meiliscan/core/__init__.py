@@ -3,7 +3,7 @@
 # Lazy imports to avoid circular dependency issues
 # Users should import directly from submodules instead
 
-__all__ = ["DataCollector", "Analyzer", "HealthScorer", "Reporter"]
+__all__ = ["DataCollector", "Analyzer", "Reporter", "calculate_statistics"]
 
 
 def __getattr__(name: str):
@@ -16,12 +16,12 @@ def __getattr__(name: str):
         from meiliscan.core.analyzer import Analyzer
 
         return Analyzer
-    if name == "HealthScorer":
-        from meiliscan.core.scorer import HealthScorer
-
-        return HealthScorer
     if name == "Reporter":
         from meiliscan.core.reporter import Reporter
 
         return Reporter
+    if name == "calculate_statistics":
+        from meiliscan.core.statistics import calculate_statistics
+
+        return calculate_statistics
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

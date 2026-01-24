@@ -44,11 +44,21 @@ class HistoricalAnalyzer:
         indexes_removed = list(old_index_uids - new_index_uids)
         common_indexes = old_index_uids & new_index_uids
 
-        # Calculate metric changes
-        health_score_change = MetricChange.calculate(
-            "health_score",
-            old_report.summary.health_score,
-            new_report.summary.health_score,
+        # Calculate configuration coverage change
+        old_coverage = (
+            old_report.statistics.overall_coverage_percent
+            if old_report.statistics
+            else 0
+        )
+        new_coverage = (
+            new_report.statistics.overall_coverage_percent
+            if new_report.statistics
+            else 0
+        )
+        coverage_change = MetricChange.calculate(
+            "configuration_coverage",
+            old_coverage,
+            new_coverage,
             higher_is_better=True,
         )
 
@@ -144,14 +154,14 @@ class HistoricalAnalyzer:
 
         # Determine overall trend
         overall_trend = self._determine_overall_trend(
-            health_score_change,
+            coverage_change,
             critical_issues_change,
             warnings_change,
         )
 
         # Generate improvement/degradation areas
         improvement_areas, degradation_areas = self._identify_trend_areas(
-            health_score_change,
+            coverage_change,
             critical_issues_change,
             warnings_change,
             suggestions_change,
@@ -172,7 +182,7 @@ class HistoricalAnalyzer:
             indexes_added=indexes_added,
             indexes_removed=indexes_removed,
             indexes_changed=indexes_changed,
-            health_score=health_score_change,
+            configuration_coverage=coverage_change,
             total_documents=total_documents_change,
             total_indexes=total_indexes_change,
             critical_issues=critical_issues_change,
@@ -327,18 +337,18 @@ class HistoricalAnalyzer:
 
     def _determine_overall_trend(
         self,
-        health_score: MetricChange,
+        configuration_coverage: MetricChange,
         critical_issues: MetricChange,
         warnings: MetricChange,
     ) -> TrendDirection:
         """Determine the overall trend based on key metrics."""
-        # Health score is the primary indicator
-        if health_score.trend == TrendDirection.UP:
+        # Configuration coverage is the primary indicator
+        if configuration_coverage.trend == TrendDirection.UP:
             return TrendDirection.UP
-        elif health_score.trend == TrendDirection.DOWN:
+        elif configuration_coverage.trend == TrendDirection.DOWN:
             return TrendDirection.DOWN
 
-        # If health score is stable, check issues
+        # If coverage is stable, check issues
         if critical_issues.trend == TrendDirection.DOWN:
             return TrendDirection.UP
         elif critical_issues.trend == TrendDirection.UP:
@@ -348,7 +358,7 @@ class HistoricalAnalyzer:
 
     def _identify_trend_areas(
         self,
-        health_score: MetricChange,
+        configuration_coverage: MetricChange,
         critical_issues: MetricChange,
         warnings: MetricChange,
         suggestions: MetricChange,
@@ -358,20 +368,20 @@ class HistoricalAnalyzer:
         improvements: list[str] = []
         degradations: list[str] = []
 
-        # Health score
-        if health_score.trend == TrendDirection.UP:
-            change_pct = health_score.change_percent
+        # Configuration coverage
+        if configuration_coverage.trend == TrendDirection.UP:
+            change_pct = configuration_coverage.change_percent
             improvements.append(
-                f"Health score improved by {change_pct:.1f}%"
+                f"Configuration coverage improved by {change_pct:.1f}%"
                 if change_pct
-                else "Health score improved"
+                else "Configuration coverage improved"
             )
-        elif health_score.trend == TrendDirection.DOWN:
-            change_pct = health_score.change_percent
+        elif configuration_coverage.trend == TrendDirection.DOWN:
+            change_pct = configuration_coverage.change_percent
             degradations.append(
-                f"Health score decreased by {abs(change_pct):.1f}%"
+                f"Configuration coverage decreased by {abs(change_pct):.1f}%"
                 if change_pct
-                else "Health score decreased"
+                else "Configuration coverage decreased"
             )
 
         # Critical issues (lower is better)

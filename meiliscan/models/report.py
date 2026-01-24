@@ -5,8 +5,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from meiliscan.models.benchmark import BenchmarkReport
 from meiliscan.models.finding import Finding
 from meiliscan.models.index import IndexData
+from meiliscan.models.statistics import InstanceStatistics
 
 
 class SourceInfo(BaseModel):
@@ -29,7 +31,6 @@ class AnalysisSummary(BaseModel):
     database_size_bytes: int | None = Field(
         default=None, description="Database size in bytes"
     )
-    health_score: int = Field(default=100, description="Overall health score (0-100)")
     critical_issues: int = Field(default=0, description="Number of critical issues")
     warnings: int = Field(default=0, description="Number of warnings")
     suggestions: int = Field(default=0, description="Number of suggestions")
@@ -60,14 +61,24 @@ class ActionPlan(BaseModel):
 class AnalysisReport(BaseModel):
     """Complete analysis report."""
 
-    schema_version: str = Field(default="1.0.0", alias="$schema_version")
-    version: str = Field(default="1.0.0", description="Report format version")
+    schema_version: str = Field(default="1.1.0", alias="$schema_version")
+    version: str = Field(default="1.1.0", description="Report format version")
     generated_at: datetime = Field(default_factory=datetime.utcnow)
     source: SourceInfo = Field(..., description="Source information")
     summary: AnalysisSummary = Field(default_factory=AnalysisSummary)
     indexes: dict[str, IndexAnalysis] = Field(default_factory=dict)
     global_findings: list[Finding] = Field(default_factory=list)
     action_plan: ActionPlan = Field(default_factory=ActionPlan)
+
+    # Statistics (replaces health_score)
+    statistics: InstanceStatistics | None = Field(
+        default=None, description="Instance statistics and performance metrics"
+    )
+
+    # Benchmark results (optional, only for live instances)
+    benchmark: BenchmarkReport | None = Field(
+        default=None, description="Benchmark results (live instances only)"
+    )
 
     # Internal storage not exported
     _raw_indexes: dict[str, IndexData] = {}

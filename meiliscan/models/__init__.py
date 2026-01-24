@@ -1,5 +1,12 @@
 """Models module initialization."""
 
+from meiliscan.models.benchmark import (
+    BenchmarkReport,
+    FixBenchmark,
+    IndexBenchmark,
+    SearchBenchmarkResult,
+    SearchQuery,
+)
 from meiliscan.models.comparison import (
     ChangeType,
     ComparisonReport,
@@ -12,6 +19,12 @@ from meiliscan.models.comparison import (
 from meiliscan.models.finding import Finding, FindingCategory, FindingSeverity
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
 from meiliscan.models.report import AnalysisReport, AnalysisSummary, SourceInfo
+from meiliscan.models.statistics import (
+    CollectionTiming,
+    IndexStatistics,
+    InstanceStatistics,
+    PerformanceOpportunity,
+)
 from meiliscan.models.task import (
     Task,
     TaskError,
@@ -34,6 +47,17 @@ __all__ = [
     "AnalysisReport",
     "AnalysisSummary",
     "SourceInfo",
+    # Statistics models
+    "CollectionTiming",
+    "IndexStatistics",
+    "InstanceStatistics",
+    "PerformanceOpportunity",
+    # Benchmark models
+    "BenchmarkReport",
+    "FixBenchmark",
+    "IndexBenchmark",
+    "SearchBenchmarkResult",
+    "SearchQuery",
     # Comparison models
     "ChangeType",
     "ComparisonReport",

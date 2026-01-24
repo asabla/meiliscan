@@ -44,7 +44,6 @@ class TestMarkdownExporter:
             summary=AnalysisSummary(
                 total_indexes=2,
                 total_documents=5000,
-                health_score=75,
                 critical_issues=1,
                 warnings=3,
                 suggestions=2,
@@ -104,15 +103,15 @@ class TestMarkdownExporter:
         assert "## Summary" in result
         assert "| Total Indexes | 2 |" in result
         assert "| Total Documents | 5,000 |" in result
-        assert "| Health Score | 75/100 |" in result
+        assert "| Configuration Coverage |" in result
         assert "| Critical Issues | 1 |" in result
 
-    def test_export_contains_health_bar(self, exporter, basic_report):
-        """Test that export contains health score bar."""
+    def test_export_contains_coverage_bar(self, exporter, basic_report):
+        """Test that export contains configuration coverage bar."""
         result = exporter.export(basic_report)
-        assert "**Health:**" in result
-        assert "█" in result  # filled blocks
-        assert "░" in result  # empty blocks
+        assert "**Coverage:**" in result
+        # At minimum, the bar contains empty blocks (░) when coverage is 0%
+        assert "░" in result
 
     def test_export_with_global_findings(self, exporter, basic_report):
         """Test export with global findings."""

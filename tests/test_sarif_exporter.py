@@ -50,7 +50,6 @@ class TestSarifExporter:
             summary=AnalysisSummary(
                 total_indexes=2,
                 total_documents=5000,
-                health_score=75,
                 critical_issues=1,
                 warnings=3,
                 suggestions=2,

@@ -187,11 +187,12 @@ class AgentExporter(BaseExporter):
         if metrics:
             lines.append(f"- **Instance:** {', '.join(metrics)}")
 
-        # Health score
-        if summary.health_score is not None:
-            health_status = self._get_health_status(summary.health_score)
+        # Configuration coverage from statistics
+        if report.statistics:
+            coverage = report.statistics.overall_coverage_percent
+            coverage_status = self._get_coverage_status(coverage)
             lines.append(
-                f"- **Health Score:** {summary.health_score}/100 ({health_status})"
+                f"- **Configuration Coverage:** {coverage}% ({coverage_status})"
             )
 
         # Issue counts
@@ -383,18 +384,16 @@ class AgentExporter(BaseExporter):
 
         return sorted(all_findings, key=lambda f: SEVERITY_PRIORITY.get(f.severity, 99))
 
-    def _get_health_status(self, score: int) -> str:
-        """Get health status description from score."""
-        if score >= 90:
-            return "excellent"
-        elif score >= 75:
-            return "good"
-        elif score >= 50:
-            return "needs attention"
-        elif score >= 25:
-            return "poor"
+    def _get_coverage_status(self, coverage: int) -> str:
+        """Get coverage status description from percentage."""
+        if coverage >= 80:
+            return "well configured"
+        elif coverage >= 50:
+            return "partially configured"
+        elif coverage >= 20:
+            return "minimal configuration"
         else:
-            return "critical"
+            return "default configuration"
 
     def _format_value(self, value: Any) -> str:
         """Format a value as pretty JSON."""
