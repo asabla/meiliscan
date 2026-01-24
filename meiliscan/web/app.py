@@ -31,6 +31,7 @@ class AppState:
         self.probe_search: bool = False
         self.sample_documents: int | None = 20  # None means "all"
         self.detect_sensitive: bool = False
+        self.max_concurrent: int = 10  # Concurrent index fetching limit
         # Analysis progress tracking
         self.analysis_status: AnalysisStatus = "idle"
         self.analysis_error: str | None = None
@@ -139,6 +140,7 @@ def create_app(
     probe_search: bool = False,
     sample_documents: int | None = 20,
     detect_sensitive: bool = False,
+    max_concurrent: int = 10,
 ) -> FastAPI:
     """Create and configure the FastAPI application.
 
@@ -149,6 +151,7 @@ def create_app(
         probe_search: Run read-only search probes to validate sort/filter configuration
         sample_documents: Number of sample documents to fetch per index (None = all)
         detect_sensitive: Enable detection of potential PII/sensitive fields
+        max_concurrent: Maximum number of indexes to fetch/parse concurrently
 
     Returns:
         Configured FastAPI application
@@ -160,6 +163,7 @@ def create_app(
     state.probe_search = probe_search
     state.sample_documents = sample_documents
     state.detect_sensitive = detect_sensitive
+    state.max_concurrent = max_concurrent
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
@@ -221,6 +225,7 @@ async def run_analysis(state: AppState) -> None:
     - sample_documents: Number of sample documents to fetch per index
     - probe_search: Run search probes (live instance only)
     - detect_sensitive: Enable PII/sensitive field detection
+    - max_concurrent: Maximum concurrent index fetching
     """
     state.analysis_status = "running"
     state.analysis_error = None
@@ -234,12 +239,14 @@ async def run_analysis(state: AppState) -> None:
             state.collector = DataCollector.from_dump(
                 state.dump_path,
                 max_sample_docs=state.sample_documents,
+                max_concurrent=state.max_concurrent,
             )
         elif state.meili_url:
             state.collector = DataCollector.from_url(
                 state.meili_url,
                 api_key=state.meili_api_key,
                 sample_docs=state.sample_documents,
+                max_concurrent=state.max_concurrent,
             )
         else:
             state.analysis_status = "idle"

@@ -8,6 +8,9 @@ from meiliscan.collectors.live_instance import LiveInstanceCollector
 from meiliscan.core.progress import ProgressCallback, emit_collect
 from meiliscan.models.index import IndexData
 
+# Default concurrency limit for parallel index fetching
+DEFAULT_MAX_CONCURRENT = 10
+
 
 class DataCollector:
     """Orchestrates data collection from MeiliSearch sources."""
@@ -31,6 +34,7 @@ class DataCollector:
         api_key: str | None = None,
         timeout: float = 30.0,
         sample_docs: int | None = 20,
+        max_concurrent: int = DEFAULT_MAX_CONCURRENT,
     ) -> "DataCollector":
         """Create a collector for a live MeiliSearch instance.
 
@@ -39,12 +43,17 @@ class DataCollector:
             api_key: Optional API key
             timeout: Request timeout in seconds
             sample_docs: Number of sample documents to fetch per index (None = all)
+            max_concurrent: Maximum number of indexes to fetch concurrently
 
         Returns:
             Configured DataCollector
         """
         collector = LiveInstanceCollector(
-            url=url, api_key=api_key, timeout=timeout, sample_docs=sample_docs
+            url=url,
+            api_key=api_key,
+            timeout=timeout,
+            sample_docs=sample_docs,
+            max_concurrent=max_concurrent,
         )
         return cls(collector)
 
@@ -53,17 +62,23 @@ class DataCollector:
         cls,
         dump_path: str | Path,
         max_sample_docs: int | None = 100,
+        max_concurrent: int = DEFAULT_MAX_CONCURRENT,
     ) -> "DataCollector":
         """Create a collector for a MeiliSearch dump file.
 
         Args:
             dump_path: Path to the .dump file
             max_sample_docs: Maximum sample documents to load per index (None = all)
+            max_concurrent: Maximum number of indexes to parse concurrently
 
         Returns:
             Configured DataCollector
         """
-        collector = DumpParser(dump_path=dump_path, max_sample_docs=max_sample_docs)
+        collector = DumpParser(
+            dump_path=dump_path,
+            max_sample_docs=max_sample_docs,
+            max_concurrent=max_concurrent,
+        )
         return cls(collector)
 
     async def collect(self, progress_cb: ProgressCallback | None = None) -> bool:

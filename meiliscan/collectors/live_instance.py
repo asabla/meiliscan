@@ -1,5 +1,6 @@
 """Live MeiliSearch instance collector."""
 
+import asyncio
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
@@ -21,6 +22,7 @@ class LiveInstanceCollector(BaseCollector):
         api_key: str | None = None,
         timeout: float = 30.0,
         sample_docs: int | None = 20,
+        max_concurrent: int = 10,
     ):
         """Initialize the collector.
 
@@ -30,11 +32,13 @@ class LiveInstanceCollector(BaseCollector):
             timeout: Request timeout in seconds
             sample_docs: Number of sample documents to fetch per index.
                         If None, fetch all documents.
+            max_concurrent: Maximum number of indexes to fetch concurrently.
         """
         self.url = url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
         self.sample_docs = sample_docs
+        self.max_concurrent = max_concurrent
         self._client: httpx.AsyncClient | None = None
         self._version: str | None = None
         self._global_stats: dict | None = None
@@ -94,10 +98,117 @@ class LiveInstanceCollector(BaseCollector):
         self._global_stats = response.json()
         return self._global_stats or {}
 
+    async def _fetch_documents(self, uid: str) -> list[dict[str, Any]]:
+        """Fetch sample documents for an index.
+
+        Args:
+            uid: The index UID
+
+        Returns:
+            List of sample documents
+        """
+        if not self._client:
+            return []
+
+        sample_docs: list[dict[str, Any]] = []
+        try:
+            if self.sample_docs is None:
+                # Fetch all documents with pagination
+                offset = 0
+                batch_size = 1000  # MeiliSearch default max limit
+                while True:
+                    docs_response = await self._client.get(
+                        f"/indexes/{uid}/documents",
+                        params={"limit": batch_size, "offset": offset},
+                    )
+                    docs_response.raise_for_status()
+                    docs_data = docs_response.json()
+
+                    if isinstance(docs_data, dict) and "results" in docs_data:
+                        batch = cast(list[dict[str, Any]], docs_data["results"])
+                    elif isinstance(docs_data, list):
+                        batch = cast(list[dict[str, Any]], docs_data)
+                    else:
+                        break
+
+                    if not batch:
+                        break
+
+                    sample_docs.extend(batch)
+                    offset += len(batch)
+
+                    # Check if we've fetched all documents
+                    if len(batch) < batch_size:
+                        break
+            else:
+                # Fetch limited sample
+                docs_response = await self._client.get(
+                    f"/indexes/{uid}/documents",
+                    params={"limit": self.sample_docs},
+                )
+                docs_response.raise_for_status()
+                docs_data = docs_response.json()
+                if isinstance(docs_data, dict) and "results" in docs_data:
+                    sample_docs = cast(list[dict[str, Any]], docs_data["results"])
+                elif isinstance(docs_data, list):
+                    sample_docs = cast(list[dict[str, Any]], docs_data)
+        except httpx.HTTPError:
+            pass
+
+        return sample_docs
+
+    async def _fetch_single_index(
+        self, uid: str, idx_info: dict[str, Any]
+    ) -> IndexData | None:
+        """Fetch all data for a single index concurrently.
+
+        This fetches settings, stats, and documents in parallel for the given index.
+
+        Args:
+            uid: The index UID
+            idx_info: The index info from the indexes list
+
+        Returns:
+            IndexData object or None if fetching failed
+        """
+        if not self._client:
+            return None
+
+        try:
+            # Fetch settings, stats, and documents concurrently
+            settings_task = self._client.get(f"/indexes/{uid}/settings")
+            stats_task = self._client.get(f"/indexes/{uid}/stats")
+            docs_task = self._fetch_documents(uid)
+
+            settings_response, stats_response, sample_docs = await asyncio.gather(
+                settings_task, stats_task, docs_task
+            )
+
+            settings_response.raise_for_status()
+            stats_response.raise_for_status()
+
+            settings_data = settings_response.json()
+            stats_data = stats_response.json()
+
+            return IndexData(
+                uid=uid,
+                primaryKey=idx_info.get("primaryKey"),
+                createdAt=idx_info.get("createdAt"),
+                updatedAt=idx_info.get("updatedAt"),
+                settings=IndexSettings(**settings_data),
+                stats=IndexStats(**stats_data),
+                sample_documents=sample_docs,
+            )
+        except httpx.HTTPError:
+            return None
+
     async def get_indexes(
         self, progress_cb: "ProgressCallback | None" = None
     ) -> list[IndexData]:
-        """Retrieve all indexes with their data.
+        """Retrieve all indexes with their data concurrently.
+
+        This method fetches index data in parallel, controlled by max_concurrent.
+        For each index, settings, stats, and documents are also fetched concurrently.
 
         Args:
             progress_cb: Optional callback for progress updates
@@ -155,84 +266,57 @@ class LiveInstanceCollector(BaseCollector):
             total=total_indexes,
         )
 
-        indexes: list[IndexData] = []
+        if total_indexes == 0:
+            return []
 
-        for i, idx_info in enumerate(indexes_list, start=1):
+        # Use semaphore to limit concurrent index fetches
+        semaphore = asyncio.Semaphore(self.max_concurrent)
+        completed_count = 0
+        completed_lock = asyncio.Lock()
+
+        async def fetch_with_semaphore(
+            idx_info: dict[str, Any], index_num: int
+        ) -> IndexData | None:
+            nonlocal completed_count
             uid = idx_info["uid"]
 
-            emit_collect(
-                progress_cb,
-                f"Fetching index {uid} ({i}/{total_indexes})...",
-                current=i,
-                total=total_indexes,
-            )
+            async with semaphore:
+                emit_collect(
+                    progress_cb,
+                    f"Fetching index {uid}...",
+                    current=completed_count,
+                    total=total_indexes,
+                )
 
-            # Get settings for this index
-            settings_response = await self._client.get(f"/indexes/{uid}/settings")
-            settings_response.raise_for_status()
-            settings_data = settings_response.json()
+                result = await self._fetch_single_index(uid, idx_info)
 
-            # Get stats for this index
-            stats_response = await self._client.get(f"/indexes/{uid}/stats")
-            stats_response.raise_for_status()
-            stats_data = stats_response.json()
-
-            # Get sample documents (or all if sample_docs is None)
-            sample_docs: list[dict[str, Any]] = []
-            try:
-                if self.sample_docs is None:
-                    # Fetch all documents with pagination
-                    offset = 0
-                    batch_size = 1000  # MeiliSearch default max limit
-                    while True:
-                        docs_response = await self._client.get(
-                            f"/indexes/{uid}/documents",
-                            params={"limit": batch_size, "offset": offset},
-                        )
-                        docs_response.raise_for_status()
-                        docs_data = docs_response.json()
-
-                        if isinstance(docs_data, dict) and "results" in docs_data:
-                            batch = cast(list[dict[str, Any]], docs_data["results"])
-                        elif isinstance(docs_data, list):
-                            batch = cast(list[dict[str, Any]], docs_data)
-                        else:
-                            break
-
-                        if not batch:
-                            break
-
-                        sample_docs.extend(batch)
-                        offset += len(batch)
-
-                        # Check if we've fetched all documents
-                        if len(batch) < batch_size:
-                            break
-                else:
-                    # Fetch limited sample
-                    docs_response = await self._client.get(
-                        f"/indexes/{uid}/documents",
-                        params={"limit": self.sample_docs},
+                async with completed_lock:
+                    completed_count += 1
+                    emit_collect(
+                        progress_cb,
+                        f"Completed {uid} ({completed_count}/{total_indexes})",
+                        current=completed_count,
+                        total=total_indexes,
                     )
-                    docs_response.raise_for_status()
-                    docs_data = docs_response.json()
-                    if isinstance(docs_data, dict) and "results" in docs_data:
-                        sample_docs = cast(list[dict[str, Any]], docs_data["results"])
-                    elif isinstance(docs_data, list):
-                        sample_docs = cast(list[dict[str, Any]], docs_data)
-            except httpx.HTTPError:
-                pass
 
-            index = IndexData(
-                uid=uid,
-                primaryKey=idx_info.get("primaryKey"),
-                createdAt=idx_info.get("createdAt"),
-                updatedAt=idx_info.get("updatedAt"),
-                settings=IndexSettings(**settings_data),
-                stats=IndexStats(**stats_data),
-                sample_documents=sample_docs,
-            )
-            indexes.append(index)
+                return result
+
+        # Fetch all indexes concurrently with bounded parallelism
+        tasks = [
+            fetch_with_semaphore(idx_info, i)
+            for i, idx_info in enumerate(indexes_list, start=1)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Filter out None results (failed fetches)
+        indexes = [idx for idx in results if idx is not None]
+
+        emit_collect(
+            progress_cb,
+            f"Fetched {len(indexes)} indexes successfully",
+            current=len(indexes),
+            total=total_indexes,
+        )
 
         return indexes
 
