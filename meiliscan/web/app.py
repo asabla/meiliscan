@@ -1,6 +1,7 @@
 """FastAPI application for the web dashboard."""
 
 import asyncio
+import logging
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -13,6 +14,9 @@ from meiliscan.core.collector import DataCollector
 from meiliscan.core.progress import ProgressEvent
 from meiliscan.core.reporter import Reporter
 from meiliscan.models.report import AnalysisReport
+from meiliscan.web.analysis_config import AnalysisConfig
+
+logger = logging.getLogger(__name__)
 
 # Analysis status type
 AnalysisStatus = Literal["idle", "running", "done", "error"]
@@ -45,6 +49,8 @@ class AppState:
         self.benchmark_status: AnalysisStatus = "idle"
         self.benchmark_error: str | None = None
         self._benchmark_subscribers: list[asyncio.Queue[dict | None]] = []
+        # Serialize long-running analysis/benchmark jobs to avoid shared-state races.
+        self.run_lock = asyncio.Lock()
 
     def subscribe_progress(self) -> asyncio.Queue[ProgressEvent | None]:
         """Subscribe to progress events. Returns a queue that will receive events."""
@@ -62,8 +68,8 @@ class AppState:
         for queue in self._progress_subscribers:
             try:
                 await queue.put(event)
-            except Exception:
-                pass  # Ignore errors from closed queues
+            except RuntimeError:
+                logger.debug("Skipping closed analysis progress subscriber queue")
 
     def subscribe_benchmark_progress(self) -> asyncio.Queue[dict | None]:
         """Subscribe to benchmark progress events."""
@@ -81,8 +87,34 @@ class AppState:
         for queue in self._benchmark_subscribers:
             try:
                 await queue.put(event)
-            except Exception:
-                pass  # Ignore errors from closed queues
+            except RuntimeError:
+                logger.debug("Skipping closed benchmark progress subscriber queue")
+
+    def current_analysis_config(self) -> AnalysisConfig:
+        """Return a snapshot of the current analysis configuration."""
+        return AnalysisConfig(
+            meili_url=self.meili_url,
+            meili_api_key=self.meili_api_key,
+            dump_path=self.dump_path,
+            probe_search=self.probe_search,
+            sample_documents=self.sample_documents,
+            detect_sensitive=self.detect_sensitive,
+            max_concurrent=self.max_concurrent,
+            run_benchmark=self.run_benchmark,
+            comprehensive_benchmark=self.comprehensive_benchmark,
+        )
+
+    def apply_analysis_config(self, config: AnalysisConfig) -> None:
+        """Apply an analysis configuration to app state."""
+        self.meili_url = config.meili_url
+        self.meili_api_key = config.meili_api_key
+        self.dump_path = config.dump_path
+        self.probe_search = config.probe_search
+        self.sample_documents = config.sample_documents
+        self.detect_sensitive = config.detect_sensitive
+        self.max_concurrent = config.max_concurrent
+        self.run_benchmark = config.run_benchmark
+        self.comprehensive_benchmark = config.comprehensive_benchmark
 
 
 # Template filters - defined before create_app so they're available at registration time
@@ -185,20 +217,25 @@ def create_app(
         Configured FastAPI application
     """
     state = AppState()
-    state.meili_url = meili_url
-    state.meili_api_key = meili_api_key
-    state.dump_path = dump_path
-    state.probe_search = probe_search
-    state.sample_documents = sample_documents
-    state.detect_sensitive = detect_sensitive
-    state.max_concurrent = max_concurrent
+    state.apply_analysis_config(
+        AnalysisConfig(
+            meili_url=meili_url,
+            meili_api_key=meili_api_key,
+            dump_path=dump_path,
+            probe_search=probe_search,
+            sample_documents=sample_documents,
+            detect_sensitive=detect_sensitive,
+            max_concurrent=max_concurrent,
+        )
+    )
 
     @asynccontextmanager
     async def lifespan(app: FastAPI):
         """Application lifespan manager."""
         # Startup: Run initial analysis if source provided
-        if state.meili_url or state.dump_path:
-            await run_analysis(state)
+        startup_config = state.current_analysis_config()
+        if startup_config.has_source:
+            await run_analysis(state, config=startup_config)
         yield
         # Shutdown: Clean up collector
         if state.collector:
@@ -246,7 +283,11 @@ def create_app(
     return app
 
 
-async def run_analysis(state: AppState, emit_done: bool = True) -> None:
+async def run_analysis(
+    state: AppState,
+    emit_done: bool = True,
+    config: AnalysisConfig | None = None,
+) -> None:
     """Run analysis and store results in state.
 
     Uses the analysis options stored in state:
@@ -259,92 +300,161 @@ async def run_analysis(state: AppState, emit_done: bool = True) -> None:
         state: Application state
         emit_done: Whether to emit the done signal (None) when complete.
                    Set to False when chaining with benchmark.
+        config: Optional immutable config snapshot for this analysis run.
     """
+    config_snapshot = config or state.current_analysis_config()
+    if not config_snapshot.has_source:
+        state.analysis_status = "idle"
+        state.analysis_error = "No data source configured"
+        return
+
+    if state.run_lock.locked():
+        state.analysis_error = "Another analysis or benchmark is already running"
+        return
+
+    async with state.run_lock:
+        await _run_analysis_inner(
+            state=state,
+            config=config_snapshot,
+            emit_done=emit_done,
+        )
+
+
+def _create_data_collector(config: AnalysisConfig) -> DataCollector | None:
+    """Create a collector for the configured source."""
+    if config.dump_path:
+        return DataCollector.from_dump(
+            config.dump_path,
+            max_sample_docs=config.sample_documents,
+            max_concurrent=config.max_concurrent,
+        )
+    if config.meili_url:
+        return DataCollector.from_url(
+            config.meili_url,
+            api_key=config.meili_api_key,
+            sample_docs=config.sample_documents,
+            max_concurrent=config.max_concurrent,
+        )
+    return None
+
+
+async def _collect_or_mark_error(
+    state: AppState,
+    progress_cb,
+) -> bool:
+    """Collect data and set error state when collection fails."""
+    collector = state.collector
+    if collector is None:
+        state.analysis_status = "idle"
+        return False
+
+    if await collector.collect(progress_cb):
+        return True
+
+    state.analysis_status = "error"
+    state.analysis_error = "Failed to collect data from source"
+    await state.emit_progress(None)
+    return False
+
+
+async def _build_analysis_options(
+    state: AppState,
+    config: AnalysisConfig,
+) -> dict:
+    """Build analysis options, including optional probe findings."""
+    analysis_options: dict = {
+        "detect_sensitive": config.detect_sensitive,
+        "sample_documents": config.sample_documents,
+    }
+
+    if config.probe_search and config.meili_url:
+        probe_findings = await _run_search_probes(state)
+        if probe_findings is not None:
+            analysis_options["_probe_findings"] = probe_findings
+
+    return analysis_options
+
+
+async def _run_search_probes(state: AppState) -> list | None:
+    """Run optional search probes and return findings when possible."""
+    from meiliscan.analyzers.search_probe_analyzer import SearchProbeAnalyzer
+    from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+    collector = state.collector
+    if collector is None:
+        return None
+
+    await state.emit_progress(
+        ProgressEvent(phase="analyze", message="Running search probes...")
+    )
+
+    live_collector = collector._collector
+    if not isinstance(live_collector, LiveInstanceCollector):
+        return None
+
+    async def search_fn(index_uid, query, filter, sort):
+        return await live_collector.search(
+            index_uid=index_uid,
+            query=query,
+            filter=filter,
+            sort=sort,
+        )
+
+    probe_analyzer = SearchProbeAnalyzer()
+    probe_findings, _ = await probe_analyzer.analyze(collector.indexes, search_fn)
+    return probe_findings
+
+
+async def _run_analysis_inner(
+    state: AppState,
+    config: AnalysisConfig,
+    emit_done: bool,
+) -> None:
+    """Run analysis with the app run lock already held."""
     state.analysis_status = "running"
     state.analysis_error = None
+    state.apply_analysis_config(config)
 
     async def progress_cb(event: ProgressEvent) -> None:
         """Progress callback that emits to all subscribers."""
         await state.emit_progress(event)
 
     try:
-        if state.dump_path:
-            state.collector = DataCollector.from_dump(
-                state.dump_path,
-                max_sample_docs=state.sample_documents,
-                max_concurrent=state.max_concurrent,
-            )
-        elif state.meili_url:
-            state.collector = DataCollector.from_url(
-                state.meili_url,
-                api_key=state.meili_api_key,
-                sample_docs=state.sample_documents,
-                max_concurrent=state.max_concurrent,
-            )
-        else:
+        if state.collector:
+            await state.collector.close()
+
+        state.collector = _create_data_collector(config)
+        if state.collector is None:
             state.analysis_status = "idle"
             return
 
-        # Collect data
-        if not await state.collector.collect(progress_cb):
-            state.analysis_status = "error"
-            state.analysis_error = "Failed to collect data from source"
-            await state.emit_progress(None)  # Signal completion
+        if not await _collect_or_mark_error(state, progress_cb):
             return
 
-        # Build analysis options
-        analysis_options: dict = {
-            "detect_sensitive": state.detect_sensitive,
-            "sample_documents": state.sample_documents,
-        }
-
-        # Run search probes if requested (live instance only)
-        if state.probe_search and state.meili_url:
-            from meiliscan.analyzers.search_probe_analyzer import SearchProbeAnalyzer
-            from meiliscan.collectors.live_instance import LiveInstanceCollector
-
-            await state.emit_progress(
-                ProgressEvent(phase="analyze", message="Running search probes...")
-            )
-
-            probe_analyzer = SearchProbeAnalyzer()
-
-            # Access the underlying LiveInstanceCollector for search
-            live_collector = state.collector._collector
-            if isinstance(live_collector, LiveInstanceCollector):
-
-                async def search_fn(index_uid, query, filter, sort):
-                    return await live_collector.search(
-                        index_uid=index_uid,
-                        query=query,
-                        filter=filter,
-                        sort=sort,
-                    )
-
-                probe_findings, _ = await probe_analyzer.analyze(
-                    state.collector.indexes, search_fn
-                )
-                analysis_options["_probe_findings"] = probe_findings
+        analysis_options = await _build_analysis_options(state, config)
 
         # Run analysis
         reporter = Reporter(state.collector, analysis_options=analysis_options)
         state.report = await reporter.generate_report(
-            source_url=state.meili_url, progress_cb=progress_cb
+            source_url=config.meili_url, progress_cb=progress_cb
         )
 
         state.analysis_status = "done"
         if emit_done:
             await state.emit_progress(None)  # Signal completion
 
-    except Exception as e:
-        # Log error but don't crash - UI will show "no data" state
+    except (RuntimeError, ValueError, OSError) as exc:
+        # Log error but don't crash - UI will show "no data" state.
         state.analysis_status = "error"
-        state.analysis_error = str(e)
+        state.analysis_error = str(exc)
         await state.emit_progress(None)  # Signal completion
-        print(f"Error running analysis: {e}")
+        logger.exception("Error running analysis")
 
 
-async def run_analysis_and_benchmark(state: AppState) -> None:
+async def run_analysis_and_benchmark(
+    state: AppState,
+    config: AnalysisConfig | None = None,
+) -> None:
     """Run analysis and optionally run benchmarks afterwards.
 
     This is a wrapper around run_analysis that also triggers benchmark
@@ -353,21 +463,47 @@ async def run_analysis_and_benchmark(state: AppState) -> None:
     Progress events are emitted through the analysis channel so the dashboard
     progress modal can track both analysis and benchmark phases before reloading.
     """
+    config_snapshot = config or state.current_analysis_config()
+    if not config_snapshot.has_source:
+        state.analysis_status = "idle"
+        state.analysis_error = "No data source configured"
+        return
+
+    if state.run_lock.locked():
+        state.analysis_error = "Another analysis or benchmark is already running"
+        return
+
+    async with state.run_lock:
+        await _run_analysis_and_benchmark_inner(state, config_snapshot)
+
+
+async def _run_analysis_and_benchmark_inner(
+    state: AppState,
+    config: AnalysisConfig,
+) -> None:
+    """Run analysis + optional benchmark with the app run lock already held."""
     # Check if we'll need to run benchmark after
-    will_benchmark = state.run_benchmark and state.meili_url
+    will_benchmark = config.run_benchmark and bool(config.meili_url)
 
     # Run analysis, but don't emit done signal if we'll benchmark after
-    await run_analysis(state, emit_done=not will_benchmark)
+    await _run_analysis_inner(
+        state=state,
+        config=config,
+        emit_done=not will_benchmark,
+    )
 
     # If analysis succeeded and auto-benchmark is enabled, run benchmarks
     if state.analysis_status == "done" and will_benchmark and state.report:
-        await run_benchmark_after_analysis(state)
+        await run_benchmark_after_analysis(state, config=config)
         # Now emit the done signal after benchmark completes
         await state.emit_progress(None)
     # If analysis failed or no benchmark needed, done signal already emitted by run_analysis
 
 
-async def run_benchmark_after_analysis(state: AppState) -> None:
+async def run_benchmark_after_analysis(
+    state: AppState,
+    config: AnalysisConfig | None = None,
+) -> None:
     """Run benchmarks after a successful analysis.
 
     Emits progress through the analysis channel (emit_progress) so the
@@ -376,6 +512,7 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
     from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
     from meiliscan.collectors.live_instance import LiveInstanceCollector
 
+    config_snapshot = config or state.current_analysis_config()
     state.benchmark_status = "running"
     state.benchmark_error = None
 
@@ -385,7 +522,7 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
         )
 
         # Create a collector for benchmarking
-        meili_url = state.meili_url
+        meili_url = config_snapshot.meili_url
         if not meili_url:
             state.benchmark_status = "error"
             state.benchmark_error = "No MeiliSearch URL configured"
@@ -393,7 +530,7 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
 
         collector = LiveInstanceCollector(
             url=meili_url,
-            api_key=state.meili_api_key,
+            api_key=config_snapshot.meili_api_key,
         )
 
         try:
@@ -457,13 +594,13 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
             # Run benchmarks with mode based on settings
             runner = SearchBenchmarkRunner(
                 collector=collector,
-                queries_per_type=3 if state.comprehensive_benchmark else 1,
+                queries_per_type=3 if config_snapshot.comprehensive_benchmark else 1,
                 progress_cb=benchmark_progress_cb,
                 index_complete_cb=index_complete_cb,
             )
 
             # Use comprehensive or baseline based on setting
-            if state.comprehensive_benchmark:
+            if config_snapshot.comprehensive_benchmark:
                 benchmark_report = await runner.run_comprehensive(index_data_list)
             else:
                 benchmark_report = await runner.run_baseline(index_data_list)
@@ -480,7 +617,7 @@ async def run_benchmark_after_analysis(state: AppState) -> None:
         finally:
             await collector.close()
 
-    except Exception as e:
+    except (RuntimeError, ValueError, OSError) as exc:
         state.benchmark_status = "error"
-        state.benchmark_error = str(e)
-        print(f"Error running auto-benchmark: {e}")
+        state.benchmark_error = str(exc)
+        logger.exception("Error running auto-benchmark")
