@@ -94,6 +94,12 @@ nav .container {
     text-decoration: none;
 }
 
+.nav-separator {
+    border-left: 1px solid var(--border-color, #444);
+    height: 1.2em;
+    align-self: center;
+}
+
 /* Main Content */
 main {
     padding: 2rem 0;

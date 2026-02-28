@@ -45,6 +45,8 @@ class AppState:
         self.benchmark_status: AnalysisStatus = "idle"
         self.benchmark_error: str | None = None
         self._benchmark_subscribers: list[asyncio.Queue[dict | None]] = []
+        # Shared live collector for lightweight HTMX requests
+        self._live_collector = None
 
     def subscribe_progress(self) -> asyncio.Queue[ProgressEvent | None]:
         """Subscribe to progress events. Returns a queue that will receive events."""
@@ -83,6 +85,40 @@ class AppState:
                 await queue.put(event)
             except Exception:
                 pass  # Ignore errors from closed queues
+
+    async def get_live_collector(self):
+        """Get or create a persistent LiveInstanceCollector for the current connection.
+
+        Returns None if no live URL is configured or connection fails.
+        """
+        if not self.meili_url:
+            return None
+
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+        if self._live_collector is None:
+            self._live_collector = LiveInstanceCollector(
+                url=self.meili_url,
+                api_key=self.meili_api_key,
+            )
+            try:
+                if not await self._live_collector.connect():
+                    self._live_collector = None
+                    return None
+            except Exception:
+                self._live_collector = None
+                return None
+
+        return self._live_collector
+
+    async def close_live_collector(self) -> None:
+        """Close and discard the shared live collector."""
+        if self._live_collector is not None:
+            try:
+                await self._live_collector.close()
+            except Exception:
+                pass
+            self._live_collector = None
 
 
 # Template filters - defined before create_app so they're available at registration time
@@ -200,7 +236,8 @@ def create_app(
         if state.meili_url or state.dump_path:
             await run_analysis(state)
         yield
-        # Shutdown: Clean up collector
+        # Shutdown: Clean up collectors
+        await state.close_live_collector()
         if state.collector:
             await state.collector.close()
 
