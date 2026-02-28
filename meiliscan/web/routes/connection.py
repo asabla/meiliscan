@@ -91,6 +91,7 @@ def register_connection_routes(app: FastAPI) -> None:
 
         # Update connection info
         state.dump_path = tmp_path
+        state.dump_filename = file.filename  # Preserve original filename
         state.meili_url = None
         state.meili_api_key = None
 
@@ -152,5 +153,6 @@ def register_connection_routes(app: FastAPI) -> None:
         state.meili_url = None
         state.meili_api_key = None
         state.dump_path = None
+        state.dump_filename = None
 
         return RedirectResponse(url="/", status_code=303)

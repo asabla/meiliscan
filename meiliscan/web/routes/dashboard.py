@@ -35,6 +35,7 @@ def register_dashboard_routes(app: FastAPI) -> None:
                 "report": state.report,
                 "source_url": state.meili_url,
                 "source_dump": state.dump_path,
+                "dump_filename": state.dump_filename,
                 "tasks_summary": tasks_summary,
                 # Analysis options
                 "probe_search": state.probe_search,

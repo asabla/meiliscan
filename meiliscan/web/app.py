@@ -27,6 +27,7 @@ class AppState:
         self.meili_url: str | None = None
         self.meili_api_key: str | None = None
         self.dump_path: Path | None = None
+        self.dump_filename: str | None = None  # Original upload filename
         # Analysis options
         self.probe_search: bool = False
         self.sample_documents: int | None = 20  # None means "all"

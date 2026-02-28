@@ -12,9 +12,32 @@
     
     {% for doc in documents %}
     <div class="document-sample" style="margin-bottom: 0.75rem;">
-        <pre style="margin: 0; padding: 1rem; background-color: var(--bg-primary); border-radius: 0.375rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5;"><code>{{ doc | tojson(indent=2) }}</code></pre>
+        <div class="doc-json-wrapper" style="max-height: 300px; overflow: hidden; position: relative; border-radius: 0.375rem;">
+            <pre style="margin: 0; padding: 1rem; background-color: var(--bg-primary); border-radius: 0.375rem; overflow-x: auto; font-size: 0.8rem; line-height: 1.5;"><code>{{ doc | tojson(indent=2) }}</code></pre>
+        </div>
     </div>
     {% endfor %}
+    <script>
+    document.querySelectorAll('.doc-json-wrapper').forEach(function(wrapper) {
+        var pre = wrapper.querySelector('pre');
+        if (pre.scrollHeight > 300) {
+            var toggle = document.createElement('button');
+            toggle.textContent = 'Show full document';
+            toggle.className = 'btn btn-secondary btn-sm';
+            toggle.style.cssText = 'margin-top: 0.5rem; display: block;';
+            toggle.addEventListener('click', function() {
+                if (wrapper.style.maxHeight === 'none') {
+                    wrapper.style.maxHeight = '300px';
+                    toggle.textContent = 'Show full document';
+                } else {
+                    wrapper.style.maxHeight = 'none';
+                    toggle.textContent = 'Collapse';
+                }
+            });
+            wrapper.parentElement.appendChild(toggle);
+        }
+    });
+    </script>
     
     <!-- Pagination -->
     {% if total_pages > 1 %}
