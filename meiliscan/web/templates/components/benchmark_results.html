@@ -51,6 +51,79 @@
     </div>
 </div>
 
+<!-- Charts -->
+<div class="grid grid-2 mb-2">
+    <!-- Latency by Query Type -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Latency by Query Type</h2>
+        </div>
+        <div style="height: 260px; position: relative;">
+            <canvas id="chart-query-type"></canvas>
+        </div>
+    </div>
+    <!-- Percentile Distribution -->
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Latency Distribution</h2>
+        </div>
+        <div style="height: 260px; position: relative;">
+            <canvas id="chart-percentile"></canvas>
+        </div>
+    </div>
+</div>
+
+<!-- Index Latency Comparison -->
+{% if benchmark.indexes|length > 1 %}
+<div class="card mb-2">
+    <div class="card-header">
+        <h2 class="card-title">Index Latency Comparison</h2>
+        {% if benchmark.indexes|length > 15 %}
+        <span class="text-secondary" style="font-size: 0.75rem;">Top 15 of {{ benchmark.indexes|length }} indexes</span>
+        {% endif %}
+    </div>
+    <div style="position: relative;">
+        <canvas id="chart-index-comparison"></canvas>
+    </div>
+</div>
+{% endif %}
+
+<!-- Chart Data & Init -->
+<script>
+(function() {
+    if (typeof BenchmarkCharts === 'undefined') return;
+
+    var indexes = [
+        {% for idx in benchmark.indexes %}
+        {
+            index_uid: {{ idx.index_uid | tojson }},
+            baseline_latency_ms: {{ "%.2f"|format(idx.baseline_latency_ms) }},
+            text_latency_ms: {{ idx.text_latency_ms | tojson if idx.text_latency_ms is not none else 'null' }},
+            filtered_latency_ms: {{ idx.filtered_latency_ms | tojson if idx.filtered_latency_ms is not none else 'null' }},
+            sorted_latency_ms: {{ idx.sorted_latency_ms | tojson if idx.sorted_latency_ms is not none else 'null' }},
+            faceted_latency_ms: {{ idx.faceted_latency_ms | tojson if idx.faceted_latency_ms is not none else 'null' }},
+            complex_latency_ms: {{ idx.complex_latency_ms | tojson if idx.complex_latency_ms is not none else 'null' }},
+            avg_latency_ms: {{ "%.2f"|format(idx.avg_latency_ms) }}
+        }{% if not loop.last %},{% endif %}
+        {% endfor %}
+    ];
+
+    var report = {
+        min_latency_ms: {{ "%.2f"|format(benchmark.min_latency_ms) }},
+        p50_latency_ms: {{ "%.2f"|format(benchmark.p50_latency_ms) }},
+        p95_latency_ms: {{ "%.2f"|format(benchmark.p95_latency_ms) }},
+        p99_latency_ms: {{ "%.2f"|format(benchmark.p99_latency_ms) }},
+        max_latency_ms: {{ "%.2f"|format(benchmark.max_latency_ms) }}
+    };
+
+    BenchmarkCharts.createQueryTypeChart('chart-query-type', indexes);
+    BenchmarkCharts.createPercentileChart('chart-percentile', report);
+    {% if benchmark.indexes|length > 1 %}
+    BenchmarkCharts.createIndexComparisonChart('chart-index-comparison', indexes);
+    {% endif %}
+})();
+</script>
+
 <!-- Per-Index Results -->
 <div class="card mb-2">
     <div class="card-header">

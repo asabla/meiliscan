@@ -2,6 +2,11 @@
 
 {% block title %}Search Benchmarks - Meiliscan{% endblock %}
 
+{% block extra_scripts %}
+<script src="/static/js/chart.umd.min.js"></script>
+<script src="/static/js/benchmark-charts.js"></script>
+{% endblock %}
+
 {% block content %}
 <h1 style="font-size: 1.75rem; margin-bottom: 1.5rem;">Search Benchmarks</h1>
 
@@ -188,10 +193,15 @@
                 status.textContent = 'Complete!';
                 status.style.color = 'var(--green)';
                 
-                // Reload results partial
+                // Reload results partial and execute inline scripts
                 const resultsResponse = await fetch('/benchmark/results');
                 const resultsHtml = await resultsResponse.text();
                 resultsDiv.innerHTML = resultsHtml;
+                resultsDiv.querySelectorAll('script').forEach(function(oldScript) {
+                    var newScript = document.createElement('script');
+                    newScript.textContent = oldScript.textContent;
+                    oldScript.parentNode.replaceChild(newScript, oldScript);
+                });
             }
         } catch (err) {
             status.textContent = 'Error: ' + err.message;
