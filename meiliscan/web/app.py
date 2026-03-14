@@ -1,6 +1,7 @@
 """FastAPI application for the web dashboard."""
 
 import asyncio
+import time
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Literal
@@ -12,6 +13,7 @@ from fastapi.templating import Jinja2Templates
 from meiliscan.core.collector import DataCollector
 from meiliscan.core.progress import ProgressEvent
 from meiliscan.core.reporter import Reporter
+from meiliscan.models.monitoring import AlertConfig, MonitoringSnapshot
 from meiliscan.models.report import AnalysisReport
 
 # Analysis status type
@@ -48,6 +50,14 @@ class AppState:
         self._benchmark_subscribers: list[asyncio.Queue[dict | None]] = []
         # Shared live collector for lightweight HTMX requests
         self._live_collector = None
+        # Monitoring state
+        self.monitoring_enabled: bool = False
+        self.monitoring_interval: int = 30  # seconds
+        self.monitoring_history: list[MonitoringSnapshot] = []
+        self.monitoring_max_history: int = 500
+        self.monitoring_alert_config: AlertConfig = AlertConfig()
+        self._monitoring_task: asyncio.Task | None = None
+        self._monitoring_subscribers: list[asyncio.Queue[dict | None]] = []
 
     def subscribe_progress(self) -> asyncio.Queue[ProgressEvent | None]:
         """Subscribe to progress events. Returns a queue that will receive events."""
@@ -86,6 +96,132 @@ class AppState:
                 await queue.put(event)
             except Exception:
                 pass  # Ignore errors from closed queues
+
+    def subscribe_monitoring(self) -> asyncio.Queue[dict | None]:
+        """Subscribe to monitoring snapshot events."""
+        queue: asyncio.Queue[dict | None] = asyncio.Queue()
+        self._monitoring_subscribers.append(queue)
+        return queue
+
+    def unsubscribe_monitoring(self, queue: asyncio.Queue[dict | None]) -> None:
+        """Unsubscribe from monitoring events."""
+        if queue in self._monitoring_subscribers:
+            self._monitoring_subscribers.remove(queue)
+
+    async def emit_monitoring_event(self, event: dict | None) -> None:
+        """Emit a monitoring event to all subscribers."""
+        for queue in self._monitoring_subscribers:
+            try:
+                await queue.put(event)
+            except Exception:
+                pass
+
+    async def start_monitoring(self) -> None:
+        """Start the background monitoring loop."""
+        if self._monitoring_task and not self._monitoring_task.done():
+            return  # Already running
+
+        self.monitoring_enabled = True
+        self._monitoring_task = asyncio.create_task(self._monitoring_loop())
+
+    async def stop_monitoring(self) -> None:
+        """Stop the background monitoring loop."""
+        self.monitoring_enabled = False
+        if self._monitoring_task and not self._monitoring_task.done():
+            self._monitoring_task.cancel()
+            try:
+                await self._monitoring_task
+            except asyncio.CancelledError:
+                pass
+        self._monitoring_task = None
+
+    async def _monitoring_loop(self) -> None:
+        """Background loop that polls the MeiliSearch instance."""
+        while self.monitoring_enabled:
+            try:
+                snapshot = await self._take_snapshot()
+                if snapshot:
+                    self.monitoring_history.append(snapshot)
+                    # Trim history if needed
+                    if len(self.monitoring_history) > self.monitoring_max_history:
+                        self.monitoring_history = self.monitoring_history[
+                            -self.monitoring_max_history :
+                        ]
+                    await self.emit_monitoring_event(snapshot.to_event_dict())
+            except Exception:
+                pass  # Don't crash the monitoring loop
+
+            await asyncio.sleep(self.monitoring_interval)
+
+    async def _take_snapshot(self) -> MonitoringSnapshot | None:
+        """Take a single monitoring snapshot."""
+        collector = await self.get_live_collector()
+        if not collector:
+            return None
+
+        from datetime import datetime
+
+        snapshot = MonitoringSnapshot(timestamp=datetime.utcnow())
+
+        try:
+            # Health check with timing
+            start = time.perf_counter()
+            await collector._client.get("/health")
+            snapshot.health_check_ms = (time.perf_counter() - start) * 1000
+
+            # Stats
+            stats_resp = await collector._client.get("/stats")
+            stats_resp.raise_for_status()
+            stats = stats_resp.json()
+
+            total_docs = 0
+            is_indexing = False
+            for idx_stats in stats.get("indexes", {}).values():
+                total_docs += idx_stats.get("numberOfDocuments", 0)
+                if idx_stats.get("isIndexing", False):
+                    is_indexing = True
+
+            snapshot.total_documents = total_docs
+            snapshot.is_indexing = is_indexing
+
+            # Task queue depth
+            tasks_resp = await collector._client.get(
+                "/tasks", params={"statuses": "enqueued,processing", "limit": 1}
+            )
+            tasks_resp.raise_for_status()
+            tasks_data = tasks_resp.json()
+            total_tasks = tasks_data.get("total", 0)
+
+            # Count by status
+            enqueued_resp = await collector._client.get(
+                "/tasks", params={"statuses": "enqueued", "limit": 1}
+            )
+            enqueued_data = enqueued_resp.json()
+            processing_resp = await collector._client.get(
+                "/tasks", params={"statuses": "processing", "limit": 1}
+            )
+            processing_data = processing_resp.json()
+
+            snapshot.enqueued_tasks = enqueued_data.get("total", 0)
+            snapshot.active_tasks = processing_data.get("total", 0)
+
+            # Sample search latency
+            # Pick first index from stats
+            index_uids = list(stats.get("indexes", {}).keys())
+            if index_uids:
+                search_start = time.perf_counter()
+                await collector._client.post(
+                    f"/indexes/{index_uids[0]}/search",
+                    json={"q": "", "limit": 1},
+                )
+                snapshot.search_latency_sample_ms = (
+                    time.perf_counter() - search_start
+                ) * 1000
+
+        except Exception:
+            pass  # Partial snapshot is still useful
+
+        return snapshot
 
     async def get_live_collector(self):
         """Get or create a persistent LiveInstanceCollector for the current connection.
@@ -237,7 +373,8 @@ def create_app(
         if state.meili_url or state.dump_path:
             await run_analysis(state)
         yield
-        # Shutdown: Clean up collectors
+        # Shutdown: Stop monitoring and clean up collectors
+        await state.stop_monitoring()
         await state.close_live_collector()
         if state.collector:
             await state.collector.close()
@@ -351,12 +488,13 @@ async def run_analysis(state: AppState, emit_done: bool = True) -> None:
             live_collector = state.collector._collector
             if isinstance(live_collector, LiveInstanceCollector):
 
-                async def search_fn(index_uid, query, filter, sort):
+                async def search_fn(index_uid, query, filter, sort, facets=None):
                     return await live_collector.search(
                         index_uid=index_uid,
                         query=query,
                         filter=filter,
                         sort=sort,
+                        facets=facets,
                     )
 
                 probe_findings, _ = await probe_analyzer.analyze(

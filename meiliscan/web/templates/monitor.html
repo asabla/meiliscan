@@ -1,0 +1,305 @@
+{% extends "base.html" %}
+
+{% block title %}Monitor - Meiliscan{% endblock %}
+
+{% block extra_scripts %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+{% if not is_live %}
+<div class="card">
+    <p class="text-secondary">Monitoring requires a live MeiliSearch connection. <a href="/">Connect first</a>.</p>
+</div>
+{% else %}
+<div class="status-bar mb-2">
+    <div class="status-bar-info">
+        <span class="status-indicator" id="monitor-status-dot" style="background: var(--color-text-secondary);"></span>
+        <span class="status-text">
+            <strong>Monitor:</strong> <span id="monitor-status-text">Stopped</span>
+            {% if source_url %}
+            <span class="text-secondary">| {{ source_url }}</span>
+            {% endif %}
+        </span>
+    </div>
+    <div class="status-bar-actions">
+        <label for="monitor-interval" class="text-secondary" style="font-size: 0.875rem;">Interval:</label>
+        <select id="monitor-interval" style="width: auto; padding: 0.25rem 0.5rem;">
+            <option value="5" {% if monitoring_interval == 5 %}selected{% endif %}>5s</option>
+            <option value="10" {% if monitoring_interval == 10 %}selected{% endif %}>10s</option>
+            <option value="30" {% if monitoring_interval == 30 %}selected{% endif %}>30s</option>
+            <option value="60" {% if monitoring_interval == 60 %}selected{% endif %}>60s</option>
+        </select>
+        <button id="monitor-toggle" class="btn btn-primary btn-sm" onclick="toggleMonitoring()">
+            Start
+        </button>
+    </div>
+</div>
+
+<!-- Live Stats -->
+<div class="grid grid-4 mb-2">
+    <div class="card stat">
+        <div class="stat-value" id="stat-health-ms">-</div>
+        <div class="stat-label">Health Check (ms)</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value" id="stat-search-ms">-</div>
+        <div class="stat-label">Search Latency (ms)</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value" id="stat-queue">-</div>
+        <div class="stat-label">Task Queue</div>
+    </div>
+    <div class="card stat">
+        <div class="stat-value" id="stat-docs">-</div>
+        <div class="stat-label">Documents</div>
+    </div>
+</div>
+
+<!-- Charts -->
+<div class="grid grid-2 mb-2">
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Latency (ms)</h2>
+        </div>
+        <canvas id="latency-chart" height="200"></canvas>
+    </div>
+    <div class="card">
+        <div class="card-header">
+            <h2 class="card-title">Task Queue Depth</h2>
+        </div>
+        <canvas id="queue-chart" height="200"></canvas>
+    </div>
+</div>
+
+<!-- Alerts -->
+<div class="card mb-2" id="alerts-container" style="display: none;">
+    <div class="card-header">
+        <h2 class="card-title">Alerts</h2>
+    </div>
+    <div id="alerts-list"></div>
+</div>
+
+<script>
+const MAX_POINTS = 120;
+let monitoringActive = false;
+let eventSource = null;
+
+// Chart data
+const latencyData = {
+    labels: [],
+    datasets: [
+        {
+            label: 'Health Check',
+            data: [],
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+        },
+        {
+            label: 'Search',
+            data: [],
+            borderColor: '#10b981',
+            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+        }
+    ]
+};
+
+const queueData = {
+    labels: [],
+    datasets: [
+        {
+            label: 'Processing',
+            data: [],
+            borderColor: '#f59e0b',
+            backgroundColor: 'rgba(245, 158, 11, 0.3)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+        },
+        {
+            label: 'Enqueued',
+            data: [],
+            borderColor: '#ef4444',
+            backgroundColor: 'rgba(239, 68, 68, 0.3)',
+            fill: true,
+            tension: 0.3,
+            pointRadius: 0,
+        }
+    ]
+};
+
+const chartOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: { duration: 300 },
+    scales: {
+        x: {
+            display: true,
+            ticks: { maxTicksLimit: 10, font: { size: 10 } },
+            grid: { display: false },
+        },
+        y: {
+            beginAtZero: true,
+            ticks: { font: { size: 10 } },
+        }
+    },
+    plugins: {
+        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+    }
+};
+
+let latencyChart, queueChart;
+
+document.addEventListener('DOMContentLoaded', function() {
+    const latencyCtx = document.getElementById('latency-chart').getContext('2d');
+    latencyChart = new Chart(latencyCtx, { type: 'line', data: latencyData, options: chartOptions });
+
+    const queueCtx = document.getElementById('queue-chart').getContext('2d');
+    queueChart = new Chart(queueCtx, { type: 'line', data: queueData, options: chartOptions });
+
+    // Load history
+    const history = {{ history | tojson }};
+    history.forEach(s => addSnapshot(s, false));
+    if (history.length > 0) {
+        latencyChart.update('none');
+        queueChart.update('none');
+    }
+
+    {% if monitoring_enabled %}
+    startMonitoring();
+    {% endif %}
+});
+
+function addSnapshot(snapshot, update = true) {
+    const time = new Date(snapshot.timestamp).toLocaleTimeString();
+
+    // Trim data
+    function trim(arr) {
+        while (arr.length > MAX_POINTS) arr.shift();
+    }
+
+    latencyData.labels.push(time);
+    latencyData.datasets[0].data.push(snapshot.health_check_ms);
+    latencyData.datasets[1].data.push(snapshot.search_latency_sample_ms || 0);
+    trim(latencyData.labels);
+    trim(latencyData.datasets[0].data);
+    trim(latencyData.datasets[1].data);
+
+    queueData.labels.push(time);
+    queueData.datasets[0].data.push(snapshot.active_tasks);
+    queueData.datasets[1].data.push(snapshot.enqueued_tasks);
+    trim(queueData.labels);
+    trim(queueData.datasets[0].data);
+    trim(queueData.datasets[1].data);
+
+    // Update stats
+    document.getElementById('stat-health-ms').textContent = snapshot.health_check_ms.toFixed(1);
+    document.getElementById('stat-search-ms').textContent =
+        snapshot.search_latency_sample_ms !== null ? snapshot.search_latency_sample_ms.toFixed(1) : '-';
+    document.getElementById('stat-queue').textContent =
+        snapshot.active_tasks + snapshot.enqueued_tasks;
+    document.getElementById('stat-docs').textContent =
+        snapshot.total_documents.toLocaleString();
+
+    // Check alerts
+    checkAlerts(snapshot);
+
+    if (update) {
+        latencyChart.update('none');
+        queueChart.update('none');
+    }
+}
+
+function checkAlerts(snapshot) {
+    const alerts = [];
+    if (snapshot.search_latency_sample_ms !== null && snapshot.search_latency_sample_ms > 500) {
+        alerts.push({level: 'warning', msg: `High search latency: ${snapshot.search_latency_sample_ms.toFixed(0)}ms`});
+    }
+    if (snapshot.enqueued_tasks > 100) {
+        alerts.push({level: 'warning', msg: `Large task queue: ${snapshot.enqueued_tasks} enqueued`});
+    }
+
+    const container = document.getElementById('alerts-container');
+    const list = document.getElementById('alerts-list');
+    if (alerts.length > 0) {
+        container.style.display = 'block';
+        list.innerHTML = alerts.map(a =>
+            `<div class="alert alert-${a.level}" style="margin-bottom: 0.5rem; padding: 0.5rem 1rem;">${a.msg}</div>`
+        ).join('');
+    }
+}
+
+function toggleMonitoring() {
+    if (monitoringActive) {
+        stopMonitoring();
+    } else {
+        startMonitoring();
+    }
+}
+
+async function startMonitoring() {
+    const interval = document.getElementById('monitor-interval').value;
+
+    try {
+        await fetch('/api/monitor/start', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({interval: parseInt(interval)})
+        });
+    } catch(e) {
+        console.error('Failed to start monitoring:', e);
+        return;
+    }
+
+    monitoringActive = true;
+    document.getElementById('monitor-toggle').textContent = 'Stop';
+    document.getElementById('monitor-toggle').classList.remove('btn-primary');
+    document.getElementById('monitor-toggle').classList.add('btn-outline');
+    document.getElementById('monitor-status-text').textContent = 'Running';
+    document.getElementById('monitor-status-dot').style.background = '#10b981';
+
+    // Connect to SSE
+    if (eventSource) eventSource.close();
+    eventSource = new EventSource('/api/monitor/events');
+    eventSource.addEventListener('snapshot', (e) => {
+        addSnapshot(JSON.parse(e.data));
+    });
+    eventSource.addEventListener('stopped', () => {
+        stopMonitoring();
+    });
+    eventSource.onerror = () => {
+        // Reconnect after a delay
+        setTimeout(() => {
+            if (monitoringActive) {
+                eventSource.close();
+                eventSource = new EventSource('/api/monitor/events');
+            }
+        }, 2000);
+    };
+}
+
+async function stopMonitoring() {
+    try {
+        await fetch('/api/monitor/stop', {method: 'POST'});
+    } catch(e) {}
+
+    monitoringActive = false;
+    if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+    }
+    document.getElementById('monitor-toggle').textContent = 'Start';
+    document.getElementById('monitor-toggle').classList.add('btn-primary');
+    document.getElementById('monitor-toggle').classList.remove('btn-outline');
+    document.getElementById('monitor-status-text').textContent = 'Stopped';
+    document.getElementById('monitor-status-dot').style.background = 'var(--color-text-secondary)';
+}
+</script>
+{% endif %}
+{% endblock %}
