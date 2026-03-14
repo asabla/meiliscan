@@ -1,5 +1,8 @@
 """Statistics calculator for generating instance statistics from analysis data."""
 
+import re
+
+from meiliscan.models.benchmark import BenchmarkReport
 from meiliscan.models.finding import Finding, FindingSeverity
 from meiliscan.models.index import IndexSettings
 from meiliscan.models.report import AnalysisReport, IndexAnalysis
@@ -8,6 +11,7 @@ from meiliscan.models.statistics import (
     IndexStatistics,
     InstanceStatistics,
     PerformanceOpportunity,
+    ThroughputMetrics,
 )
 
 # Default ranking rules for comparison
@@ -120,6 +124,31 @@ FINDING_IMPACT_MAP: dict[str, dict] = {
     "MEILI-P006": {
         "impact": "low",
         "improvement": "Simplify instance management",
+    },
+    "MEILI-P011": {
+        "impact": "medium",
+        "improvement": "Reduce network overhead for faster search responses",
+    },
+    "MEILI-P012": {
+        "impact": "medium",
+        "improvement": "Stabilize connection latency for predictable search times",
+    },
+    "MEILI-P013": {
+        "impact": "medium",
+        "improvement": "Improve indexing throughput for faster data updates",
+    },
+    # Search probe findings
+    "MEILI-Q004": {
+        "impact": "medium",
+        "improvement": "Reduce memory usage from high-cardinality facets",
+    },
+    "MEILI-Q005": {
+        "impact": "low",
+        "improvement": "Review skewed facet utility",
+    },
+    "MEILI-Q007": {
+        "impact": "medium",
+        "improvement": "Ensure typo tolerance works for common search terms",
     },
     # Best practices
     "MEILI-B001": {
@@ -312,11 +341,133 @@ def _severity_order(severity: FindingSeverity) -> int:
     }.get(severity, 0)
 
 
+def calculate_health_score(
+    configuration_coverage: int,
+    critical_count: int,
+    warning_count: int,
+    p95_latency_ms: float | None,
+    task_failure_rate: float | None,
+) -> int:
+    """Calculate composite health score (0-100).
+
+    Scoring formula (weighted):
+    - Configuration coverage: 30 points (proportional to coverage)
+    - No critical issues: 25 points (0 if any critical, 25 if none)
+    - Low warnings: 15 points (proportional: 0 warnings = 15, 5+ = 0)
+    - Search performance: 15 points (based on p95 latency)
+    - No task failures: 15 points (proportional to inverse of failure rate)
+    """
+    score = 0
+
+    # Configuration coverage: 30 points
+    score += int(30 * configuration_coverage / 100)
+
+    # No critical issues: 25 points
+    if critical_count == 0:
+        score += 25
+
+    # Low warnings: 15 points (0 warnings = 15, 5+ = 0)
+    if warning_count == 0:
+        score += 15
+    elif warning_count < 5:
+        score += int(15 * (5 - warning_count) / 5)
+
+    # Search performance: 15 points (based on p95 latency)
+    if p95_latency_ms is not None:
+        if p95_latency_ms < 50:
+            score += 15
+        elif p95_latency_ms < 200:
+            score += 10
+        elif p95_latency_ms < 500:
+            score += 5
+
+    # No task failures: 15 points
+    if task_failure_rate is not None:
+        if task_failure_rate <= 0:
+            score += 15
+        elif task_failure_rate < 0.1:
+            score += int(15 * (1 - task_failure_rate / 0.1))
+
+    return min(score, 100)
+
+
+def calculate_throughput_metrics(tasks: list[dict] | None) -> ThroughputMetrics | None:
+    """Compute indexing throughput from task history.
+
+    Args:
+        tasks: List of task dictionaries from MeiliSearch
+
+    Returns:
+        ThroughputMetrics or None if insufficient data
+    """
+    if not tasks:
+        return None
+
+    # Filter succeeded document addition tasks with duration and document count
+    indexing_tasks = []
+    for task in tasks:
+        if (
+            task.get("type") != "documentAdditionOrUpdate"
+            or task.get("status") != "succeeded"
+        ):
+            continue
+
+        details = task.get("details", {})
+        doc_count = details.get("receivedDocuments") or details.get(
+            "indexedDocuments", 0
+        )
+        if not isinstance(doc_count, int) or doc_count <= 0:
+            continue
+
+        duration = task.get("duration")
+        duration_seconds = None
+        if isinstance(duration, str):
+            match = re.search(r"PT(?:(\d+)M)?(\d+\.?\d*)S", duration)
+            if match:
+                minutes = int(match.group(1) or 0)
+                seconds = float(match.group(2))
+                duration_seconds = minutes * 60 + seconds
+        elif isinstance(duration, (int, float)):
+            duration_seconds = float(duration)
+
+        if duration_seconds and duration_seconds > 0:
+            indexing_tasks.append(
+                {
+                    "doc_count": doc_count,
+                    "duration_seconds": duration_seconds,
+                    "docs_per_second": doc_count / duration_seconds,
+                    "enqueued_at": task.get("enqueuedAt"),
+                }
+            )
+
+    if not indexing_tasks:
+        return None
+
+    total_docs = sum(t["doc_count"] for t in indexing_tasks)
+    total_duration = sum(t["duration_seconds"] for t in indexing_tasks)
+    avg_dps = total_docs / total_duration if total_duration > 0 else 0.0
+    peak_dps = max(t["docs_per_second"] for t in indexing_tasks)
+    avg_batch = total_docs / len(indexing_tasks)
+
+    # Estimate time period from earliest to latest task
+    time_period_hours = total_duration / 3600
+
+    return ThroughputMetrics(
+        avg_docs_per_second=round(avg_dps, 2),
+        peak_docs_per_second=round(peak_dps, 2),
+        avg_batch_size=round(avg_batch, 1),
+        total_docs_indexed=total_docs,
+        time_period_hours=round(time_period_hours, 2),
+    )
+
+
 def calculate_statistics(
     report: AnalysisReport,
     collection_timing: CollectionTiming | None = None,
     database_size_bytes: int | None = None,
     used_size_bytes: int | None = None,
+    tasks: list[dict] | None = None,
+    benchmark: BenchmarkReport | None = None,
 ) -> InstanceStatistics:
     """Calculate comprehensive statistics from an analysis report.
 
@@ -325,6 +476,8 @@ def calculate_statistics(
         collection_timing: Optional timing metrics from data collection
         database_size_bytes: Optional database size in bytes
         used_size_bytes: Optional used database size in bytes
+        tasks: Optional task history for throughput calculation
+        benchmark: Optional benchmark report for health score calculation
 
     Returns:
         InstanceStatistics with computed metrics
@@ -386,6 +539,37 @@ def calculate_statistics(
     # Identify performance opportunities
     opportunities = identify_performance_opportunities(all_findings)
 
+    # Calculate task failure rate for health score
+    task_failure_rate = None
+    if tasks and len(tasks) >= 10:
+        failed = sum(1 for t in tasks if t.get("status") == "failed")
+        task_failure_rate = failed / len(tasks)
+
+    # Get p95 latency from benchmark
+    p95_latency = benchmark.p95_latency_ms if benchmark else None
+
+    # Calculate per-index health scores
+    for idx in index_stats:
+        idx.health_score = calculate_health_score(
+            configuration_coverage=idx.configuration_coverage,
+            critical_count=idx.critical_count,
+            warning_count=idx.warning_count,
+            p95_latency_ms=p95_latency,
+            task_failure_rate=task_failure_rate,
+        )
+
+    # Calculate overall health score
+    overall_health = calculate_health_score(
+        configuration_coverage=overall_coverage,
+        critical_count=total_critical,
+        warning_count=total_warnings,
+        p95_latency_ms=p95_latency,
+        task_failure_rate=task_failure_rate,
+    )
+
+    # Calculate throughput metrics
+    throughput = calculate_throughput_metrics(tasks)
+
     return InstanceStatistics(
         total_indexes=len(index_stats),
         total_documents=total_documents,
@@ -407,4 +591,6 @@ def calculate_statistics(
         total_warnings=total_warnings,
         total_suggestions=total_suggestions,
         total_info=total_info,
+        overall_health_score=overall_health,
+        throughput=throughput,
     )

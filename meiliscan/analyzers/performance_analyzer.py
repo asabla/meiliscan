@@ -11,6 +11,7 @@ from meiliscan.models.finding import (
     FindingSeverity,
 )
 from meiliscan.models.index import IndexData
+from meiliscan.models.statistics import ConnectionDiagnostics, ThroughputMetrics
 
 
 class PerformanceAnalyzer(BaseAnalyzer):
@@ -34,6 +35,8 @@ class PerformanceAnalyzer(BaseAnalyzer):
         indexes: list[IndexData],
         global_stats: dict,
         tasks: list[dict] | None = None,
+        connection_diagnostics: ConnectionDiagnostics | None = None,
+        throughput: ThroughputMetrics | None = None,
     ) -> list[Finding]:
         """Analyze global performance metrics.
 
@@ -41,6 +44,8 @@ class PerformanceAnalyzer(BaseAnalyzer):
             indexes: All indexes in the instance
             global_stats: Global stats from the instance
             tasks: Optional task history
+            connection_diagnostics: Optional connection diagnostics
+            throughput: Optional throughput metrics
 
         Returns:
             List of global findings
@@ -58,6 +63,13 @@ class PerformanceAnalyzer(BaseAnalyzer):
         findings.extend(self._check_tiny_indexing_tasks(tasks))
         findings.extend(self._check_oversized_indexing_tasks(tasks))
         findings.extend(self._check_error_clustering(tasks))
+
+        # Connection diagnostics checks (P011-P012)
+        findings.extend(self._check_network_overhead(connection_diagnostics))
+        findings.extend(self._check_connection_jitter(connection_diagnostics))
+
+        # Throughput check (P013)
+        findings.extend(self._check_low_throughput(throughput, indexes))
 
         return findings
 
@@ -582,6 +594,127 @@ class PerformanceAnalyzer(BaseAnalyzer):
                     },
                     references=[
                         "https://www.meilisearch.com/docs/reference/errors/error_codes"
+                    ],
+                )
+            )
+
+        return findings
+
+    def _check_network_overhead(
+        self, diagnostics: ConnectionDiagnostics | None
+    ) -> list[Finding]:
+        """Check for high network overhead (P011)."""
+        findings: list[Finding] = []
+
+        if not diagnostics or diagnostics.server_processing_ms <= 0:
+            return findings
+
+        if diagnostics.overhead_ms > 2 * diagnostics.server_processing_ms:
+            findings.append(
+                Finding(
+                    id="MEILI-P011",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.WARNING,
+                    title="High network overhead",
+                    description=(
+                        f"Network overhead ({diagnostics.overhead_ms:.1f}ms) is more than "
+                        f"2x the server processing time ({diagnostics.server_processing_ms:.1f}ms). "
+                        f"This suggests network latency or proxy overhead is the bottleneck, "
+                        f"not MeiliSearch itself. Consider deploying closer to the instance "
+                        f"or reviewing proxy/load balancer configuration."
+                    ),
+                    impact="Search latency dominated by network, not server performance",
+                    current_value={
+                        "overhead_ms": diagnostics.overhead_ms,
+                        "server_processing_ms": diagnostics.server_processing_ms,
+                        "dns_ms": diagnostics.dns_resolve_ms,
+                        "tcp_ms": diagnostics.tcp_connect_ms,
+                        "tls_ms": diagnostics.tls_handshake_ms,
+                    },
+                )
+            )
+
+        return findings
+
+    def _check_connection_jitter(
+        self, diagnostics: ConnectionDiagnostics | None
+    ) -> list[Finding]:
+        """Check for unstable connection latency (P012)."""
+        findings: list[Finding] = []
+
+        if not diagnostics or diagnostics.ttfb_ms <= 0:
+            return findings
+
+        # CV > 0.5 means jitter is more than half the mean
+        cv = diagnostics.jitter_ms / diagnostics.ttfb_ms if diagnostics.ttfb_ms > 0 else 0
+        if cv > 0.5:
+            findings.append(
+                Finding(
+                    id="MEILI-P012",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.WARNING,
+                    title="Unstable connection latency",
+                    description=(
+                        f"Connection latency jitter ({diagnostics.jitter_ms:.1f}ms) is high "
+                        f"relative to average TTFB ({diagnostics.ttfb_ms:.1f}ms), "
+                        f"CV={cv:.2f}. This indicates inconsistent network performance "
+                        f"which can cause unpredictable search response times."
+                    ),
+                    impact="Unpredictable search latency affecting user experience",
+                    current_value={
+                        "jitter_ms": diagnostics.jitter_ms,
+                        "ttfb_ms": diagnostics.ttfb_ms,
+                        "coefficient_of_variation": round(cv, 2),
+                    },
+                )
+            )
+
+        return findings
+
+    def _check_low_throughput(
+        self, throughput: ThroughputMetrics | None, indexes: list[IndexData]
+    ) -> list[Finding]:
+        """Check for low indexing throughput (P013)."""
+        findings: list[Finding] = []
+
+        if not throughput or throughput.avg_docs_per_second <= 0:
+            return findings
+
+        # Set threshold relative to total document count
+        total_docs = sum(idx.document_count for idx in indexes)
+        # For instances with >10k docs, expect at least 100 docs/sec
+        # For smaller instances, scale down
+        if total_docs > 10000:
+            threshold = 100
+        elif total_docs > 1000:
+            threshold = 50
+        else:
+            return findings  # Too small to assess meaningfully
+
+        if throughput.avg_docs_per_second < threshold:
+            findings.append(
+                Finding(
+                    id="MEILI-P013",
+                    category=FindingCategory.PERFORMANCE,
+                    severity=FindingSeverity.SUGGESTION,
+                    title="Low indexing throughput",
+                    description=(
+                        f"Average indexing throughput is {throughput.avg_docs_per_second:.0f} "
+                        f"docs/sec (peak: {throughput.peak_docs_per_second:.0f} docs/sec). "
+                        f"For an instance with {total_docs:,} documents, throughput below "
+                        f"{threshold} docs/sec may indicate indexing bottlenecks. "
+                        f"Consider optimizing document size, reducing fields, or batching."
+                    ),
+                    impact="Slow data updates, longer time to reflect content changes",
+                    current_value={
+                        "avg_docs_per_second": throughput.avg_docs_per_second,
+                        "peak_docs_per_second": throughput.peak_docs_per_second,
+                        "avg_batch_size": throughput.avg_batch_size,
+                        "total_docs_indexed": throughput.total_docs_indexed,
+                    },
+                    recommended_value=f"> {threshold} docs/sec",
+                    references=[
+                        "https://www.meilisearch.com/docs/learn/indexing/indexing_best_practices"
                     ],
                 )
             )
