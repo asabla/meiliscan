@@ -65,6 +65,9 @@ class SearchProbeAnalyzer:
 
         return findings, all_probe_results
 
+    # Extended max probes for new checks
+    MAX_PROBES_PER_INDEX_EXTENDED = 6
+
     async def _probe_index(
         self,
         index: IndexData,
@@ -98,6 +101,17 @@ class SearchProbeAnalyzer:
                 result = await self._probe_filter(index, search_fn, field, value)
                 results.append(result)
                 probe_count += 1
+
+        # Typo tolerance probe (Q007)
+        if index.sample_documents:
+            typo_result = await self._probe_typo_tolerance(index, search_fn)
+            if typo_result:
+                results.append(typo_result)
+
+        # Facet probes (Q004/Q005) - check facet distribution
+        for field in index.settings.filterable_attributes[:3]:
+            facet_results = await self._probe_facet_distribution(index, search_fn, field)
+            results.extend(facet_results)
 
         return results
 
@@ -204,6 +218,125 @@ class SearchProbeAnalyzer:
                 success=False,
                 error_message=str(e),
             )
+
+    async def _probe_typo_tolerance(
+        self,
+        index: IndexData,
+        search_fn,
+    ) -> ProbeResult | None:
+        """Probe typo tolerance by searching with a misspelled word (Q007)."""
+        # Find a word from sample documents to test with
+        test_word = None
+        for doc in index.sample_documents[:5]:
+            for value in doc.values():
+                if isinstance(value, str) and len(value) > 4:
+                    # Extract first word with sufficient length
+                    words = value.split()
+                    for word in words:
+                        clean = "".join(c for c in word if c.isalpha())
+                        if len(clean) >= 5:
+                            test_word = clean
+                            break
+                    if test_word:
+                        break
+            if test_word:
+                break
+
+        if not test_word:
+            return None
+
+        # Create typo by swapping two adjacent characters
+        chars = list(test_word.lower())
+        mid = len(chars) // 2
+        chars[mid], chars[mid + 1] = chars[mid + 1], chars[mid]
+        typo_word = "".join(chars)
+
+        try:
+            # Search with the typo
+            response = await search_fn(
+                index_uid=index.uid,
+                query=typo_word,
+                filter=None,
+                sort=None,
+            )
+            hit_count = len(response.get("hits", []))
+
+            return ProbeResult(
+                index_uid=index.uid,
+                probe_type="typo_tolerance",
+                success=hit_count > 0,
+                field=None,
+                hit_count=hit_count,
+                error_message=f"Searched '{typo_word}' (typo of '{test_word}'), got {hit_count} hits"
+                if hit_count == 0
+                else None,
+            )
+        except Exception as e:
+            return ProbeResult(
+                index_uid=index.uid,
+                probe_type="typo_tolerance",
+                success=False,
+                error_message=str(e),
+            )
+
+    async def _probe_facet_distribution(
+        self,
+        index: IndexData,
+        search_fn,
+        field: str,
+    ) -> list[ProbeResult]:
+        """Check facet distribution for a field (Q004/Q005)."""
+        results: list[ProbeResult] = []
+
+        try:
+            response = await search_fn(
+                index_uid=index.uid,
+                query="",
+                filter=None,
+                sort=None,
+                facets=[field],
+            )
+
+            facet_dist = response.get("facetDistribution", {}).get(field, {})
+            if not facet_dist:
+                return results
+
+            unique_values = len(facet_dist)
+            total_docs = sum(facet_dist.values())
+
+            # Q004: High cardinality facet
+            if unique_values > 1000:
+                results.append(
+                    ProbeResult(
+                        index_uid=index.uid,
+                        probe_type="facet_cardinality",
+                        success=False,
+                        field=field,
+                        error_message=f"Facet '{field}' has {unique_values} unique values",
+                    )
+                )
+
+            # Q005: Facet distribution skew
+            if total_docs > 0:
+                max_count = max(facet_dist.values())
+                if max_count / total_docs > 0.8:
+                    dominant_value = max(facet_dist, key=facet_dist.get)
+                    results.append(
+                        ProbeResult(
+                            index_uid=index.uid,
+                            probe_type="facet_skew",
+                            success=False,
+                            field=field,
+                            error_message=(
+                                f"Value '{dominant_value}' covers "
+                                f"{max_count / total_docs * 100:.0f}% of documents"
+                            ),
+                        )
+                    )
+        except Exception:
+            pass  # Facet probe failures are non-critical
+
+        return results
 
     def _find_filter_value(self, index: IndexData, field: str) -> Any:
         """Find a sample value for a field from sample documents."""
@@ -314,6 +447,72 @@ class SearchProbeAnalyzer:
                             },
                             references=[
                                 "https://www.meilisearch.com/docs/learn/relevancy/displayed_searchable_attributes",
+                            ],
+                        )
+                    )
+
+            elif result.probe_type == "facet_cardinality" and not result.success:
+                # Q004: High-cardinality facet
+                findings.append(
+                    Finding(
+                        id="MEILI-Q004",
+                        category=FindingCategory.SEARCH_PROBE,
+                        severity=FindingSeverity.SUGGESTION,
+                        title=f"High-cardinality facet '{result.field}'",
+                        description=(
+                            f"Facet attribute '{result.field}' on index '{index.uid}' has "
+                            f"very high cardinality. {result.error_message}. "
+                            f"High-cardinality facets consume more memory and may slow "
+                            f"down faceted searches. Consider whether this field needs "
+                            f"faceting or if values can be bucketed."
+                        ),
+                        impact="Increased memory usage, slower faceted search",
+                        index_uid=index.uid,
+                        current_value={"field": result.field},
+                        references=[
+                            "https://www.meilisearch.com/docs/learn/filtering_and_sorting/search_with_facet_filters",
+                        ],
+                    )
+                )
+
+            elif result.probe_type == "facet_skew" and not result.success:
+                # Q005: Facet distribution skew
+                findings.append(
+                    Finding(
+                        id="MEILI-Q005",
+                        category=FindingCategory.SEARCH_PROBE,
+                        severity=FindingSeverity.INFO,
+                        title=f"Skewed facet distribution for '{result.field}'",
+                        description=(
+                            f"Facet attribute '{result.field}' on index '{index.uid}' "
+                            f"has a highly skewed distribution. {result.error_message}. "
+                            f"Filtering by this facet may not meaningfully narrow results."
+                        ),
+                        impact="Filtering by dominant value provides little benefit",
+                        index_uid=index.uid,
+                        current_value={"field": result.field},
+                    )
+                )
+
+            elif result.probe_type == "typo_tolerance" and not result.success:
+                # Q007: Typo tolerance not effective
+                if result.error_message and "got 0 hits" in result.error_message:
+                    findings.append(
+                        Finding(
+                            id="MEILI-Q007",
+                            category=FindingCategory.SEARCH_PROBE,
+                            severity=FindingSeverity.SUGGESTION,
+                            title="Typo tolerance may not be effective",
+                            description=(
+                                f"A search with a deliberate typo on index '{index.uid}' "
+                                f"returned zero results. {result.error_message}. "
+                                f"This may indicate typo tolerance is disabled or not "
+                                f"working as expected for common terms."
+                            ),
+                            impact="Users who make typos may not find relevant results",
+                            index_uid=index.uid,
+                            references=[
+                                "https://www.meilisearch.com/docs/learn/relevancy/typo_tolerance_settings",
                             ],
                         )
                     )
