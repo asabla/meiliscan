@@ -426,12 +426,13 @@ async def _analyze_instance(
 
             probe_analyzer = SearchProbeAnalyzer()
 
-            async def search_fn(index_uid, query, filter, sort):
+            async def search_fn(index_uid, query, filter, sort, facets=None):
                 return await collector.search(
                     index_uid=index_uid,
                     query=query,
                     filter=filter,
                     sort=sort,
+                    facets=facets,
                 )
 
             probe_findings, probe_results = await probe_analyzer.analyze(
@@ -944,6 +945,13 @@ def benchmark(
             help="Comma-separated list of index UIDs to benchmark (default: all)",
         ),
     ] = None,
+    save: Annotated[
+        bool,
+        typer.Option(
+            "--save",
+            help="Save benchmark results to ~/.meiliscan/benchmarks/ for later comparison",
+        ),
+    ] = False,
 ) -> None:
     """Run search benchmarks against a live MeiliSearch instance.
 
@@ -962,7 +970,7 @@ def benchmark(
         index_filter = [uid.strip() for uid in indexes.split(",")]
 
     exit_code = asyncio.run(
-        _run_benchmark(url, api_key, comprehensive, output, format_type, index_filter)
+        _run_benchmark(url, api_key, comprehensive, output, format_type, index_filter, save)
     )
 
     if exit_code != 0:
@@ -976,6 +984,7 @@ async def _run_benchmark(
     output: Path | None,
     format_type: str,
     index_filter: list[str] | None,
+    save: bool = False,
 ) -> int:
     """Run benchmarks against a MeiliSearch instance."""
     from meiliscan.benchmarks.search_runner import SearchBenchmarkRunner
@@ -1060,11 +1069,25 @@ async def _run_benchmark(
     # Export results
     _export_benchmark(benchmark_report, output, format_type)
 
+    # Save to benchmark store if requested
+    if save:
+        from meiliscan.benchmarks.store import BenchmarkStore
+
+        store = BenchmarkStore()
+        saved_path = store.save(benchmark_report)
+        console.print(f"\n[green]Benchmark saved to:[/green] {saved_path}")
+
     return 0
 
 
 def _display_benchmark_summary(report) -> None:
     """Display benchmark summary."""
+    cv_warning = ""
+    if report.coefficient_of_variation > 0.5:
+        cv_warning = " [red](UNSTABLE)[/red]"
+    elif report.coefficient_of_variation > 0.3:
+        cv_warning = " [yellow](variable)[/yellow]"
+
     summary_text = f"""
 [bold]Duration:[/bold] {report.duration_ms:.2f}ms    [bold]Total Queries:[/bold] {report.total_queries}
 
@@ -1073,6 +1096,7 @@ def _display_benchmark_summary(report) -> None:
   Avg Overall:  {report.avg_overall_ms:.2f}ms
   P50: {report.p50_latency_ms:.2f}ms    P95: {report.p95_latency_ms:.2f}ms    P99: {report.p99_latency_ms:.2f}ms
   Min: {report.min_latency_ms:.2f}ms    Max: {report.max_latency_ms:.2f}ms
+  Stddev: {report.stddev_latency_ms:.2f}ms    CV: {report.coefficient_of_variation:.3f}{cv_warning}
 """
 
     console.print(
@@ -1674,6 +1698,235 @@ def serve(
     )
 
     uvicorn.run(app_instance, host=host, port=port, log_level="info")
+
+
+@app.command(name="benchmark-history")
+def benchmark_history(
+    url: Annotated[
+        Optional[str],
+        typer.Option("--url", "-u", help="Filter by MeiliSearch instance URL"),
+    ] = None,
+) -> None:
+    """List saved benchmark reports."""
+    from meiliscan.benchmarks.store import BenchmarkStore
+
+    store = BenchmarkStore()
+    reports = store.list_reports(source_url=url)
+
+    if not reports:
+        console.print("[yellow]No saved benchmarks found.[/yellow]")
+        console.print("Use [bold]meiliscan benchmark --save[/bold] to save benchmark results.")
+        raise typer.Exit(0)
+
+    table = Table(title="Saved Benchmarks")
+    table.add_column("Date", style="cyan")
+    table.add_column("Instance", width=30)
+    table.add_column("Queries", justify="right")
+    table.add_column("Avg Latency", justify="right")
+    table.add_column("Path", style="dim")
+
+    for r in reports:
+        table.add_row(
+            r["ran_at"][:19] if r["ran_at"] else "-",
+            r["source_url"],
+            str(r["total_queries"]),
+            f"{r['avg_overall_ms']:.1f}ms",
+            r["path"],
+        )
+
+    console.print(table)
+
+
+@app.command(name="benchmark-compare")
+def benchmark_compare(
+    baseline: Annotated[
+        Path,
+        typer.Argument(help="Path to baseline benchmark JSON file"),
+    ],
+    current: Annotated[
+        Path,
+        typer.Argument(help="Path to current benchmark JSON file to compare"),
+    ],
+) -> None:
+    """Compare two saved benchmark reports to detect regressions."""
+    from meiliscan.benchmarks.store import BenchmarkStore
+
+    store = BenchmarkStore()
+
+    try:
+        comparison = store.compare(baseline, current)
+    except Exception as e:
+        console.print(f"[red]Error loading benchmarks:[/red] {e}")
+        raise typer.Exit(1)
+
+    # Display comparison
+    change = comparison.latency_change_percent
+    change_color = "red" if change > 0 else "green" if change < 0 else "white"
+
+    summary = f"""
+[bold]Baseline:[/bold] {comparison.baseline.ran_at.isoformat()[:19]}
+[bold]Current:[/bold]  {comparison.current.ran_at.isoformat()[:19]}
+
+[bold]Overall Latency Change:[/bold] [{change_color}]{comparison.latency_change_ms:+.2f}ms ({change:+.1f}%)[/{change_color}]
+[bold]P95 Change:[/bold] {comparison.p95_change_ms:+.2f}ms
+[bold]Status:[/bold] {"[red]REGRESSION" if comparison.is_regression else "[green]IMPROVEMENT" if comparison.is_improvement else "[white]STABLE"}[/]
+"""
+
+    console.print(Panel(summary.strip(), title="Benchmark Comparison", border_style="blue"))
+
+    # Per-query-type deltas
+    deltas = comparison.per_query_type_deltas()
+    if deltas:
+        table = Table(title="Per-Query-Type Changes")
+        table.add_column("Query Type", style="cyan")
+        table.add_column("Change (ms)", justify="right")
+
+        for qt, delta in deltas.items():
+            color = "red" if delta > 0 else "green" if delta < 0 else "white"
+            table.add_row(qt, f"[{color}]{delta:+.2f}ms[/{color}]")
+
+        console.print(table)
+
+
+@app.command()
+def monitor(
+    url: Annotated[
+        str,
+        typer.Option("--url", "-u", help="MeiliSearch instance URL"),
+    ] = "http://localhost:7700",
+    api_key: Annotated[
+        Optional[str],
+        typer.Option("--api-key", "-k", help="API key"),
+    ] = None,
+    interval: Annotated[
+        int,
+        typer.Option("--interval", "-i", help="Polling interval in seconds"),
+    ] = 30,
+    duration: Annotated[
+        int,
+        typer.Option("--duration", "-d", help="Total monitoring duration in seconds (0 = indefinite)"),
+    ] = 0,
+) -> None:
+    """Monitor a live MeiliSearch instance in real-time."""
+    from rich.live import Live
+
+    async def _monitor():
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+        collector = LiveInstanceCollector(url=url, api_key=api_key)
+
+        if not await collector.connect():
+            console.print("[red]Failed to connect to MeiliSearch[/red]")
+            raise typer.Exit(1)
+
+        console.print(f"[green]Connected to {url}[/green]")
+        console.print(f"Monitoring every {interval}s" + (f" for {duration}s" if duration > 0 else "") + ". Press Ctrl+C to stop.\n")
+
+        import time as time_mod
+
+        start_time = time_mod.time()
+        snapshots = []
+
+        try:
+            with Live(console=console, refresh_per_second=1) as live:
+                while True:
+                    # Check duration
+                    elapsed = time_mod.time() - start_time
+                    if duration > 0 and elapsed >= duration:
+                        break
+
+                    # Take snapshot
+                    import time
+
+                    snapshot_data = {}
+                    try:
+                        # Health check
+                        h_start = time.perf_counter()
+                        await collector._client.get("/health")
+                        snapshot_data["health_ms"] = (time.perf_counter() - h_start) * 1000
+
+                        # Stats
+                        stats_resp = await collector._client.get("/stats")
+                        stats = stats_resp.json()
+                        total_docs = sum(
+                            v.get("numberOfDocuments", 0)
+                            for v in stats.get("indexes", {}).values()
+                        )
+                        is_indexing = any(
+                            v.get("isIndexing", False)
+                            for v in stats.get("indexes", {}).values()
+                        )
+                        snapshot_data["total_docs"] = total_docs
+                        snapshot_data["is_indexing"] = is_indexing
+
+                        # Task queue
+                        tasks_resp = await collector._client.get(
+                            "/tasks", params={"statuses": "enqueued,processing", "limit": 1}
+                        )
+                        tasks_data = tasks_resp.json()
+                        snapshot_data["queue_depth"] = tasks_data.get("total", 0)
+
+                        # Search latency sample
+                        index_uids = list(stats.get("indexes", {}).keys())
+                        if index_uids:
+                            s_start = time.perf_counter()
+                            await collector._client.post(
+                                f"/indexes/{index_uids[0]}/search",
+                                json={"q": "", "limit": 1},
+                            )
+                            snapshot_data["search_ms"] = (time.perf_counter() - s_start) * 1000
+                    except Exception as e:
+                        snapshot_data["error"] = str(e)
+
+                    snapshots.append(snapshot_data)
+
+                    # Build table
+                    table = Table(title=f"MeiliSearch Monitor - {url}")
+                    table.add_column("Metric", style="bold")
+                    table.add_column("Value", justify="right")
+
+                    table.add_row(
+                        "Health Check",
+                        f"{snapshot_data.get('health_ms', 0):.1f} ms"
+                    )
+                    table.add_row(
+                        "Search Latency",
+                        f"{snapshot_data.get('search_ms', 0):.1f} ms"
+                        if "search_ms" in snapshot_data
+                        else "-"
+                    )
+                    table.add_row(
+                        "Documents",
+                        f"{snapshot_data.get('total_docs', 0):,}"
+                    )
+                    table.add_row(
+                        "Task Queue",
+                        str(snapshot_data.get("queue_depth", 0))
+                    )
+                    table.add_row(
+                        "Indexing",
+                        "Yes" if snapshot_data.get("is_indexing") else "No"
+                    )
+                    table.add_row(
+                        "Elapsed",
+                        f"{elapsed:.0f}s"
+                    )
+                    table.add_row(
+                        "Snapshots",
+                        str(len(snapshots))
+                    )
+
+                    live.update(table)
+                    await asyncio.sleep(interval)
+
+        except KeyboardInterrupt:
+            pass
+        finally:
+            await collector.close()
+
+        console.print(f"\n[green]Monitoring complete. {len(snapshots)} snapshots taken.[/green]")
+
+    asyncio.run(_monitor())
 
 
 if __name__ == "__main__":
