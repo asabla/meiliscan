@@ -132,12 +132,42 @@ class Reporter:
         database_size = global_stats.get("databaseSize") if global_stats else None
         used_size = global_stats.get("usedDatabaseSize") if global_stats else None
 
+        # Get tasks for throughput calculation
+        tasks = self._collector.tasks if hasattr(self._collector, "tasks") else None
+
         report.statistics = calculate_statistics(
             report,
             collection_timing=collection_timing,
             database_size_bytes=database_size,
             used_size_bytes=used_size,
+            tasks=tasks,
+            benchmark=report.benchmark,
         )
+
+        # Run connection diagnostics if live instance
+        connection_diagnostics = await self._run_connection_diagnostics()
+        if connection_diagnostics and report.statistics:
+            report.statistics.connection_diagnostics = connection_diagnostics
+
+        # Run post-statistics findings (connection diagnostics + throughput)
+        from meiliscan.analyzers.performance_analyzer import PerformanceAnalyzer
+
+        post_analyzer = PerformanceAnalyzer()
+        post_findings = post_analyzer._check_network_overhead(connection_diagnostics)
+        post_findings.extend(
+            post_analyzer._check_connection_jitter(connection_diagnostics)
+        )
+        throughput = report.statistics.throughput if report.statistics else None
+        post_findings.extend(
+            post_analyzer._check_low_throughput(throughput, self._collector.indexes)
+        )
+        for finding in post_findings:
+            report.add_finding(finding)
+
+        # Recalculate summary after adding post-statistics findings
+        if post_findings:
+            report._invalidate_cache()
+            report.calculate_summary()
 
         # Generate action plan
         report.action_plan = self._generate_action_plan(report)
@@ -158,6 +188,27 @@ class Reporter:
             instance_collector = self._collector._instance_collector
             if hasattr(instance_collector, "timing"):
                 return instance_collector.timing
+        return None
+
+    async def _run_connection_diagnostics(self):
+        """Run connection diagnostics if connected to a live instance."""
+        from meiliscan.collectors.live_instance import LiveInstanceCollector
+
+        if hasattr(self._collector, "_instance_collector"):
+            instance_collector = self._collector._instance_collector
+            if isinstance(instance_collector, LiveInstanceCollector):
+                try:
+                    return await instance_collector.diagnose_connection()
+                except Exception:
+                    return None
+        # Also check _collector directly
+        if hasattr(self._collector, "_collector"):
+            collector = self._collector._collector
+            if isinstance(collector, LiveInstanceCollector):
+                try:
+                    return await collector.diagnose_connection()
+                except Exception:
+                    return None
         return None
 
     async def _analyze_indexes_parallel(

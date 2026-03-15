@@ -72,6 +72,11 @@ class IndexStatistics(BaseModel):
     suggestion_count: int = Field(default=0, description="Number of suggestions")
     info_count: int = Field(default=0, description="Number of info items")
 
+    # Health score
+    health_score: int = Field(
+        default=0, description="Composite health score (0-100)"
+    )
+
     @property
     def total_issues(self) -> int:
         """Total number of issues (excluding info)."""
@@ -81,6 +86,56 @@ class IndexStatistics(BaseModel):
     def has_issues(self) -> bool:
         """Whether the index has any critical or warning issues."""
         return self.critical_count > 0 or self.warning_count > 0
+
+
+class ConnectionDiagnostics(BaseModel):
+    """Network connection diagnostics for a MeiliSearch instance."""
+
+    dns_resolve_ms: float = Field(
+        default=0.0, description="DNS resolution time in milliseconds"
+    )
+    tcp_connect_ms: float = Field(
+        default=0.0, description="TCP connection time in milliseconds"
+    )
+    tls_handshake_ms: float = Field(
+        default=0.0, description="TLS handshake time in milliseconds (0 if no TLS)"
+    )
+    ttfb_ms: float = Field(
+        default=0.0, description="Time to first byte in milliseconds"
+    )
+    total_ms: float = Field(
+        default=0.0, description="Total connection time in milliseconds"
+    )
+    server_processing_ms: float = Field(
+        default=0.0, description="Estimated server processing time in milliseconds"
+    )
+    overhead_ms: float = Field(
+        default=0.0, description="Network overhead (total - server processing)"
+    )
+    jitter_ms: float = Field(
+        default=0.0,
+        description="Latency jitter (stddev of health check times)",
+    )
+
+
+class ThroughputMetrics(BaseModel):
+    """Indexing throughput metrics computed from task history."""
+
+    avg_docs_per_second: float = Field(
+        default=0.0, description="Average documents indexed per second"
+    )
+    peak_docs_per_second: float = Field(
+        default=0.0, description="Peak documents indexed per second"
+    )
+    avg_batch_size: float = Field(
+        default=0.0, description="Average batch size (documents per task)"
+    )
+    total_docs_indexed: int = Field(
+        default=0, description="Total documents indexed in the time period"
+    )
+    time_period_hours: float = Field(
+        default=0.0, description="Time period covered by analyzed tasks (hours)"
+    )
 
 
 class PerformanceOpportunity(BaseModel):
@@ -169,6 +224,21 @@ class InstanceStatistics(BaseModel):
     total_warnings: int = Field(default=0, description="Total warnings")
     total_suggestions: int = Field(default=0, description="Total suggestions")
     total_info: int = Field(default=0, description="Total info items")
+
+    # Overall health score
+    overall_health_score: int = Field(
+        default=0, description="Overall instance health score (0-100)"
+    )
+
+    # Connection diagnostics
+    connection_diagnostics: ConnectionDiagnostics | None = Field(
+        default=None, description="Network connection diagnostics"
+    )
+
+    # Throughput metrics
+    throughput: ThroughputMetrics | None = Field(
+        default=None, description="Indexing throughput metrics"
+    )
 
     @property
     def high_impact_opportunities(self) -> list[PerformanceOpportunity]:

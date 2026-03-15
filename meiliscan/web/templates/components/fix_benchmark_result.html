@@ -93,6 +93,24 @@
         </div>
     </div>
     
+    {# Before/After Chart #}
+    {% if result.after_benchmark %}
+    <div style="height: 160px; position: relative; margin-top: 1rem;">
+        <canvas id="fix-chart-{{ finding_id|replace('-', '_') }}"></canvas>
+    </div>
+    <script>
+    (function() {
+        if (typeof BenchmarkCharts === 'undefined') return;
+        BenchmarkCharts.createFixComparisonChart(
+            'fix-chart-{{ finding_id|replace('-', '_') }}',
+            {{ "%.2f"|format(result.before_benchmark.avg_latency_ms) }},
+            {{ "%.2f"|format(result.after_benchmark.avg_latency_ms) }},
+            {{ 'true' if result.improvement_percent and result.improvement_percent > 0 else 'false' }}
+        );
+    })();
+    </script>
+    {% endif %}
+
     {# Additional details #}
     <div class="mt-2" style="font-size: 0.75rem; color: var(--text-secondary);">
         {% if result.waited_for_indexing and result.indexing_duration_ms %}

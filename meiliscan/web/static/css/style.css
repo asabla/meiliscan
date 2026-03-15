@@ -75,6 +75,7 @@ nav .container {
     display: flex;
     align-items: center;
     gap: 0.5rem;
+    margin-right: 2rem;
 }
 
 .nav-links {
@@ -92,6 +93,12 @@ nav .container {
 .nav-links a.active {
     color: var(--text-primary);
     text-decoration: none;
+}
+
+.nav-separator {
+    border-left: 1px solid var(--border-color, #444);
+    height: 1.2em;
+    align-self: center;
 }
 
 /* Main Content */
@@ -339,6 +346,15 @@ tr:hover {
     border-radius: 9999px;
     font-size: 0.75rem;
     font-weight: 500;
+    transition: filter 0.2s, transform 0.1s;
+}
+
+a.badge:hover,
+button.badge:hover,
+.badge[style*="cursor: pointer"]:hover {
+    filter: brightness(1.3);
+    transform: translateY(-1px);
+    text-decoration: none;
 }
 
 .badge-red {
@@ -666,6 +682,37 @@ tr:hover {
     font-size: 0.875rem;
 }
 
+.finding-details {
+    margin-top: 0.5rem;
+}
+
+.finding-details-toggle {
+    cursor: pointer;
+    color: var(--accent);
+    font-size: 0.8125rem;
+    user-select: none;
+    list-style: none;
+}
+
+.finding-details-toggle::-webkit-details-marker {
+    display: none;
+}
+
+.finding-details-toggle::before {
+    content: "▶ ";
+    font-size: 0.625rem;
+    display: inline-block;
+    transition: transform 0.2s;
+}
+
+.finding-details[open] > .finding-details-toggle::before {
+    transform: rotate(90deg);
+}
+
+.finding-details-content {
+    padding-top: 0.5rem;
+}
+
 /* Code blocks */
 pre,
 code {
@@ -682,11 +729,18 @@ code {
 pre {
     padding: 1rem;
     overflow-x: auto;
+    max-width: 100%;
 }
 
 pre code {
     padding: 0;
     background: none;
+}
+
+.finding pre,
+.card pre {
+    max-width: 100%;
+    overflow-x: auto;
 }
 
 /* Empty state */
@@ -1033,16 +1087,16 @@ pre code {
 
 /* Tasks Table */
 .grid-5 {
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
-@media (max-width: 1024px) {
+@media (max-width: 640px) {
     .grid-5 {
         grid-template-columns: repeat(3, 1fr);
     }
 }
 
-@media (max-width: 640px) {
+@media (max-width: 400px) {
     .grid-5 {
         grid-template-columns: repeat(2, 1fr);
     }
@@ -1239,7 +1293,7 @@ pre code {
 .table-wrapper {
     max-height: 250px;
     overflow-y: auto;
-    overflow-x: hidden;
+    overflow-x: auto;
     margin: 0 -1.5rem -1.5rem -1.5rem;
 }
 

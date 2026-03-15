@@ -1,14 +1,18 @@
 """Live MeiliSearch instance collector."""
 
 import asyncio
+import math
+import socket
+import ssl
 import time
+from urllib.parse import urlparse
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
 
 from meiliscan.collectors.base import BaseCollector
 from meiliscan.models.index import IndexData, IndexSettings, IndexStats
-from meiliscan.models.statistics import CollectionTiming
+from meiliscan.models.statistics import CollectionTiming, ConnectionDiagnostics
 from meiliscan.models.task import Task, TasksResponse, TasksSummary
 
 if TYPE_CHECKING:
@@ -557,6 +561,7 @@ class LiveInstanceCollector(BaseCollector):
         query: str = "",
         filter: str | None = None,
         sort: list[str] | None = None,
+        facets: list[str] | None = None,
         distinct: str | None = None,
         hits_per_page: int = 20,
         page: int = 1,
@@ -568,6 +573,7 @@ class LiveInstanceCollector(BaseCollector):
             query: Search query string
             filter: Filter expression string
             sort: List of sort expressions (e.g., ["price:asc", "title:desc"])
+            facets: List of facet attributes to return distribution for
             distinct: Attribute to use for distinct results
             hits_per_page: Number of results per page
             page: Page number (1-indexed)
@@ -591,6 +597,9 @@ class LiveInstanceCollector(BaseCollector):
         if sort:
             payload["sort"] = sort
 
+        if facets:
+            payload["facets"] = facets
+
         if distinct:
             payload["distinct"] = distinct
 
@@ -600,6 +609,112 @@ class LiveInstanceCollector(BaseCollector):
         )
         response.raise_for_status()
         return response.json()
+
+    async def diagnose_connection(self, num_health_checks: int = 10) -> ConnectionDiagnostics:
+        """Run connection diagnostics to decompose response time.
+
+        Measures DNS, TCP, TLS, and server processing times separately,
+        plus jitter across multiple health checks.
+
+        Args:
+            num_health_checks: Number of /health requests for jitter calculation
+
+        Returns:
+            ConnectionDiagnostics with timing breakdown
+        """
+        parsed = urlparse(self.url)
+        host = parsed.hostname or "localhost"
+        port = parsed.port or (443 if parsed.scheme == "https" else 7700)
+        use_tls = parsed.scheme == "https"
+
+        # DNS resolution timing
+        dns_start = time.perf_counter()
+        try:
+            addr_info = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: socket.getaddrinfo(host, port, socket.AF_UNSPEC, socket.SOCK_STREAM)
+            )
+            dns_ms = (time.perf_counter() - dns_start) * 1000
+            resolved_addr = addr_info[0][4][0] if addr_info else host
+        except (socket.gaierror, OSError):
+            dns_ms = (time.perf_counter() - dns_start) * 1000
+            resolved_addr = host
+
+        # TCP connection timing
+        tcp_start = time.perf_counter()
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.settimeout(self.timeout)
+            await asyncio.get_event_loop().run_in_executor(
+                None, sock.connect, (resolved_addr, port)
+            )
+            tcp_ms = (time.perf_counter() - tcp_start) * 1000
+        except (OSError, socket.timeout):
+            tcp_ms = (time.perf_counter() - tcp_start) * 1000
+            sock = None
+
+        # TLS handshake timing
+        tls_ms = 0.0
+        if use_tls and sock:
+            tls_start = time.perf_counter()
+            try:
+                context = ssl.create_default_context()
+                await asyncio.get_event_loop().run_in_executor(
+                    None, lambda: context.wrap_socket(sock, server_hostname=host)
+                )
+                tls_ms = (time.perf_counter() - tls_start) * 1000
+            except (ssl.SSLError, OSError):
+                tls_ms = (time.perf_counter() - tls_start) * 1000
+
+        if sock:
+            try:
+                sock.close()
+            except OSError:
+                pass
+
+        # Run multiple health checks for jitter and TTFB measurement
+        if not self._client:
+            raise RuntimeError("Collector not connected. Call connect() first.")
+
+        health_times: list[float] = []
+        processing_times: list[float] = []
+        for _ in range(num_health_checks):
+            start = time.perf_counter()
+            try:
+                response = await self._client.get("/health")
+                elapsed = (time.perf_counter() - start) * 1000
+                health_times.append(elapsed)
+                # Try to get processing time from response
+                proc_time = response.headers.get("x-process-time")
+                if proc_time:
+                    processing_times.append(float(proc_time))
+            except Exception:
+                pass
+
+        ttfb_ms = min(health_times) if health_times else 0.0
+        total_ms = dns_ms + tcp_ms + tls_ms + ttfb_ms
+
+        # Estimate server processing from average health check
+        avg_health = sum(health_times) / len(health_times) if health_times else 0.0
+        server_processing = sum(processing_times) / len(processing_times) if processing_times else avg_health * 0.5
+        overhead = total_ms - server_processing
+
+        # Calculate jitter (stddev of health check times)
+        jitter = 0.0
+        if len(health_times) >= 2:
+            mean_ht = sum(health_times) / len(health_times)
+            variance = sum((x - mean_ht) ** 2 for x in health_times) / len(health_times)
+            jitter = math.sqrt(variance)
+
+        return ConnectionDiagnostics(
+            dns_resolve_ms=round(dns_ms, 2),
+            tcp_connect_ms=round(tcp_ms, 2),
+            tls_handshake_ms=round(tls_ms, 2),
+            ttfb_ms=round(ttfb_ms, 2),
+            total_ms=round(total_ms, 2),
+            server_processing_ms=round(server_processing, 2),
+            overhead_ms=round(max(overhead, 0), 2),
+            jitter_ms=round(jitter, 2),
+        )
 
     async def close(self) -> None:
         """Close the HTTP client."""

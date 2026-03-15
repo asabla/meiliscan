@@ -1,5 +1,6 @@
 """Search benchmark runner for measuring MeiliSearch performance."""
 
+import math
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -74,6 +75,7 @@ class SearchBenchmarkRunner:
                 query=query.query_text,
                 filter=query.filter,
                 sort=query.sort,
+                facets=query.facets,
                 hits_per_page=20,
                 page=1,
             )
@@ -100,6 +102,7 @@ class SearchBenchmarkRunner:
             latency_ms=latency_ms,
             processing_time_ms=processing_time_ms,
             hits_count=hits_count,
+            zero_results=(hits_count == 0 and success),
             response_size_bytes=response_size_bytes,
             success=success,
             error=error,
@@ -172,6 +175,14 @@ class SearchBenchmarkRunner:
                 return None
             return sum(r.latency_ms for r in type_results) / len(type_results)
 
+        # Calculate zero-result rate
+        successful_results = [r for r in all_results if r.success]
+        zero_result_rate = (
+            sum(1 for r in successful_results if r.zero_results) / len(successful_results)
+            if successful_results
+            else 0.0
+        )
+
         return IndexBenchmark(
             index_uid=index.uid,
             document_count=index.document_count,
@@ -181,6 +192,7 @@ class SearchBenchmarkRunner:
             sorted_latency_ms=avg_latency_for_type("sorted"),
             faceted_latency_ms=avg_latency_for_type("faceted"),
             complex_latency_ms=avg_latency_for_type("complex"),
+            zero_result_rate=zero_result_rate,
             queries=all_results,
         )
 
@@ -249,8 +261,15 @@ class SearchBenchmarkRunner:
             p99 = self._percentile(sorted_latencies, 99)
             min_latency = min(all_latencies)
             max_latency = max(all_latencies)
+            # Compute standard deviation and coefficient of variation
+            variance = sum((x - avg_overall) ** 2 for x in all_latencies) / len(
+                all_latencies
+            )
+            stddev = math.sqrt(variance)
+            cv = stddev / avg_overall if avg_overall > 0 else 0.0
         else:
             avg_overall = p50 = p95 = p99 = min_latency = max_latency = 0.0
+            stddev = cv = 0.0
 
         # Calculate average baseline latency
         baseline_latencies = [
@@ -284,6 +303,8 @@ class SearchBenchmarkRunner:
             p99_latency_ms=p99,
             min_latency_ms=min_latency,
             max_latency_ms=max_latency,
+            stddev_latency_ms=stddev,
+            coefficient_of_variation=cv,
             indexes=index_benchmarks,
             slowest_queries=slowest,
             fastest_queries=fastest,

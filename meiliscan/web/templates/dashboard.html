@@ -18,12 +18,12 @@
         {% elif source_dump %}
         <span class="status-indicator status-dump"></span>
         <span class="status-text">
-            <strong>Dump File:</strong> {{ source_dump.name }}
+            <strong>Dump File:</strong> {{ dump_filename or source_dump.name }}
         </span>
         {% endif %}
         <!-- Analysis Options Badges -->
         <span class="status-options" style="margin-left: 1rem;">
-            <span class="badge badge-gray" title="Sample documents per index">{% if sample_documents is none %}all{% else %}{{ sample_documents }}{% endif %} samples</span>
+            <span class="badge badge-gray" title="Sample documents per index">{% if sample_documents is none %}all{% else %}{{ sample_documents }}{% endif %} samples/index</span>
             {% if probe_search %}
             <span class="badge badge-blue" title="Search probes enabled">probes</span>
             {% endif %}
@@ -78,7 +78,9 @@
     <div class="card">
         <div class="card-header">
             <h2 class="card-title">Tasks Queue</h2>
+            {% if is_live_instance() %}
             <a href="/tasks" class="btn btn-secondary btn-sm">View All →</a>
+            {% endif %}
         </div>
         <div class="grid grid-5">
             <div class="stat">
@@ -116,6 +118,44 @@
     {% endif %}
 </div>
 
+<!-- Health Score & Statistics & Indexes -->
+{% if report.statistics and report.statistics.overall_health_score > 0 %}
+<div class="grid grid-3 mb-2">
+    <div class="card stat">
+        {% set hs = report.statistics.overall_health_score %}
+        <div class="stat-value {% if hs >= 80 %}text-green{% elif hs >= 50 %}text-yellow{% else %}text-red{% endif %}" style="font-size: 2.5rem;">
+            {{ hs }}
+        </div>
+        <div class="stat-label">Health Score</div>
+        <span class="badge badge-{% if hs >= 80 %}green{% elif hs >= 50 %}yellow{% else %}red{% endif %}" style="margin-top: 0.5rem;">
+            {% if hs >= 80 %}Healthy{% elif hs >= 50 %}Fair{% else %}Needs Attention{% endif %}
+        </span>
+        <div class="health-bar" style="margin-top: 0.75rem;">
+            <div class="health-bar-fill {% if hs >= 80 %}good{% elif hs >= 50 %}warning{% else %}critical{% endif %}"
+                 style="width: {{ hs }}%;"></div>
+        </div>
+    </div>
+    {% if report.statistics.throughput %}
+    <div class="card stat">
+        <div class="stat-value" style="font-size: 1.5rem;">{{ "%.0f"|format(report.statistics.throughput.avg_docs_per_second) }}</div>
+        <div class="stat-label">Avg Docs/sec</div>
+        <div class="text-secondary" style="font-size: 0.8rem; margin-top: 0.25rem;">
+            Peak: {{ "%.0f"|format(report.statistics.throughput.peak_docs_per_second) }} docs/sec
+        </div>
+    </div>
+    {% endif %}
+    {% if report.statistics.connection_diagnostics %}
+    <div class="card stat">
+        <div class="stat-value" style="font-size: 1.5rem;">{{ "%.1f"|format(report.statistics.connection_diagnostics.ttfb_ms) }}ms</div>
+        <div class="stat-label">TTFB</div>
+        <div class="text-secondary" style="font-size: 0.8rem; margin-top: 0.25rem;">
+            Jitter: {{ "%.1f"|format(report.statistics.connection_diagnostics.jitter_ms) }}ms
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 <!-- Statistics & Indexes -->
 <div class="grid grid-2 mb-2">
 <!-- Statistics -->
@@ -135,7 +175,7 @@
                 {% if coverage >= 70 %}Well Configured{% elif coverage >= 40 %}Partially Configured{% else %}Needs Configuration{% endif %}
             </span>
             <div class="health-bar" style="margin-top: 1rem;">
-                <div class="health-bar-fill {% if coverage >= 70 %}good{% elif coverage >= 40 %}warning{% else %}critical{% endif %}" 
+                <div class="health-bar-fill {% if coverage >= 70 %}good{% elif coverage >= 40 %}warning{% else %}critical{% endif %}"
                      style="width: {{ coverage }}%;"></div>
             </div>
         </div>
@@ -291,7 +331,11 @@
         {% if all_findings %}
         <div class="mt-2">
             <h3 class="text-secondary mb-1" style="font-size: 0.875rem;">Top Issues</h3>
-            {% for finding in all_findings[:5] %}
+            {% set seen_ids = namespace(list=[]) %}
+            {% for finding in all_findings %}
+            {% if finding.id not in seen_ids.list %}
+            {% set seen_ids.list = seen_ids.list + [finding.id] %}
+            {% if seen_ids.list|length <= 5 %}
             <div class="finding finding-{{ finding.severity.value|lower }}">
                 <div class="finding-header">
                     <div class="finding-title">
@@ -300,12 +344,15 @@
                     <span class="finding-id">{{ finding.id }}</span>
                 </div>
                 <div class="finding-description">{{ finding.description[:100] }}{% if finding.description|length > 100 %}...{% endif %}</div>
-                {% if finding.index_uid %}
-                <div class="mt-1">
-                    <a href="/index/{{ finding.index_uid }}">Index: {{ finding.index_uid }}</a>
+                {% set affected = all_findings|selectattr('id', 'equalto', finding.id)|map(attribute='index_uid')|select|list %}
+                {% if affected %}
+                <div class="mt-1 text-secondary" style="font-size: 0.8rem;">
+                    Indexes: {% for uid in affected %}<a href="/index/{{ uid }}">{{ uid }}</a>{% if not loop.last %}, {% endif %}{% endfor %}
                 </div>
                 {% endif %}
             </div>
+            {% endif %}
+            {% endif %}
             {% endfor %}
         </div>
         {% endif %}
@@ -318,24 +365,32 @@
         <h2 class="card-title">Recommended Action Plan</h2>
     </div>
     <p class="text-secondary mb-2">Address these issues in order of priority:</p>
+    {% set all_plan_findings = report.get_all_findings() %}
+    {% set ns = namespace(unique=[]) %}
+    {% for finding_id in report.action_plan.priority_order %}
+    {% if finding_id not in ns.unique %}
+    {% set ns.unique = ns.unique + [finding_id] %}
+    {% endif %}
+    {% endfor %}
     <ol style="padding-left: 1.5rem;">
-        {% for finding_id in report.action_plan.priority_order[:10] %}
-        {% set finding = report.get_finding_by_id(finding_id) %}
+        {% for finding_id in ns.unique[:10] %}
+        {% set matching = all_plan_findings|selectattr('id', 'equalto', finding_id)|list %}
         <li style="margin-bottom: 0.75rem;">
             <div class="flex align-center gap-1" style="flex-wrap: wrap;">
                 <code>{{ finding_id }}</code>
-                {% if finding %}
-                <span>{{ finding.title }}</span>
+                {% if matching %}
+                <span>{{ matching[0].title }}</span>
                 {% endif %}
             </div>
-            {% if finding %}
+            {% if matching %}
             <div class="text-secondary" style="font-size: 0.8rem; margin-top: 0.25rem;">
-                {% if finding.index_uid %}
-                <span>Index: <a href="/index/{{ finding.index_uid }}">{{ finding.index_uid }}</a></span>
+                {% set index_uids = matching|selectattr('index_uid')|map(attribute='index_uid')|list %}
+                {% if index_uids %}
+                <span>Indexes: {% for uid in index_uids %}<a href="/index/{{ uid }}">{{ uid }}</a>{% if not loop.last %}, {% endif %}{% endfor %}</span>
                 {% endif %}
-                {% if finding.references %}
-                {% if finding.index_uid %}<span style="margin: 0 0.5rem;">|</span>{% endif %}
-                <a href="{{ finding.references[0] }}" target="_blank" rel="noopener">Docs</a>
+                {% if matching[0].references %}
+                {% if index_uids %}<span style="margin: 0 0.5rem;">|</span>{% endif %}
+                <a href="{{ matching[0].references[0] }}" target="_blank" rel="noopener">Docs</a>
                 {% endif %}
             </div>
             {% endif %}

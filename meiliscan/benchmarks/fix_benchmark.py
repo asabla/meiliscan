@@ -14,7 +14,15 @@ if TYPE_CHECKING:
 
 
 class FixBenchmarkRunner:
-    """Runs before/after benchmarks by applying fixes."""
+    """Runs before/after benchmarks by applying fixes.
+
+    WARNING: When ``apply=True``, this runner MODIFIES the live MeiliSearch
+    instance by patching index settings.  It attempts to revert changes
+    afterwards, but if the revert fails (network error, timeout, crash)
+    the instance may be left in a modified state.  Callers should gate
+    ``apply=True`` behind explicit user confirmation or the
+    ``MEILISCAN_ALLOW_APPLY_FIX`` environment variable.
+    """
 
     # Maximum time to wait for indexing to complete (in seconds)
     MAX_INDEXING_WAIT = 300  # 5 minutes

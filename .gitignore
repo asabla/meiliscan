@@ -16,3 +16,5 @@ htmlcov/
 .coverage
 .pytest_cache/
 .ruff_cache/
+.menv/
+Sandboxfile

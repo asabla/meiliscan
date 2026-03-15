@@ -28,6 +28,9 @@ class SearchBenchmarkResult(BaseModel):
         default=None, description="Server processing time from response header"
     )
     hits_count: int = Field(default=0, description="Number of hits returned")
+    zero_results: bool = Field(
+        default=False, description="Whether the query returned zero results"
+    )
     response_size_bytes: int = Field(default=0, description="Response size in bytes")
     success: bool = Field(default=True, description="Whether the query succeeded")
     error: str | None = Field(default=None, description="Error message if failed")
@@ -57,6 +60,11 @@ class IndexBenchmark(BaseModel):
     )
     complex_latency_ms: float | None = Field(
         default=None, description="Complex query latency"
+    )
+
+    # Zero-result tracking
+    zero_result_rate: float = Field(
+        default=0.0, description="Proportion of queries that returned zero results"
     )
 
     # All individual query results
@@ -113,6 +121,13 @@ class BenchmarkReport(BaseModel):
     p99_latency_ms: float = Field(default=0.0, description="99th percentile latency")
     min_latency_ms: float = Field(default=0.0, description="Minimum latency")
     max_latency_ms: float = Field(default=0.0, description="Maximum latency")
+    stddev_latency_ms: float = Field(
+        default=0.0, description="Standard deviation of latency"
+    )
+    coefficient_of_variation: float = Field(
+        default=0.0,
+        description="Coefficient of variation (stddev/mean). >0.5 indicates unstable latency",
+    )
 
     # Per-index results
     indexes: list[IndexBenchmark] = Field(
