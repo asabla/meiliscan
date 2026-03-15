@@ -32,7 +32,7 @@
 </div>
 
 <!-- Additional Stats Row -->
-<div class="grid grid-4 mb-2">
+<div class="grid grid-5 mb-2">
     <div class="card stat">
         <div class="stat-value">{{ "%.1f"|format(benchmark.avg_baseline_ms) }}ms</div>
         <div class="stat-label">Avg Baseline</div>
@@ -46,10 +46,22 @@
         <div class="stat-label">Max</div>
     </div>
     <div class="card stat">
+        <div class="stat-value {% if benchmark.coefficient_of_variation > 0.5 %}text-red{% elif benchmark.coefficient_of_variation > 0.3 %}text-yellow{% endif %}">
+            {{ "%.2f"|format(benchmark.coefficient_of_variation) }}
+        </div>
+        <div class="stat-label">CV (Stability)</div>
+    </div>
+    <div class="card stat">
         <div class="stat-value">{{ "%.1f"|format(benchmark.duration_ms / 1000) }}s</div>
         <div class="stat-label">Duration</div>
     </div>
 </div>
+
+{% if benchmark.coefficient_of_variation > 0.5 %}
+<div class="alert alert-warning mb-2" style="padding: 0.5rem 1rem;">
+    <strong>Unstable latency detected:</strong> Coefficient of variation ({{ "%.2f"|format(benchmark.coefficient_of_variation) }}) exceeds 0.5, indicating highly variable performance. Stddev: {{ "%.1f"|format(benchmark.stddev_latency_ms) }}ms.
+</div>
+{% endif %}
 
 <!-- Charts -->
 <div class="grid grid-2 mb-2">

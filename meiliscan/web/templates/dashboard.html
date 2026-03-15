@@ -118,6 +118,44 @@
     {% endif %}
 </div>
 
+<!-- Health Score & Statistics & Indexes -->
+{% if report.statistics and report.statistics.overall_health_score > 0 %}
+<div class="grid grid-3 mb-2">
+    <div class="card stat">
+        {% set hs = report.statistics.overall_health_score %}
+        <div class="stat-value {% if hs >= 80 %}text-green{% elif hs >= 50 %}text-yellow{% else %}text-red{% endif %}" style="font-size: 2.5rem;">
+            {{ hs }}
+        </div>
+        <div class="stat-label">Health Score</div>
+        <span class="badge badge-{% if hs >= 80 %}green{% elif hs >= 50 %}yellow{% else %}red{% endif %}" style="margin-top: 0.5rem;">
+            {% if hs >= 80 %}Healthy{% elif hs >= 50 %}Fair{% else %}Needs Attention{% endif %}
+        </span>
+        <div class="health-bar" style="margin-top: 0.75rem;">
+            <div class="health-bar-fill {% if hs >= 80 %}good{% elif hs >= 50 %}warning{% else %}critical{% endif %}"
+                 style="width: {{ hs }}%;"></div>
+        </div>
+    </div>
+    {% if report.statistics.throughput %}
+    <div class="card stat">
+        <div class="stat-value" style="font-size: 1.5rem;">{{ "%.0f"|format(report.statistics.throughput.avg_docs_per_second) }}</div>
+        <div class="stat-label">Avg Docs/sec</div>
+        <div class="text-secondary" style="font-size: 0.8rem; margin-top: 0.25rem;">
+            Peak: {{ "%.0f"|format(report.statistics.throughput.peak_docs_per_second) }} docs/sec
+        </div>
+    </div>
+    {% endif %}
+    {% if report.statistics.connection_diagnostics %}
+    <div class="card stat">
+        <div class="stat-value" style="font-size: 1.5rem;">{{ "%.1f"|format(report.statistics.connection_diagnostics.ttfb_ms) }}ms</div>
+        <div class="stat-label">TTFB</div>
+        <div class="text-secondary" style="font-size: 0.8rem; margin-top: 0.25rem;">
+            Jitter: {{ "%.1f"|format(report.statistics.connection_diagnostics.jitter_ms) }}ms
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
 <!-- Statistics & Indexes -->
 <div class="grid grid-2 mb-2">
 <!-- Statistics -->
@@ -137,7 +175,7 @@
                 {% if coverage >= 70 %}Well Configured{% elif coverage >= 40 %}Partially Configured{% else %}Needs Configuration{% endif %}
             </span>
             <div class="health-bar" style="margin-top: 1rem;">
-                <div class="health-bar-fill {% if coverage >= 70 %}good{% elif coverage >= 40 %}warning{% else %}critical{% endif %}" 
+                <div class="health-bar-fill {% if coverage >= 70 %}good{% elif coverage >= 40 %}warning{% else %}critical{% endif %}"
                      style="width: {{ coverage }}%;"></div>
             </div>
         </div>
